@@ -15,7 +15,7 @@ const jakarta = Plus_Jakarta_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'EduKas — Sistem Keuangan Sekolah Swasta Modern',
+  title: 'SiKu - Sistem Keuangan Sekolah Swasta Modern',
   description: 'Kelola SPP, tagihan, dan laporan keuangan sekolah swasta Indonesia dalam satu platform digital. Notifikasi otomatis ke orang tua via WhatsApp.',
   keywords: 'sistem keuangan sekolah, aplikasi SPP, bendahara sekolah, yayasan pendidikan Indonesia',
 }
