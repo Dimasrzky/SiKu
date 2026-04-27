@@ -125,7 +125,7 @@ export default function DaftarPage() {
           <div className="form-wrapper">
             {!isSuccess ? (
               <>
-                <div className="form-header-label">Demo Gratis 3 Bulan</div>
+                <div className="form-header-label">Demo Gratis 1 Bulan</div>
                 <h1 className="form-title">Daftar Sekarang</h1>
                 <p className="form-subtitle">
                   Isi formulir di bawah. Tim kami akan menghubungi Anda melalui
@@ -297,7 +297,7 @@ export default function DaftarPage() {
                 >
                   {isSubmitting
                     ? 'Mendaftarkan...'
-                    : 'Daftar Sekarang — 100% Gratis 3 Bulan ✦'}
+                    : 'Daftar Sekarang — 100% Gratis 1 Bulan ✦'}
                 </button>
 
                 <div className="form-privacy">

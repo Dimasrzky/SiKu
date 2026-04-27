@@ -39,7 +39,7 @@ export default function HomePage() {
           {/* Konten kiri */}
           <div>
             <div className="badge-free">
-              Program DEMO Gratis 3 Bulan — Terbatas!
+              Program DEMO Gratis 1 Bulan — Terbatas!
             </div>
 
             <h1>
@@ -54,7 +54,7 @@ export default function HomePage() {
 
             <div className="hero-cta">
               <Link href="/daftar" className="btn-primary">
-                ✦ Daftar Demo Gratis 3 Bulan
+                ✦ Daftar Demo Gratis 1 Bulan
               </Link>
               <a href="#fitur" className="btn-secondary">
                 Lihat Fitur
@@ -64,7 +64,7 @@ export default function HomePage() {
             <div className="hero-stats">
               <div>
                 <div className="stat-num">100%</div>
-                <div className="stat-label">Gratis 3 bulan pertama</div>
+                <div className="stat-label">Gratis 1 bulan pertama</div>
               </div>
               <div>
                 <div className="stat-num">&lt; 1 jam</div>
@@ -366,18 +366,18 @@ export default function HomePage() {
         <div className="pricing-inner">
           <div className="pricing-label">Program Pilot — Terbatas</div>
           <h2 className="pricing-title">
-            3 Bulan Gratis.
+            1 Bulan Gratis.
             <br />Tanpa syarat tersembunyi.
           </h2>
           <p className="pricing-subtitle">
             Kami tahu sekolah perlu membuktikan manfaat sebelum berkomitmen.
-            Karena itu kami tawarkan demo penuh — bukan versi terbatas — selama 3 bulan.
+            Karena itu kami tawarkan demo penuh — bukan versi terbatas — selama 1 bulan.
           </p>
 
           <div className="pricing-card">
             <div className="price-tag">Rp 0</div>
             <div className="price-sub">
-              Selama 3 bulan pertama · Tidak perlu kartu kredit
+              Selama 1 bulan pertama · Tidak perlu kartu kredit
             </div>
             <div className="price-features">
               {[
@@ -393,7 +393,7 @@ export default function HomePage() {
               Mulai Demo Gratis Sekarang →
             </Link>
             <div className="cta-note">
-              Setelah 3 bulan, pilih lanjut atau berhenti — tanpa paksaan
+              Setelah 1 bulan, pilih lanjut atau berhenti — tanpa paksaan
             </div>
           </div>
         </div>

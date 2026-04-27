@@ -20,7 +20,7 @@ export const MOCK_USER = {
   password: 'demo2025',
 }
 
-export const BULAN_AKTIF = 'April 2025'
+export const BULAN_AKTIF = 'April 2026'
 
 export const MOCK_SISWA: Siswa[] = [
   { id: '1',  nama: 'Alif Ramadhan',   nis: '2401001', kelas: 'VII-A',  nominal: 450000, status: 'lunas',     tanggalBayar: '2 Apr 2025',  noWa: '6281111111111' },
