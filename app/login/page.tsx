@@ -30,7 +30,7 @@ export default function LoginPage() {
 
     if (email === MOCK_USER.email && password === MOCK_USER.password) {
       localStorage.setItem(
-        'edukas_auth',
+        'siku_auth',
         JSON.stringify({
           nama: MOCK_USER.nama,
           jabatan: MOCK_USER.jabatan,

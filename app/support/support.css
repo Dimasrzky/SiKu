@@ -1,0 +1,453 @@
+/* ─── HERO ───────────────────────────────────────────── */
+.sp-hero {
+  padding: 140px 5% 80px;
+  background: var(--navy-dark);
+  text-align: center;
+}
+
+.sp-hero-inner {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.sp-badge {
+  display: inline-block;
+  background: rgba(5, 150, 105, 0.15);
+  color: var(--emerald-light);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  border-radius: 100px;
+  padding: 5px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  letter-spacing: 0.04em;
+}
+
+.sp-h1 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.22;
+  margin-bottom: 1rem;
+}
+
+.sp-desc {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.75;
+}
+
+/* ─── SHARED INNER ───────────────────────────────────── */
+.sp-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+/* ─── CHANNELS ───────────────────────────────────────── */
+.sp-channels-section {
+  padding: 64px 5%;
+  background: #fff;
+}
+
+.sp-channels-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 420px));
+  gap: 1.25rem;
+  justify-content: center;
+}
+
+.sp-channel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.75rem 1.5rem;
+  text-decoration: none;
+  transition: all 0.22s;
+}
+
+.sp-channel-card:hover {
+  border-color: rgba(5, 150, 105, 0.3);
+  box-shadow: 0 6px 24px rgba(5, 150, 105, 0.08);
+  transform: translateY(-2px);
+}
+
+.sp-ch-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.sp-ch-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--navy-dark);
+}
+
+.sp-ch-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+  flex: 1;
+}
+
+.sp-ch-cta {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+/* ─── FAQ ────────────────────────────────────────────── */
+.sp-faq-section {
+  padding: 72px 5%;
+  background: var(--cream);
+}
+
+.sp-faq-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.sp-faq-category {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--emerald);
+  margin-bottom: 0.85rem;
+}
+
+.sp-faq-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.sp-faq-item.sp-faq-open {
+  border-color: rgba(5, 150, 105, 0.3);
+}
+
+.sp-faq-q {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--navy-dark);
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.sp-faq-q:hover {
+  color: var(--navy);
+}
+
+.sp-faq-chevron {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  color: var(--emerald);
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.sp-faq-a {
+  padding: 0 1.25rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.75;
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+
+/* ─── TUTORIAL ───────────────────────────────────────── */
+.sp-tutorial-section {
+  padding: 72px 5%;
+  background: #fff;
+}
+
+.sp-tut-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.sp-tut-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sp-tut-card:hover {
+  border-color: rgba(5, 150, 105, 0.35);
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.08);
+}
+
+.sp-tut-play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  padding-left: 3px;
+}
+
+.sp-tut-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-tut-num {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--emerald);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.2rem;
+}
+
+.sp-tut-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--navy-dark);
+  line-height: 1.4;
+}
+
+.sp-tut-dur {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ─── CONTACT FORM ───────────────────────────────────── */
+.sp-form-section {
+  padding: 72px 5%;
+  background: var(--cream);
+}
+
+.sp-form-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  gap: 4rem;
+  align-items: start;
+}
+
+.sp-contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.sp-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-mid);
+}
+
+.sp-contact-item a {
+  color: var(--navy);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sp-contact-item a:hover {
+  color: var(--emerald);
+}
+
+.sp-form-right {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 2.25rem;
+}
+
+.sp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.sp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sp-field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-mid);
+}
+
+.sp-field input,
+.sp-field textarea {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-dark);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+  resize: vertical;
+}
+
+.sp-field input:focus,
+.sp-field textarea:focus {
+  border-color: var(--emerald);
+}
+
+.sp-submit {
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.8rem 1.5rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+.sp-submit:hover {
+  background: var(--navy-light);
+}
+
+/* Sent state */
+.sp-sent {
+  text-align: center;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sp-sent-icon { font-size: 2.5rem; }
+
+.sp-sent-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--navy-dark);
+}
+
+.sp-sent-desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 300px;
+}
+
+.sp-sent-reset {
+  margin-top: 0.5rem;
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 1.25rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.sp-sent-reset:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+
+/* ─── BOTTOM CTA ─────────────────────────────────────── */
+.sp-cta-section {
+  background: var(--navy-dark);
+  padding: 80px 5%;
+  text-align: center;
+}
+
+.sp-cta-inner {
+  max-width: 540px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.sp-cta-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.sp-cta-sub {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.7;
+}
+
+/* ─── RESPONSIVE ─────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sp-faq-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .sp-form-inner {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .sp-faq-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .sp-channels-grid {
+    grid-template-columns: 1fr;
+  }
+}

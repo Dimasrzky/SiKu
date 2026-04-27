@@ -39,7 +39,7 @@ export default function HomePage() {
           {/* Konten kiri */}
           <div>
             <div className="badge-free">
-              Program DEMO Gratis 1 Bulan — Terbatas!
+              Program DEMO Gratis 1 Bulan!
             </div>
 
             <h1>
@@ -71,8 +71,8 @@ export default function HomePage() {
                 <div className="stat-label">Setup &amp; onboarding</div>
               </div>
               <div>
-                <div className="stat-num">4 Jenjang</div>
-                <div className="stat-label">TK · SD · SMP · SMA</div>
+                <div className="stat-num">5 Jenjang</div>
+                <div className="stat-label">TK · SD · SMP · SMA · SMK</div>
               </div>
             </div>
           </div>
@@ -149,7 +149,7 @@ export default function HomePage() {
           <div style={{ textAlign: 'center' }}>
             <div className="section-label">Masalah Yang Sering Terjadi</div>
             <h2 className="section-title">
-              Bendahara sekolah & yayasan kewalahan?
+              Keuangan kewalahan?
               <br />Kami paham.
             </h2>
             <p className="section-subtitle" style={{ margin: '0 auto', textAlign: 'center' }}>
@@ -205,7 +205,7 @@ export default function HomePage() {
           </h2>
           <p className="section-subtitle">
             Dirancang khusus untuk alur kerja keuangan sekolah swasta Indonesia,
-            dari TK hingga SMA.
+            dari TK hingga SMA/SMK.
           </p>
 
           <div className="features-grid">
@@ -312,7 +312,6 @@ export default function HomePage() {
       <section className="section features-bg">
         <div className="section-inner">
           <div style={{ textAlign: 'center' }}>
-            <div className="section-label">Dari Bendahara Sekolah</div>
             <h2 className="section-title">Yang mereka rasakan</h2>
           </div>
 
@@ -364,7 +363,6 @@ export default function HomePage() {
       {/* ─── PRICING CTA ──────────────────────────── */}
       <section className="section pricing-section" id="harga">
         <div className="pricing-inner">
-          <div className="pricing-label">Program Pilot — Terbatas</div>
           <h2 className="pricing-title">
             1 Bulan Gratis.
             <br />Tanpa syarat tersembunyi.

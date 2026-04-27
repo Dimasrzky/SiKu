@@ -18,7 +18,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="footer-copy">
-        &copy; {new Date().getFullYear()} SiKu. Dibuat dengan ❤️ untuk kemajuan pendidikan Indonesia.
+        &copy; {new Date().getFullYear()} SiKu. Dibuat dengan untuk kemajuan pendidikan Indonesia.
         <br />
         <span style={{ opacity: 0.5, fontSize: '0.7rem' }}>
           * Testimoni merupakan ilustrasi representatif. Program demo gratis berlaku untuk pendaftar terpilih.

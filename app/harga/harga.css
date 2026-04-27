@@ -1,0 +1,293 @@
+/* ─── HERO ──────────────────────────────────────────── */
+.ph-hero {
+  padding: 140px 5% 80px;
+  background: var(--navy-dark);
+  text-align: center;
+}
+
+.ph-hero-inner {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.ph-badge {
+  display: inline-block;
+  background: rgba(5, 150, 105, 0.15);
+  color: var(--emerald-light);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  border-radius: 100px;
+  padding: 5px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  letter-spacing: 0.04em;
+}
+
+.ph-h1 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.22;
+  margin-bottom: 1.1rem;
+}
+
+.ph-desc {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.75;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* ─── DARK PRICING SECTION ──────────────────────────── */
+.ph-dark {
+  background: #0d1117;
+  padding: 60px 5% 80px;
+}
+
+.ph-cards {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.ph-card {
+  background: #161b27;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ph-card--popular {
+  border: 1.5px solid #059669;
+  box-shadow: 0 0 32px rgba(5, 150, 105, 0.18), 0 0 0 1px rgba(5, 150, 105, 0.1);
+  background: #161b27;
+}
+
+.ph-popular-badge {
+  display: inline-block;
+  background: rgba(5, 150, 105, 0.15);
+  color: #10B981;
+  border: 1px solid rgba(5, 150, 105, 0.35);
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 14px;
+  margin-bottom: 1.25rem;
+  width: fit-content;
+}
+
+.ph-plan-name {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.3rem;
+}
+
+.ph-plan-tagline {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 1.5rem;
+}
+
+.ph-price {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  margin-bottom: 0.3rem;
+}
+
+.ph-period {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 1.75rem;
+}
+
+/* ─── FEATURE LIST ──────────────────────────────────── */
+.ph-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-bottom: 2rem;
+  flex: 1;
+}
+
+.ph-features li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.875rem;
+}
+
+.ph-feat-on {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.ph-feat-off {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.ph-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ph-feat-on .ph-dot {
+  background: #10B981;
+}
+
+.ph-feat-off .ph-dot {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ─── CTA BUTTONS ───────────────────────────────────── */
+.ph-cta {
+  display: block;
+  text-align: center;
+  padding: 0.75rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ph-cta:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.ph-cta--popular {
+  background: #059669;
+  color: #fff;
+  border-color: transparent;
+}
+
+.ph-cta--popular:hover {
+  background: #10B981;
+  color: #fff;
+}
+
+.ph-note {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.8rem;
+  margin-top: 2.25rem;
+}
+
+/* ─── FAQ ────────────────────────────────────────────── */
+.ph-faq-section {
+  background: var(--cream);
+  padding: 80px 5%;
+}
+
+.ph-faq-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.ph-faq-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 700;
+  color: var(--navy-dark);
+  margin: 0.5rem 0 2.5rem;
+}
+
+.ph-faq-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  text-align: left;
+}
+
+.ph-faq-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem 1.75rem;
+}
+
+.ph-faq-q {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--navy-dark);
+  margin-bottom: 0.6rem;
+}
+
+.ph-faq-a {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* ─── BOTTOM CTA ─────────────────────────────────────── */
+.ph-cta-section {
+  background: var(--navy-dark);
+  padding: 80px 5%;
+  text-align: center;
+}
+
+.ph-cta-inner {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ph-cta-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.ph-cta-sub {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.7;
+  max-width: 480px;
+}
+
+/* ─── RESPONSIVE ─────────────────────────────────────── */
+@media (max-width: 860px) {
+  .ph-cards {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+  }
+
+  .ph-faq-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .ph-hero {
+    padding: 120px 6% 60px;
+  }
+
+  .ph-dark {
+    padding: 48px 6% 64px;
+  }
+}
