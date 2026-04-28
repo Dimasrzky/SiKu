@@ -3,15 +3,24 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
+import {
+  LayoutDashboard,
+  Users,
+  Receipt,
+  Banknote,
+  BarChart2,
+  Settings,
+  LogOut,
+} from 'lucide-react'
 import './dashboard.css'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',            label: 'Dashboard',   icon: '◉'  },
-  { href: '/dashboard/siswa',      label: 'Data Siswa',  icon: '👥' },
-  { href: '/dashboard/tagihan',    label: 'Tagihan SPP', icon: '💰' },
-  { href: '/dashboard/pembayaran', label: 'Pembayaran',  icon: '🏦' },
-  { href: '/dashboard/laporan',    label: 'Laporan',     icon: '📊' },
-  { href: '/dashboard/pengaturan', label: 'Pengaturan',  icon: '⚙️' },
+  { href: '/dashboard',            label: 'Dashboard',  icon: LayoutDashboard },
+  { href: '/dashboard/siswa',      label: 'Data Siswa', icon: Users           },
+  { href: '/dashboard/tagihan',    label: 'Tagihan',    icon: Receipt         },
+  { href: '/dashboard/pembayaran', label: 'Pembayaran', icon: Banknote        },
+  { href: '/dashboard/laporan',    label: 'Laporan',    icon: BarChart2       },
+  { href: '/dashboard/pengaturan', label: 'Pengaturan', icon: Settings        },
 ]
 
 interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string }
@@ -66,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               href={item.href}
               className={`sidebar-item${pathname === item.href ? ' active' : ''}`}
             >
-              <span className="sidebar-icon">{item.icon}</span>
+              <item.icon size={18} className="sidebar-icon" />
               <span>{item.label}</span>
             </Link>
           ))}
@@ -78,7 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="sidebar-user-name">{user?.nama}</div>
             <div className="sidebar-user-role">{user?.jabatan}</div>
           </div>
-          <button className="sidebar-logout" onClick={handleLogout} title="Keluar">⏻</button>
+          <button className="sidebar-logout" onClick={handleLogout} title="Keluar"><LogOut size={16} /></button>
         </div>
       </aside>
 

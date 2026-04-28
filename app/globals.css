@@ -862,7 +862,7 @@ body {
 }
 
 .form-page-back {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   color: var(--text-muted);

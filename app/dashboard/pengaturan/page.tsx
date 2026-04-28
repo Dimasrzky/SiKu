@@ -161,13 +161,13 @@ export default function PengaturanPage() {
         <Toggle label="Konfirmasi pembayaran otomatis"    sub="Kirim WA konfirmasi ke orang tua setelah bayar"       defaultOn={true}  />
         <Toggle label="Laporan bulanan ke kepala sekolah" sub="Kirim ringkasan keuangan tiap awal bulan"             defaultOn={true}  />
         <div style={{ padding:'0.75rem 0 0', fontSize:'0.78rem', color:'var(--text-muted)' }}>
-          📌 Notifikasi WA dikirim menggunakan Fonnte API. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
+          Notifikasi WA dikirim menggunakan Fonnte API. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
         </div>
       </Section>
 
       {/* Info paket demo */}
       <div style={{ background:'var(--navy-dark)', borderRadius:12, padding:'1.5rem', color:'#fff' }}>
-        <div style={{ fontWeight:700, marginBottom:'0.5rem', color:'var(--emerald-light)' }}>🚀 Paket Demo Aktif</div>
+        <div style={{ fontWeight:700, marginBottom:'0.5rem', color:'var(--emerald-light)' }}>Paket Demo Aktif</div>
         <div style={{ fontSize:'0.85rem', color:'rgba(255,255,255,0.7)', lineHeight:1.7, marginBottom:'1rem' }}>
           Anda menggunakan SiKu versi demo gratis (sisa <strong>82 hari</strong>). Semua fitur tersedia penuh.
           Setelah masa demo, Anda dapat berlangganan sesuai jumlah siswa.

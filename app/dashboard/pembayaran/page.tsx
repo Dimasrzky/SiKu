@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { TrendingUp, CreditCard, Clock, Receipt, Search } from 'lucide-react'
 import { MOCK_PEMBAYARAN, type Pembayaran } from '@/lib/mockData'
 
 const formatRp = (n: number) =>
@@ -15,9 +16,8 @@ const METODE_CFG: Record<string, { bg:string; color:string }> = {
 export default function PembayaranPage() {
   const [filterBulan,  setFilterBulan]  = useState('Semua')
   const [filterMetode, setFilterMetode] = useState('Semua')
-  const [filterStatus, setFilterStatus] = useState('Semua')
   const [search,       setSearch]       = useState('')
-  const [list, setList]                 = useState<Pembayaran[]>(MOCK_PEMBAYARAN)
+  const [list]                 = useState<Pembayaran[]>(MOCK_PEMBAYARAN)
 
   const bulanOptions = ['Semua', ...Array.from(new Set(list.map(p => p.bulan)))]
 
@@ -26,21 +26,15 @@ export default function PembayaranPage() {
     return list.filter(p =>
       (filterBulan  === 'Semua' || p.bulan   === filterBulan) &&
       (filterMetode === 'Semua' || p.metode  === filterMetode) &&
-      (filterStatus === 'Semua' || p.status  === filterStatus) &&
       (p.namaSiswa.toLowerCase().includes(q) || p.noResi.toLowerCase().includes(q))
     )
-  }, [list, filterBulan, filterMetode, filterStatus, search])
+  }, [list, filterBulan, filterMetode, search])
 
   const totalMasuk    = filtered.filter(p => p.status === 'terkonfirmasi').reduce((s, p) => s + p.nominal, 0)
   const jmlTransfer   = filtered.filter(p => p.metode === 'Transfer').length
   const jmlQRIS       = filtered.filter(p => p.metode === 'QRIS').length
   const jmlTunai      = filtered.filter(p => p.metode === 'Tunai').length
   const jmlMenunggu   = filtered.filter(p => p.status === 'menunggu').length
-
-  // Konfirmasi pembayaran yang menunggu
-  const konfirmasi = (id: string) => {
-    setList(prev => prev.map(p => p.id === id ? { ...p, status:'terkonfirmasi' } : p))
-  }
 
   return (
     <div className="dashboard-content">
@@ -60,37 +54,39 @@ export default function PembayaranPage() {
           <div className="stat-card-label">Total Masuk</div>
           <div className="stat-card-value" style={{ fontSize:'1.2rem' }}>{formatRp(totalMasuk)}</div>
           <div className="stat-card-sub">Transaksi terkonfirmasi</div>
+          <TrendingUp className="stat-card-bg-icon" />
         </div>
         <div className="stat-card stat-card-info">
           <div className="stat-card-label">Metode Pembayaran</div>
           <div className="stat-card-value" style={{ fontSize:'1.1rem' }}>{jmlTransfer}T · {jmlQRIS}Q · {jmlTunai}C</div>
           <div className="stat-card-sub">Transfer · QRIS · Tunai</div>
+          <CreditCard className="stat-card-bg-icon" />
         </div>
         <div className={`stat-card ${jmlMenunggu > 0 ? 'stat-card-warning' : ''}`}>
           <div className="stat-card-label">Menunggu Konfirmasi</div>
           <div className="stat-card-value">{jmlMenunggu}</div>
           <div className="stat-card-sub">{jmlMenunggu > 0 ? 'Perlu dikonfirmasi' : 'Semua terkonfirmasi ✓'}</div>
+          <Clock className="stat-card-bg-icon" />
         </div>
         <div className="stat-card">
           <div className="stat-card-label">Total Transaksi</div>
           <div className="stat-card-value">{filtered.length}</div>
           <div className="stat-card-sub">Dari semua filter aktif</div>
+          <Receipt className="stat-card-bg-icon" />
         </div>
       </div>
 
       {/* Filter */}
       <div className="filter-bar">
-        <input className="filter-search" placeholder="🔍  Cari nama siswa atau no. resi..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="filter-search-wrap">
+          <span className="filter-search-icon"><Search size={15} /></span>
+          <input className="filter-search" placeholder="Cari nama siswa atau no. resi..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
         <select className="filter-select" value={filterBulan} onChange={e => setFilterBulan(e.target.value)}>
           {bulanOptions.map(b => <option key={b}>{b}</option>)}
         </select>
         <select className="filter-select" value={filterMetode} onChange={e => setFilterMetode(e.target.value)}>
           {['Semua','Transfer','QRIS','Tunai'].map(m => <option key={m}>{m}</option>)}
-        </select>
-        <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="Semua">Semua Status</option>
-          <option value="terkonfirmasi">Terkonfirmasi</option>
-          <option value="menunggu">Menunggu</option>
         </select>
         <div className="filter-count">{filtered.length} transaksi</div>
       </div>
@@ -102,7 +98,7 @@ export default function PembayaranPage() {
             <tr>
               <th>No</th><th>No. Resi</th><th>Nama Siswa</th><th>Kelas</th>
               <th>Periode</th><th>Nominal</th><th>Metode</th>
-              <th>Tanggal</th><th>Status</th><th>Aksi</th>
+              <th>Tanggal</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -130,28 +126,11 @@ export default function PembayaranPage() {
                       : <span className="badge-terlambat">Menunggu</span>
                     }
                   </td>
-                  <td>
-                    {p.status === 'menunggu' ? (
-                      <button
-                        className="btn-wa"
-                        style={{ background:'#D1FAE5', color:'#065F46' }}
-                        onClick={() => konfirmasi(p.id)}
-                      >
-                        ✓ Konfirmasi
-                      </button>
-                    ) : (
-                      <span className="td-done">✓ Done</span>
-                    )}
-                  </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
-      </div>
-
-      <div style={{ marginTop:'1rem', fontSize:'0.75rem', color:'var(--text-muted)' }}>
-        📌 Klik <strong>Konfirmasi</strong> pada transaksi yang menunggu untuk mengubah status menjadi terkonfirmasi (demo — tidak tersimpan permanen).
       </div>
     </div>
   )

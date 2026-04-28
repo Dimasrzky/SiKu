@@ -1,11 +1,24 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect } from 'react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import './harga.css'
 
-const PLANS = [
+type Plan = {
+  name: string
+  tagline: string
+  price: string
+  period: string
+  popular: boolean
+  comingSoon?: boolean
+  cta: string
+  href: string
+  features: { label: string; on: boolean }[]
+}
+
+const PLANS: Plan[] = [
   {
     name: 'Starter',
     tagline: 'Sekolah kecil, s/d 200 siswa',
@@ -46,8 +59,9 @@ const PLANS = [
     price: 'Rp 1.499.000',
     period: 'per yayasan / bulan',
     popular: false,
-    cta: 'Hubungi Kami',
-    href: '/daftar',
+    comingSoon: true,
+    cta: 'Segera Hadir',
+    href: '#',
     features: [
       { label: 'Semua fitur Sekolah',               on: true },
       { label: 'Kelola banyak unit sekolah',        on: true },
@@ -79,6 +93,23 @@ const FAQS = [
 ]
 
 export default function HargaPage() {
+  useEffect(() => {
+    const els = document.querySelectorAll('[data-animate]')
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible')
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      { threshold: 0.12 }
+    )
+    els.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <>
       <Navbar />
@@ -93,7 +124,7 @@ export default function HargaPage() {
               untuk sekolah Anda
             </h1>
             <p className="ph-desc">
-              Mulai dengan demo gratis 1 bulan penuh — tanpa kartu kredit,
+              Mulai dengan demo gratis 1 bulan penuh tanpa kartu kredit,
               tanpa syarat tersembunyi. Pilih paket setelah Anda merasakan manfaatnya.
             </p>
           </div>
@@ -102,13 +133,22 @@ export default function HargaPage() {
         {/* ─── PRICING CARDS ────────────────────────────── */}
         <section className="ph-dark">
           <div className="ph-cards">
-            {PLANS.map((plan) => (
+            {PLANS.map((plan, i) => (
               <div
                 key={plan.name}
-                className={`ph-card${plan.popular ? ' ph-card--popular' : ''}`}
+                data-animate
+                style={{ '--delay': `${i * 0.13}s` } as React.CSSProperties}
+                className={[
+                  'ph-card',
+                  plan.popular ? 'ph-card--popular' : '',
+                  plan.comingSoon ? 'ph-card--locked' : '',
+                ].join(' ').trim()}
               >
                 {plan.popular && (
                   <div className="ph-popular-badge">Paling populer</div>
+                )}
+                {plan.comingSoon && (
+                  <div className="ph-coming-soon-badge">Coming Soon</div>
                 )}
 
                 <div className="ph-plan-name">{plan.name}</div>
@@ -126,12 +166,18 @@ export default function HargaPage() {
                   ))}
                 </ul>
 
-                <Link
-                  href={plan.href}
-                  className={`ph-cta${plan.popular ? ' ph-cta--popular' : ''}`}
-                >
-                  {plan.cta}
-                </Link>
+                {plan.comingSoon ? (
+                  <button disabled className="ph-cta ph-cta--locked">
+                    {plan.cta}
+                  </button>
+                ) : (
+                  <Link
+                    href={plan.href}
+                    className={`ph-cta${plan.popular ? ' ph-cta--popular' : ''}`}
+                  >
+                    {plan.cta}
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -148,8 +194,13 @@ export default function HargaPage() {
             <h2 className="ph-faq-title">Ada yang ingin ditanyakan?</h2>
 
             <div className="ph-faq-grid">
-              {FAQS.map((faq) => (
-                <div key={faq.q} className="ph-faq-card">
+              {FAQS.map((faq, i) => (
+                <div
+                  key={faq.q}
+                  data-animate
+                  style={{ '--delay': `${i * 0.1}s` } as React.CSSProperties}
+                  className="ph-faq-card"
+                >
                   <div className="ph-faq-q">{faq.q}</div>
                   <div className="ph-faq-a">{faq.a}</div>
                 </div>

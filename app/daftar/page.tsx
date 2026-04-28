@@ -117,12 +117,10 @@ export default function DaftarPage() {
       <div className="form-page">
         <div className="form-page-inner">
 
-          {/* Tombol kembali */}
-          <Link href="/" className="form-page-back">
-            ← Kembali ke beranda
-          </Link>
-
           <div className="form-wrapper">
+            <Link href="/" className="form-page-back">
+              ← Kembali ke beranda
+            </Link>
             {!isSuccess ? (
               <>
                 <div className="form-header-label">Demo Gratis 1 Bulan</div>

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { MOCK_TAGIHAN, type Tagihan } from '@/lib/mockData'
+import { FileText, Wallet, UserCheck, AlertCircle } from 'lucide-react'
+import { MOCK_TAGIHAN, MOCK_SISWA, MOCK_TAGIHAN_SISWA, type Tagihan } from '@/lib/mockData'
 
 const formatRp = (n: number) =>
   new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', minimumFractionDigits:0 }).format(n)
@@ -12,9 +13,19 @@ const STATUS_CFG = {
   draft:   { cls:'badge-terlambat', label:'Draft'  },
 }
 
+const STATUS_SISWA: Record<string, { cls: string; label: string }> = {
+  lunas:     { cls: 'badge-lunas',     label: 'Lunas'      },
+  belum:     { cls: 'badge-belum',     label: 'Belum Bayar' },
+  terlambat: { cls: 'badge-terlambat', label: 'Terlambat'  },
+}
+
 function DetailModal({ tagihan, onClose }: { tagihan: Tagihan; onClose: () => void }) {
-  const belum = tagihan.totalSiswa - tagihan.sudahBayar
-  const persen = Math.round((tagihan.sudahBayar / tagihan.totalSiswa) * 100)
+  const tsList     = MOCK_TAGIHAN_SISWA.filter(ts => ts.tagihanId === tagihan.id)
+  const statusMap  = Object.fromEntries(tsList.map(ts => [ts.siswaId, ts]))
+  const siswaKelas = MOCK_SISWA.filter(s => s.kelas.startsWith(tagihan.kelas + '-'))
+  const sudahBayar = tsList.filter(ts => ts.status === 'lunas' || ts.status === 'terlambat').length
+  const belum      = tsList.length - sudahBayar
+  const persen     = tsList.length > 0 ? Math.round((sudahBayar / tsList.length) * 100) : 0
 
   return (
     <div style={overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -51,8 +62,42 @@ function DetailModal({ tagihan, onClose }: { tagihan: Tagihan; onClose: () => vo
             <div style={{ width:`${persen}%`, height:'100%', background:'var(--emerald)', borderRadius:100 }} />
           </div>
           <div style={{ display:'flex', justifyContent:'space-between', marginTop:6, fontSize:'0.78rem', color:'var(--text-muted)' }}>
-            <span>✅ {tagihan.sudahBayar} siswa lunas</span>
+            <span>✅ {sudahBayar} siswa lunas</span>
             <span>⏳ {belum} siswa belum</span>
+          </div>
+        </div>
+
+        {/* Tabel daftar siswa */}
+        <div style={{ marginBottom:'1.25rem' }}>
+          <div style={{ fontWeight:700, fontSize:'0.82rem', color:'var(--navy-dark)', marginBottom:'0.6rem' }}>
+            Daftar Siswa Kelas {tagihan.kelas}
+          </div>
+          <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.8rem' }}>
+              <thead>
+                <tr style={{ background:'#F8FAFC', borderBottom:'1.5px solid var(--border)' }}>
+                  <th style={thStyle}>NIS</th>
+                  <th style={thStyle}>Nama Siswa</th>
+                  <th style={{ ...thStyle, textAlign:'right' }}>Nominal</th>
+                  <th style={{ ...thStyle, textAlign:'center' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {siswaKelas.map((s, i) => {
+                  const st = statusMap[s.id]?.status ?? 'belum'
+                  return (
+                    <tr key={s.id} style={{ borderBottom: i < siswaKelas.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                      <td style={{ ...tdStyle, fontFamily:'monospace', color:'var(--text-muted)' }}>{s.nis}</td>
+                      <td style={{ ...tdStyle, fontWeight:600, color:'var(--navy-dark)' }}>{s.nama}</td>
+                      <td style={{ ...tdStyle, textAlign:'right' }}>{formatRp(tagihan.nominal)}</td>
+                      <td style={{ ...tdStyle, textAlign:'center' }}>
+                        <span className={STATUS_SISWA[st].cls}>{STATUS_SISWA[st].label}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -95,8 +140,8 @@ export default function TagihanPage() {
 
       <div className="dashboard-header">
         <div>
-          <h1 className="dashboard-title">Tagihan SPP</h1>
-          <p className="dashboard-subtitle">Kelola tagihan SPP per kelas per bulan</p>
+          <h1 className="dashboard-title">Tagihan</h1>
+          <p className="dashboard-subtitle">Kelola tagihan per kelas per bulan</p>
         </div>
         <button
           className="btn-export"
@@ -110,15 +155,16 @@ export default function TagihanPage() {
       {/* Stats */}
       <div className="stats-grid" style={{ marginBottom:'1.25rem' }}>
         {[
-          { label:'Total Target',    value: formatRp(totalTagihan),   sub:`${filtered.length} tagihan aktif`,       cls:'' },
-          { label:'Terkumpul',       value: formatRp(totalTerkumpul), sub:'Sudah masuk ke kas sekolah',             cls:'stat-card-success' },
-          { label:'Siswa Lunas',     value: `${totalLunas}/${totalSiswa}`, sub:'Dari semua tagihan terpilih',       cls:'stat-card-info' },
-          { label:'Sisa Tagihan',    value: formatRp(totalTagihan - totalTerkumpul), sub:'Belum terkumpul',         cls:'stat-card-warning' },
+          { label:'Total Target',    value: formatRp(totalTagihan),              sub:`${filtered.length} tagihan aktif`,  cls:'',                 icon: FileText    },
+          { label:'Terkumpul',       value: formatRp(totalTerkumpul),            sub:'Sudah masuk ke kas sekolah',        cls:'stat-card-success', icon: Wallet      },
+          { label:'Siswa Lunas',     value: `${totalLunas}/${totalSiswa}`,       sub:'Dari semua tagihan terpilih',       cls:'stat-card-info',    icon: UserCheck   },
+          { label:'Sisa Tagihan',    value: formatRp(totalTagihan-totalTerkumpul), sub:'Belum terkumpul',                 cls:'stat-card-warning', icon: AlertCircle },
         ].map(s => (
           <div key={s.label} className={`stat-card ${s.cls}`}>
             <div className="stat-card-label">{s.label}</div>
             <div className="stat-card-value" style={{ fontSize:'1.15rem' }}>{s.value}</div>
             <div className="stat-card-sub">{s.sub}</div>
+            <s.icon className="stat-card-bg-icon" />
           </div>
         ))}
       </div>
@@ -147,8 +193,11 @@ export default function TagihanPage() {
           </thead>
           <tbody>
             {filtered.map(t => {
-              const pct = Math.round((t.sudahBayar / t.totalSiswa) * 100)
-              const cfg = STATUS_CFG[t.status]
+              const tsList = MOCK_TAGIHAN_SISWA.filter(ts => ts.tagihanId === t.id)
+              const bayar  = tsList.filter(ts => ts.status === 'lunas' || ts.status === 'terlambat').length
+              const total  = tsList.length
+              const pct    = total > 0 ? Math.round((bayar / total) * 100) : 0
+              const cfg    = STATUS_CFG[t.status]
               return (
                 <tr key={t.id}>
                   <td className="td-nis">{t.id}</td>
@@ -158,7 +207,7 @@ export default function TagihanPage() {
                   <td className="td-nominal">{formatRp(t.nominal)}</td>
                   <td style={{ minWidth:130 }}>
                     <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginBottom:3 }}>
-                      {t.sudahBayar}/{t.totalSiswa} siswa ({pct}%)
+                      {bayar}/{total} siswa ({pct}%)
                     </div>
                     <div style={{ height:6, background:'#F1F5F9', borderRadius:100, overflow:'hidden' }}>
                       <div style={{ width:`${pct}%`, height:'100%', background:'var(--emerald)', borderRadius:100 }} />
@@ -181,7 +230,9 @@ export default function TagihanPage() {
   )
 }
 
-const overlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1rem' }
-const modalBox: React.CSSProperties = { background:'#fff', borderRadius:16, padding:'2rem', width:'100%', maxWidth:540, boxShadow:'0 20px 60px rgba(0,0,0,0.2)', maxHeight:'90vh', overflowY:'auto' }
-const btnPrimary: React.CSSProperties = { background:'var(--navy)', color:'#fff', border:'none', padding:'0.65rem 1.25rem', borderRadius:8, fontWeight:700, fontSize:'0.85rem', cursor:'pointer', fontFamily:'inherit' }
+const overlay:      React.CSSProperties = { position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1rem' }
+const modalBox:     React.CSSProperties = { background:'#fff', borderRadius:16, padding:'2rem', width:'100%', maxWidth:580, boxShadow:'0 20px 60px rgba(0,0,0,0.2)', maxHeight:'90vh', overflowY:'auto' }
+const btnPrimary:   React.CSSProperties = { background:'var(--navy)', color:'#fff', border:'none', padding:'0.65rem 1.25rem', borderRadius:8, fontWeight:700, fontSize:'0.85rem', cursor:'pointer', fontFamily:'inherit' }
 const btnSecondary: React.CSSProperties = { background:'transparent', color:'var(--navy)', border:'1.5px solid var(--navy)', padding:'0.65rem 1rem', borderRadius:8, fontWeight:600, fontSize:'0.85rem', cursor:'pointer', fontFamily:'inherit' }
+const thStyle:      React.CSSProperties = { padding:'0.55rem 0.75rem', textAlign:'left', fontSize:'0.72rem', fontWeight:700, color:'var(--text-muted)', letterSpacing:'0.03em', whiteSpace:'nowrap' }
+const tdStyle:      React.CSSProperties = { padding:'0.55rem 0.75rem', fontSize:'0.8rem', color:'var(--text-dark)' }
