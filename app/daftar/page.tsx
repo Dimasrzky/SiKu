@@ -299,9 +299,10 @@ export default function DaftarPage() {
                 </button>
 
                 <div className="form-privacy">
-                  🔒 Data Anda aman dan tidak akan disebarkan ke pihak ketiga manapun.
-                  <br />
-                  Dengan mendaftar, Anda setuju untuk dihubungi oleh tim SiKu melalui WhatsApp.
+                  <span>
+                    Data Anda aman dan tidak akan disebarkan ke pihak ketiga manapun.<br />
+                    Dengan mendaftar, Anda setuju untuk dihubungi oleh tim SiKu melalui WhatsApp.
+                  </span>
                 </div>
               </>
             ) : (

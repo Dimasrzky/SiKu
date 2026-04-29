@@ -998,9 +998,17 @@ body {
 .form-privacy {
   font-size: 0.75rem;
   color: var(--text-muted);
-  text-align: center;
   margin-top: 1rem;
   line-height: 1.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.form-privacy-icon {
+  flex-shrink: 0;
 }
 
 /* ─── SUCCESS STATE ──────────────────────────────── */
@@ -1142,6 +1150,9 @@ body {
   font-weight: 600;
   color: var(--amber);
   margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .demo-creds-row {

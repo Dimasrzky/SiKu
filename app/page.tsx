@@ -403,7 +403,7 @@ export default function HomePage() {
               ))}
             </div>
             <Link href="/daftar" className="btn-cta-big">
-              Mulai Demo Gratis Sekarang →
+              Mulai Demo Gratis Sekarang
             </Link>
             <div className="cta-note">
               Setelah 1 bulan, pilih lanjut atau berhenti — tanpa paksaan

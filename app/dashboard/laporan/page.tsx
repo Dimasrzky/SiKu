@@ -504,9 +504,6 @@ export default function LaporanPage() {
           <div>• Siswa belum bayar: <strong>{totalSiswa - totalLunas} siswa</strong></div>
           <div>• Sisa tunggakan: <strong>{formatRp(totalTunggakan)}</strong></div>
         </div>
-        <div style={{ marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid rgba(5,150,105,0.15)', fontSize:'0.78rem', color:'var(--text-muted)' }}>
-          💡 Klik tombol <strong>Export Laporan PDF</strong> di atas untuk mengunduh laporan dalam format PDF.
-        </div>
       </div>
     </div>
   )

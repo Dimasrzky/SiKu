@@ -280,7 +280,7 @@ export default function SiswaPage() {
             style={{ background:'var(--navy)', color:'#fff', borderColor:'var(--navy)' }}
             onClick={() => setShowModal(true)}
           >
-            + Tambah Siswa
+            Tambah Siswa
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { TrendingUp, CreditCard, Receipt, Search, Landmark, Plus, X, CheckCircle2, Circle, Trash2 } from 'lucide-react'
+import { TrendingUp, CreditCard, Receipt, Search, Landmark, Plus, X, CheckCircle2, Circle, Trash2, GripVertical } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { MOCK_PEMBAYARAN, MOCK_USER, type Pembayaran } from '@/lib/mockData'
@@ -37,7 +37,9 @@ export default function PembayaranPage() {
   const [rekeningList, setRekeningList] = useState<Rekening[]>(INIT_REKENING)
   const [showRekening, setShowRekening] = useState(false)
   const [showAddForm,  setShowAddForm]  = useState(false)
-  const [formRek, setFormRek] = useState({ bank:'', noRek:'', atasNama:'', jenis:'Transfer' as Rekening['jenis'] })
+  const [formRek,  setFormRek]  = useState({ bank:'', noRek:'', atasNama:'', jenis:'Transfer' as Rekening['jenis'] })
+  const [dragIdx,  setDragIdx]  = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
 
   const bulanOptions = ['Semua', ...Array.from(new Set(list.map(p => p.bulan)))]
 
@@ -185,6 +187,16 @@ export default function PembayaranPage() {
   const deleteRekening = (id: string) =>
     setRekeningList(prev => prev.filter(r => r.id !== id))
 
+  const handleDrop = (dropIdx: number) => {
+    if (dragIdx === null || dragIdx === dropIdx) { setDragIdx(null); setDragOver(null); return }
+    const updated = [...rekeningList]
+    const [moved] = updated.splice(dragIdx, 1)
+    updated.splice(dropIdx, 0, moved)
+    setRekeningList(updated)
+    setDragIdx(null)
+    setDragOver(null)
+  }
+
   return (
     <div className="dashboard-content">
       <div className="dashboard-header">
@@ -220,13 +232,28 @@ export default function PembayaranPage() {
         <div
           className="stat-card"
           onClick={() => setShowRekening(true)}
-          style={{ cursor:'pointer', borderColor:'var(--navy)', outline:'none' }}
+          style={{
+            cursor: 'pointer',
+            background: 'linear-gradient(135deg, #c3d9f7 0%, #ffffff 100%)',
+            borderLeft: '4px solid #0EA5E9',
+            border: '1px solid #BAE6FD',
+            borderLeftWidth: 4,
+            borderLeftColor: '#0EA5E9',
+            outline: 'none',
+          }}
           title="Lihat detail rekening"
         >
-          <div className="stat-card-label">Kartu Rekening</div>
-          <div className="stat-card-value">{rekeningList.length}</div>
-          <div className="stat-card-sub">{rekeningList.filter(r=>r.aktif).length} aktif · klik untuk detail</div>
-          <Landmark className="stat-card-bg-icon" />
+          <div className="stat-card-label" style={{ color:'#0369A1' }}>Kartu Rekening</div>
+          <div
+            className="stat-card-value"
+            style={{ fontSize:'1rem', fontWeight:800, color:'#0C4A6E', lineHeight:1.2, wordBreak:'break-word' }}
+          >
+            {rekeningList[0]?.bank ?? 'Belum ada'}
+          </div>
+          <div className="stat-card-sub" style={{ color:'#0369A1' }}>
+            {rekeningList.length} rekening · {rekeningList.filter(r=>r.aktif).length} aktif
+          </div>
+          <Landmark className="stat-card-bg-icon" style={{ color:'#3c4d61' }} />
         </div>
       </div>
 
@@ -310,31 +337,66 @@ export default function PembayaranPage() {
             </div>
 
             {/* Rekening list */}
-            <div style={{ padding:'1rem 1.5rem', display:'flex', flexDirection:'column', gap:'0.75rem' }}>
-              {rekeningList.map(r => {
+            <div style={{ padding:'1rem 1.5rem', display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+              {rekeningList.length === 0 && (
+                <div style={{ textAlign:'center', color:'var(--text-muted)', padding:'1.5rem 0', fontSize:'0.875rem' }}>Belum ada rekening terdaftar</div>
+              )}
+              {rekeningList.map((r, i) => {
                 const cfg = BANK_COLOR[r.jenis]
+                const isPriority = i === 0
+                const isDragging = dragIdx === i
+                const isOver = dragOver === i && dragIdx !== i
                 return (
-                  <div key={r.id} style={{ border:'1.5px solid #E2E8F0', borderRadius:12, padding:'0.875rem 1rem', display:'flex', alignItems:'center', gap:'0.875rem', opacity: r.aktif ? 1 : 0.5 }}>
-                    <div style={{ width:40, height:40, borderRadius:10, background:cfg.bg, color:cfg.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      <Landmark size={18} />
+                  <div
+                    key={r.id}
+                    draggable
+                    onDragStart={() => setDragIdx(i)}
+                    onDragOver={e => { e.preventDefault(); setDragOver(i) }}
+                    onDrop={() => handleDrop(i)}
+                    onDragEnd={() => { setDragIdx(null); setDragOver(null) }}
+                    style={{
+                      border: isPriority ? '2px solid #F59E0B' : isOver ? '1.5px dashed #94A3B8' : '1.5px solid #E2E8F0',
+                      background: isPriority ? '#FFFBEB' : isOver ? '#F8FAFC' : '#fff',
+                      borderRadius: 12,
+                      padding: '0.8rem 0.875rem',
+                      display: 'flex', alignItems: 'center', gap: '0.7rem',
+                      opacity: isDragging ? 0.4 : r.aktif ? 1 : 0.5,
+                      cursor: 'grab',
+                      boxShadow: isPriority ? '0 2px 14px rgba(245,158,11,0.18)' : 'none',
+                      transition: 'opacity 0.15s, border-color 0.15s',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <GripVertical size={15} color="#CBD5E1" style={{ flexShrink:0 }} />
+                    <div style={{ width:38, height:38, borderRadius:10, background: isPriority ? '#FEF3C7' : cfg.bg, color: isPriority ? '#D97706' : cfg.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <Landmark size={17} />
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontWeight:700, fontSize:'0.88rem', color:'var(--navy)' }}>{r.bank}</div>
-                      <div style={{ fontSize:'0.78rem', color:'var(--text-muted)', marginTop:1 }}>{r.atasNama}</div>
-                      {r.noRek !== '-' && <div style={{ fontFamily:'monospace', fontSize:'0.78rem', color:'var(--text-secondary)', marginTop:2 }}>{r.noRek}</div>}
+                      <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                        <span style={{ fontWeight:700, fontSize:'0.87rem', color:'var(--navy)' }}>{r.bank}</span>
+                        {isPriority && (
+                          <span style={{ background:'#FEF3C7', color:'#92400E', fontSize:'0.6rem', fontWeight:700, padding:'1px 7px', borderRadius:20, border:'1px solid #FDE68A', letterSpacing:'0.02em' }}>★ Prioritas</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize:'0.76rem', color:'var(--text-muted)', marginTop:1 }}>{r.atasNama}</div>
+                      {r.noRek && r.noRek !== '-' && (
+                        <div style={{ fontFamily:'monospace', fontSize:'0.75rem', color:'var(--text-secondary)', marginTop:2 }}>{r.noRek}</div>
+                      )}
                     </div>
-                    <span style={{ background:cfg.bg, color:cfg.color, fontSize:'0.68rem', fontWeight:700, padding:'2px 9px', borderRadius:20, flexShrink:0 }}>{r.jenis}</span>
-                    <button onClick={() => toggleAktif(r.id)} style={{ background:'none', border:'none', cursor:'pointer', color: r.aktif ? '#16A34A' : '#94A3B8', display:'flex', flexShrink:0 }} title={r.aktif ? 'Nonaktifkan' : 'Aktifkan'}>
-                      {r.aktif ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                    <span style={{ background:cfg.bg, color:cfg.color, fontSize:'0.67rem', fontWeight:700, padding:'2px 9px', borderRadius:20, flexShrink:0 }}>{r.jenis}</span>
+                    <button onClick={() => toggleAktif(r.id)} style={{ background: r.aktif ? '#F0FDF4' : '#F1F5F9', border:'none', cursor:'pointer', color: r.aktif ? '#16A34A' : '#94A3B8', display:'flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:8, flexShrink:0, transition:'background 0.15s' }} title={r.aktif ? 'Nonaktifkan' : 'Aktifkan'}>
+                      {r.aktif ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                     </button>
-                    <button onClick={() => deleteRekening(r.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#F87171', display:'flex', flexShrink:0 }} title="Hapus">
-                      <Trash2 size={16} />
+                    <button onClick={() => deleteRekening(r.id)} style={{ background:'#FFF1F2', border:'none', cursor:'pointer', color:'#EF4444', display:'flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:8, flexShrink:0, transition:'background 0.15s' }} title="Hapus">
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 )
               })}
-              {rekeningList.length === 0 && (
-                <div style={{ textAlign:'center', color:'var(--text-muted)', padding:'1.5rem 0', fontSize:'0.875rem' }}>Belum ada rekening terdaftar</div>
+              {rekeningList.length > 1 && (
+                <div style={{ fontSize:'0.7rem', color:'#94A3B8', textAlign:'center', paddingTop:'0.25rem' }}>
+                  Seret kartu untuk mengubah urutan prioritas
+                </div>
               )}
             </div>
 

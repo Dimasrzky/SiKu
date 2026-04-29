@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import {KeySquare} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { MOCK_USER } from '@/lib/mockData'
@@ -64,17 +65,16 @@ export default function LoginPage() {
 
         {/* Demo credentials box */}
         <div className="demo-creds">
-          <div className="demo-creds-label">🔑 Akun Demo</div>
-          <div className="demo-creds-row">
-            <span>Email</span>
-            <code>{MOCK_USER.email}</code>
+          <div className="demo-creds-label">
+            <KeySquare size={17} className="form-privacy-icon" />
+            Akun Demo
           </div>
           <div className="demo-creds-row">
             <span>Password</span>
             <code>{MOCK_USER.password}</code>
           </div>
           <button className="demo-autofill" onClick={autoFill}>
-            Isi Otomatis →
+            Isi Otomatis
           </button>
         </div>
 
@@ -112,7 +112,7 @@ export default function LoginPage() {
           disabled={loading}
           style={{ marginTop: '0.5rem' }}
         >
-          {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard →'}
+          {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
         </button>
 
         <div className="form-privacy" style={{ marginTop: '1rem' }}>

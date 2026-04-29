@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { FileText, Wallet, UserCheck, AlertCircle } from 'lucide-react'
+import { FileText, Wallet, UserCheck, AlertCircle, CheckCircle2, TimerIcon } from 'lucide-react'
 import { MOCK_TAGIHAN, MOCK_SISWA, MOCK_TAGIHAN_SISWA, type Tagihan } from '@/lib/mockData'
 
 const formatRp = (n: number) =>
@@ -62,8 +62,8 @@ function DetailModal({ tagihan, onClose }: { tagihan: Tagihan; onClose: () => vo
             <div style={{ width:`${persen}%`, height:'100%', background:'var(--emerald)', borderRadius:100 }} />
           </div>
           <div style={{ display:'flex', justifyContent:'space-between', marginTop:6, fontSize:'0.78rem', color:'var(--text-muted)' }}>
-            <span>✅ {sudahBayar} siswa lunas</span>
-            <span>⏳ {belum} siswa belum</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><CheckCircle2 size={14} className="text-emerald" /> {sudahBayar} siswa lunas</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><TimerIcon size={14} className="text-amber" /> {belum} siswa belum</span>
           </div>
         </div>
 
@@ -148,7 +148,7 @@ export default function TagihanPage() {
           style={{ background:'var(--navy)', color:'#fff', borderColor:'var(--navy)' }}
           onClick={() => alert('Generate tagihan baru akan hadir segera!')}
         >
-          + Generate Tagihan Baru
+          Generate Tagihan Baru
         </button>
       </div>
 

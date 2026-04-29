@@ -189,7 +189,7 @@ export default function PengaturanPage() {
           style={{ marginTop:'1rem', background:'var(--emerald)', color:'#fff', border:'none', padding:'0.75rem 1.75rem', borderRadius:8, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}
           onClick={() => alert('Tim SiKu akan menghubungi Anda untuk upgrade!')}
         >
-          Upgrade Sekarang →
+          Upgrade Sekarang
         </button>
       </div>
     </div>
