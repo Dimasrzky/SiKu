@@ -2,8 +2,15 @@
 
 import Link from 'next/link'
 import { useEffect } from 'react'
+import { Wallet, Landmark, BarChart3, Building2, GraduationCap, FileSpreadsheet, PhoneCall, Clock4, ShieldAlert } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+
+const IkonWA = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+)
 
 export default function HomePage() {
 
@@ -89,8 +96,7 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="mockup-body">
-                <div className="mockup-greeting">Selamat pagi, Bu Sari 👋</div>
-                <div className="mockup-title">Rekap SPP — April 2025</div>
+                <div className="mockup-title">Rekap SPP — April 2026</div>
                 <div className="mockup-stats">
                   <div className="mstat">
                     <div className="mstat-val">187</div>
@@ -130,8 +136,11 @@ export default function HomePage() {
                 ))}
               </div>
               <div className="mockup-footer">
-                <span>
-                  💬 <strong>23 notifikasi WA</strong> terkirim otomatis
+                <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true" style={{ flexShrink:0 }}>
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                  </svg>
+                  <strong>23 notifikasi WA</strong> terkirim otomatis
                 </span>
                 <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>
                   Rp 63.900.000 terkumpul
@@ -162,25 +171,25 @@ export default function HomePage() {
             {[
               {
                 num: '1',
-                icon: '📋',
+                icon: <FileSpreadsheet size={22} />,
                 title: 'Rekap SPP Manual di Excel',
                 desc: 'Data ratusan siswa diinput satu per satu. Rentan salah ketik, susah dicari, sering tidak sinkron antar jenjang.',
               },
               {
                 num: '2',
-                icon: '📞',
+                icon: <PhoneCall size={22} />,
                 title: 'Menghubungi Orang Tua Secara Manual',
                 desc: 'Reminder tunggakan SPP lewat telepon atau WhatsApp satu-satu. Menyita waktu, sering tidak tersampaikan.',
               },
               {
                 num: '3',
-                icon: '📑',
+                icon: <Clock4 size={22} />,
                 title: 'Laporan Keuangan yang Tidak Real-time',
                 desc: 'Kepala sekolah dan yayasan harus menunggu akhir bulan untuk melihat kondisi keuangan. Keputusan terlambat.',
               },
               {
                 num: '4',
-                icon: '🔒',
+                icon: <ShieldAlert size={22} />,
                 title: 'Data Berceceran & Tidak Aman',
                 desc: 'File Excel bisa hilang, tertimpa, atau diakses sembarang pihak. Tidak ada backup otomatis dan audit trail.',
               },
@@ -211,7 +220,8 @@ export default function HomePage() {
           <div className="features-grid">
             {[
               {
-                icon: '💰',
+                icon: <Wallet size={24} />,
+                iconBg: '#EFF6FF', iconColor: '#1D4ED8',
                 title: 'Manajemen SPP & Tagihan',
                 desc: 'Generate tagihan otomatis setiap bulan untuk seluruh siswa. Kelola berbagai jenis biaya dalam satu sistem.',
                 items: ['SPP, uang gedung, ekskul, dll.', 'Tagihan per kelas/jenjang/yayasan', 'Cicilan & diskon otomatis', 'Riwayat pembayaran lengkap'],
@@ -219,31 +229,36 @@ export default function HomePage() {
                 badge: 'UNGGULAN',
               },
               {
-                icon: '💬',
+                icon: <IkonWA />,
+                iconBg: '#F0FDF4', iconColor: '#16A34A',
                 title: 'Notifikasi WhatsApp Otomatis',
                 desc: 'Sistem kirim pesan WA otomatis ke orang tua — tagihan, konfirmasi bayar, hingga pengingat tunggakan.',
                 items: ['Reminder H-3, H-1 jatuh tempo', 'Konfirmasi pembayaran instan', 'Laporan bulanan ke orang tua'],
               },
               {
-                icon: '🏦',
+                icon: <Landmark size={24} />,
+                iconBg: '#FFF7ED', iconColor: '#C2410C',
                 title: 'Integrasi Pembayaran Digital',
                 desc: 'Orang tua bayar via transfer bank, virtual account, atau QRIS. Dana otomatis terverifikasi di sistem.',
                 items: ['Virtual Account semua bank', 'QRIS & e-wallet populer', 'Rekonsiliasi otomatis harian'],
               },
               {
-                icon: '📊',
+                icon: <BarChart3 size={24} />,
+                iconBg: '#F5F3FF', iconColor: '#7C3AED',
                 title: 'Laporan & Dashboard Real-time',
                 desc: 'Kepala sekolah dan yayasan pantau kondisi keuangan kapan saja. Ekspor ke Excel/PDF sekali klik.',
                 items: ['Dashboard tunggakan & pelunasan', 'Laporan per jenjang & kelas', 'Ekspor Excel & PDF'],
               },
               {
-                icon: '🏫',
+                icon: <Building2 size={24} />,
+                iconBg: '#FFF1F2', iconColor: '#BE123C',
                 title: 'Multi-Jenjang & Multi-Sekolah',
                 desc: 'Satu akun yayasan untuk mengelola TK, SD, SMP, dan SMA sekaligus. Laporan konsolidasi yayasan tersedia.',
                 items: ['TK/PAUD · SD · SMP · SMA', 'Laporan konsolidasi yayasan', 'Pengaturan biaya per jenjang'],
               },
               {
-                icon: '👥',
+                icon: <GraduationCap size={24} />,
+                iconBg: '#ECFDF5', iconColor: '#059669',
                 title: 'Manajemen Siswa & Kelas',
                 desc: 'Data master siswa terintegrasi dengan sistem keuangan. Import data siswa dari Excel dengan mudah.',
                 items: ['Import data siswa via Excel', 'Naik kelas & pindah sekolah', 'Riwayat keuangan per siswa'],
@@ -254,7 +269,7 @@ export default function HomePage() {
                 className={`feat-card${feat.highlight ? ' highlight' : ''}`}
               >
                 {feat.badge && <div className="feat-badge">{feat.badge}</div>}
-                <div className="feat-icon-wrap">{feat.icon}</div>
+                <div className="feat-icon-wrap" style={{ background: feat.iconBg, color: feat.iconColor }}>{feat.icon}</div>
                 <div className="feat-title">{feat.title}</div>
                 <div className="feat-desc">{feat.desc}</div>
                 <ul className="feat-list">

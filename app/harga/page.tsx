@@ -214,7 +214,7 @@ export default function HargaPage() {
           <div className="ph-cta-inner">
             <h2 className="ph-cta-title">Mulai sekarang. Gratis 1 bulan.</h2>
             <p className="ph-cta-sub">
-              Lebih dari 50 sekolah sudah merasakan manfaatnya.
+              {/*2+ sekolah sudah merasakan manfaatnya.*/}
               Tidak perlu keahlian IT — tim kami bantu dari awal.
             </p>
             <Link href="/daftar" className="btn-primary">

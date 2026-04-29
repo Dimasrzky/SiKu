@@ -1,3 +1,37 @@
+/* ─── KEYFRAMES ──────────────────────────────────────── */
+@keyframes sp-fade-up {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sp-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ─── HERO ENTRANCE (plays on load, no JS needed) ───── */
+.sp-badge-anim  { animation: sp-fade-up 0.55s cubic-bezier(0.4,0,0.2,1) 0.05s both; }
+.sp-h1-anim     { animation: sp-fade-up 0.55s cubic-bezier(0.4,0,0.2,1) 0.18s both; }
+.sp-desc-anim   { animation: sp-fade-up 0.55s cubic-bezier(0.4,0,0.2,1) 0.30s both; }
+
+/* ─── SCROLL-REVEAL BASE ─────────────────────────────── */
+[data-animate] {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity  0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-delay: var(--delay, 0s);
+}
+
+[data-animate="slide-left"]  { transform: translateX(-36px); }
+[data-animate="slide-right"] { transform: translateX(36px); }
+
+[data-animate].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
 /* ─── HERO ───────────────────────────────────────────── */
 .sp-hero {
   padding: 140px 5% 80px;
@@ -164,10 +198,30 @@
 
 .sp-faq-chevron {
   flex-shrink: 0;
-  font-size: 1.2rem;
   color: var(--emerald);
   line-height: 1;
-  margin-top: 1px;
+  margin-top: 2px;
+  display: flex;
+  transition: transform 0.28s ease;
+}
+
+.sp-faq-open .sp-faq-chevron {
+  transform: rotate(180deg);
+}
+
+/* Animated body using CSS grid trick */
+.sp-faq-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s ease;
+}
+
+.sp-faq-open .sp-faq-body {
+  grid-template-rows: 1fr;
+}
+
+.sp-faq-body-inner {
+  overflow: hidden;
 }
 
 .sp-faq-a {

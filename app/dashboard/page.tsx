@@ -289,7 +289,7 @@ export default function DashboardPage() {
           gap: '1.5rem',
         }}
       >
-        <span><AlertCircle size={24} color='red' /> Data ini adalah data demo (mockup)</span>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}><AlertCircle size={15} color='var(--text-muted)' /> Data ini adalah data demo</span>
       </div>
 
     </div>

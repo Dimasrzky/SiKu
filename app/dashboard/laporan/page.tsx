@@ -396,7 +396,7 @@ export default function LaporanPage() {
           <h1 className="dashboard-title">Laporan Keuangan</h1>
           <p className="dashboard-subtitle">Ringkasan kondisi keuangan sekolah</p>
         </div>
-        <button className="btn-export" onClick={handleExportPDF}>
+        <button className="btn-export btn-export--danger" onClick={handleExportPDF}>
           ↓ Export Laporan PDF
         </button>
       </div>

@@ -1,8 +1,11 @@
 'use client'
 
+'use client'
+
 import { useState, useMemo } from 'react'
 import { Pencil, Trash2, Users, BookOpen, GraduationCap, Award, Search } from 'lucide-react'
-import { MOCK_SISWA, type Siswa } from '@/lib/mockData'
+import { MOCK_SISWA, MOCK_USER, type Siswa } from '@/lib/mockData'
+import * as XLSX from 'xlsx-js-style'
 
 const KELAS_OPTIONS = ['Semua Kelas','VII-A','VII-B','VII-C','VIII-A','VIII-B','VIII-C','IX-A','IX-B','IX-C']
 
@@ -205,6 +208,55 @@ export default function SiswaPage() {
     setDeleteSiswa(null)
   }
 
+  const exportExcel = () => {
+    const headers = ['No', 'NIS', 'Nama Siswa', 'Kelas', 'Nama Wali', 'No. WA']
+    const rows = filtered.map((s, i) => [
+      i + 1, s.nis, s.nama, s.kelas, s.namaWali, s.noWa,
+    ])
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 14 }, { wch: 26 }, { wch: 8 },
+      { wch: 22 }, { wch: 17 },
+    ]
+
+    // Style header row (A1:F1)
+    const headerStyle = {
+      fill:      { fgColor: { rgb: 'BFDBFE' } },          // blue-200
+      font:      { bold: true, color: { rgb: '1E3A8A' } }, // blue-900 text
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        bottom: { style: 'medium', color: { rgb: '93C5FD' } },
+      },
+    }
+
+    headers.forEach((_, ci) => {
+      const addr = XLSX.utils.encode_cell({ r: 0, c: ci })
+      if (!ws[addr]) ws[addr] = {}
+      ws[addr].s = headerStyle
+    })
+
+    // Data rows: center alignment + zebra fill for even rows
+    const center = { horizontal: 'center', vertical: 'center' }
+    rows.forEach((_, ri) => {
+      const isEven = (ri + 1) % 2 === 0
+      headers.forEach((_, ci) => {
+        const addr = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
+        if (!ws[addr]) ws[addr] = {}
+        ws[addr].s = {
+          alignment: center,
+          ...(isEven ? { fill: { fgColor: { rgb: 'EFF6FF' } } } : {}),
+        }
+      })
+    })
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa')
+    XLSX.writeFile(wb, `Rekap Siswa ${MOCK_USER.sekolah}.xlsx`)
+  }
+
   return (
     <div className="dashboard-content">
       {showModal    && <TambahSiswaModal onClose={() => setShowModal(false)} />}
@@ -217,8 +269,11 @@ export default function SiswaPage() {
           <p className="dashboard-subtitle">Total {siswaList.length} siswa terdaftar aktif</p>
         </div>
         <div style={{ display:'flex', gap:'0.75rem' }}>
-          <button className="btn-export" onClick={() => alert('Import Excel akan hadir segera!')}>
+          <button className="btn-export btn-export--disabled" tabIndex={-1}>
             ↑ Import Excel
+          </button>
+          <button className="btn-export btn-export--success" onClick={exportExcel}>
+            ↓ Export Excel
           </button>
           <button
             className="btn-export"

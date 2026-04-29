@@ -389,8 +389,76 @@
 }
 
 .btn-export:hover {
+  background: var(--navy);
   border-color: var(--navy);
-  color: var(--navy);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+  transform: translateY(-1px);
+}
+
+.btn-export:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn-export--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.btn-export--disabled:hover {
+  background: var(--white);
+  border-color: var(--border);
+  color: var(--text-mid);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-export--disabled::after {
+  content: 'Segera Hadir';
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--navy-dark);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.btn-export--disabled:hover::after {
+  opacity: 1;
+}
+
+.btn-export--success {
+  background: var(--emerald-bg);
+  border-color: rgba(5,150,105,0.35);
+  color: var(--emerald);
+}
+
+.btn-export--success:hover {
+  background: var(--emerald);
+  border-color: var(--emerald);
+  color: #fff;
+}
+
+.btn-export--danger {
+  background: #FEF2F2;
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #DC2626;
+}
+
+.btn-export--danger:hover {
+  background: #DC2626;
+  border-color: #DC2626;
+  color: #fff;
 }
 
 /* ── Stats grid ── */

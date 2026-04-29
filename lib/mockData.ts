@@ -22,7 +22,7 @@ export interface TagihanSiswa {
 export interface Pembayaran {
   id: string; siswaId: string; namaSiswa: string; nis: string
   kelas: string; bulan: string; nominal: number
-  metode: 'Transfer' | 'Tunai' | 'QRIS'
+  metode: 'Transfer' | 'Tunai'
   tanggal: string; status: 'terkonfirmasi' | 'menunggu'; noResi: string
 }
 
@@ -176,20 +176,20 @@ export const MOCK_TAGIHAN_SISWA: TagihanSiswa[] = [
 
 export const MOCK_PEMBAYARAN: Pembayaran[] = [
   { id:'P001', siswaId:'1',  namaSiswa:'Alif Ramadhan',  nis:'2401001', kelas:'VII-A',  bulan:'April 2026', nominal:450000, metode:'Transfer', tanggal:'2 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250402-001'  },
-  { id:'P002', siswaId:'4',  namaSiswa:'Dina Putri',     nis:'2401004', kelas:'VII-B',  bulan:'April 2026', nominal:450000, metode:'QRIS',     tanggal:'5 Apr 2026',  status:'terkonfirmasi', noResi:'QRIS-20250405-001' },
+  { id:'P002', siswaId:'4',  namaSiswa:'Dina Putri',     nis:'2401004', kelas:'VII-B',  bulan:'April 2026', nominal:450000, metode:'Transfer',     tanggal:'5 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250405-001' },
   { id:'P003', siswaId:'5',  namaSiswa:'Eko Prasetyo',   nis:'2401005', kelas:'VII-C',  bulan:'April 2026', nominal:450000, metode:'Tunai',    tanggal:'3 Apr 2026',  status:'terkonfirmasi', noResi:'TNI-20250403-001'  },
   { id:'P004', siswaId:'7',  namaSiswa:'Gita Rahayu',    nis:'2401007', kelas:'VIII-A', bulan:'April 2026', nominal:475000, metode:'Transfer', tanggal:'1 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250401-001'  },
   { id:'P005', siswaId:'9',  namaSiswa:'Indah Permata',  nis:'2401009', kelas:'VIII-B', bulan:'April 2026', nominal:475000, metode:'Transfer', tanggal:'7 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250407-001'  },
-  { id:'P006', siswaId:'11', namaSiswa:'Kartika Sari',   nis:'2401011', kelas:'IX-A',   bulan:'April 2026', nominal:500000, metode:'QRIS',     tanggal:'4 Apr 2026',  status:'terkonfirmasi', noResi:'QRIS-20250404-001' },
+  { id:'P006', siswaId:'11', namaSiswa:'Kartika Sari',   nis:'2401011', kelas:'IX-A',   bulan:'April 2026', nominal:500000, metode:'Tunai',     tanggal:'4 Apr 2026',  status:'terkonfirmasi', noResi:'QRIS-20250404-001' },
   { id:'P007', siswaId:'12', namaSiswa:'Luki Andrian',   nis:'2401012', kelas:'IX-A',   bulan:'April 2026', nominal:500000, metode:'Transfer', tanggal:'6 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250406-001'  },
   { id:'P008', siswaId:'14', namaSiswa:'Nanda Kusuma',   nis:'2401014', kelas:'IX-B',   bulan:'April 2026', nominal:500000, metode:'Tunai',    tanggal:'8 Apr 2026',  status:'terkonfirmasi', noResi:'TNI-20250408-001'  },
   { id:'P009', siswaId:'16', namaSiswa:'Putri Ayu',      nis:'2401016', kelas:'IX-C',   bulan:'April 2026', nominal:500000, metode:'Transfer', tanggal:'2 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250402-002'  },
-  { id:'P010', siswaId:'18', namaSiswa:'Sinta Maharani', nis:'2401018', kelas:'VII-B',  bulan:'April 2026', nominal:450000, metode:'QRIS',     tanggal:'3 Apr 2026',  status:'terkonfirmasi', noResi:'QRIS-20250403-001' },
+  { id:'P010', siswaId:'18', namaSiswa:'Sinta Maharani', nis:'2401018', kelas:'VII-B',  bulan:'April 2026', nominal:450000, metode:'Tunai',     tanggal:'3 Apr 2026',  status:'terkonfirmasi', noResi:'QRIS-20250403-001' },
   { id:'P011', siswaId:'20', namaSiswa:'Ulfa Ramadhani', nis:'2401020', kelas:'VIII-B', bulan:'April 2026', nominal:475000, metode:'Transfer', tanggal:'9 Apr 2026',  status:'terkonfirmasi', noResi:'TRF-20250409-001'  },
   { id:'P012', siswaId:'2',  namaSiswa:'Budi Santoso',   nis:'2401002', kelas:'VII-A',  bulan:'Maret 2026', nominal:450000, metode:'Tunai',    tanggal:'8 Mar 2026',  status:'terkonfirmasi', noResi:'TNI-20250308-001'  },
   { id:'P013', siswaId:'3',  namaSiswa:'Citra Dewi',     nis:'2401003', kelas:'VII-B',  bulan:'Maret 2026', nominal:450000, metode:'Transfer', tanggal:'5 Mar 2026',  status:'terkonfirmasi', noResi:'TRF-20250305-001'  },
   { id:'P014', siswaId:'6',  namaSiswa:'Fajar Nugroho',  nis:'2401006', kelas:'VIII-A', bulan:'Maret 2026', nominal:475000, metode:'Transfer', tanggal:'9 Mar 2026',  status:'terkonfirmasi', noResi:'TRF-20250309-001'  },
-  { id:'P015', siswaId:'8',  namaSiswa:'Hendra Wijaya',  nis:'2401008', kelas:'VIII-B', bulan:'Maret 2026', nominal:475000, metode:'QRIS',     tanggal:'7 Mar 2026',  status:'terkonfirmasi', noResi:'QRIS-20250307-001' },
+  { id:'P015', siswaId:'8',  namaSiswa:'Hendra Wijaya',  nis:'2401008', kelas:'VIII-B', bulan:'Maret 2026', nominal:475000, metode:'Transfer',     tanggal:'7 Mar 2026',  status:'terkonfirmasi', noResi:'QRIS-20250307-001' },
 ]
 
 export const LAPORAN_BULANAN = [
