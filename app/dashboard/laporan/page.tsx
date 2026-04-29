@@ -380,7 +380,6 @@ export default function LaporanPage() {
 
   const distribusiMetode = [
     { label:'Transfer Bank', count: MOCK_PEMBAYARAN.filter(p=>p.metode==='Transfer').length, color:'#3B82F6' },
-    { label:'QRIS',          count: MOCK_PEMBAYARAN.filter(p=>p.metode==='QRIS').length,     color:'#7C3AED' },
     { label:'Tunai',         count: MOCK_PEMBAYARAN.filter(p=>p.metode==='Tunai').length,    color:'#059669' },
   ]
   const totalTrx = distribusiMetode.reduce((s,d) => s + d.count, 0)
