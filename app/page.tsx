@@ -50,7 +50,7 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
 
-        <Link href="/" className="login-back">
+        <Link href="https://landing-siku.vercel.app" className="login-back">
           ← Kembali ke beranda
         </Link>
 
