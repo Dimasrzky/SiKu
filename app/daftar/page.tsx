@@ -2,8 +2,6 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import Navbar from '@/components/Navbar'
-import Footer from '@/components/Footer'
 
 interface FormData {
   nama: string
@@ -112,8 +110,6 @@ export default function DaftarPage() {
 
   return (
     <>
-      <Navbar />
-
       <div className="form-page">
         <div className="form-page-inner">
 
@@ -337,8 +333,6 @@ export default function DaftarPage() {
 
         </div>
       </div>
-
-      <Footer />
     </>
   )
 }
