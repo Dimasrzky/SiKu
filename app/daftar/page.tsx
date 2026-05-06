@@ -114,7 +114,7 @@ export default function DaftarPage() {
         <div className="form-page-inner">
 
           <div className="form-wrapper">
-            <Link href="/" className="form-page-back">
+            <Link href="https://landing-siku.vercel.app/" className="form-page-back">
               ← Kembali ke beranda
             </Link>
             {!isSuccess ? (
