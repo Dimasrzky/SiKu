@@ -44,7 +44,7 @@ export const TAHUN_AKTIF = 'Semester Genap 2025/2026'
 export const MOCK_SISWA: Siswa[] = [
   { id:'1',  nama:'Alif Ramadhan',   nis:'2401001', kelas:'VII-A',  noWa:'6281111111111', namaWali:'Ahmad Fauzi',     nominal:450000, status:'lunas',     tanggalBayar:'2 Apr 2026',  aktif:true },
   { id:'2',  nama:'Budi Santoso',    nis:'2401002', kelas:'VII-A',  noWa:'6281222222222', namaWali:'Slamet Santoso',  nominal:450000, status:'terlambat', tanggalBayar:'15 Apr 2026', aktif:true },
-  { id:'3',  nama:'Citra Dewi',      nis:'2401003', kelas:'VII-B',  noWa:'6281333333333', namaWali:'Dewi Lestari',    nominal:450000, status:'belum',     tanggalBayar:null,           aktif:true },
+  { id:'3',  nama:'Citra Dewi',      nis:'2401003', kelas:'VII-B',  noWa:'6281256640452', namaWali:'Dewi Lestari',    nominal:450000, status:'belum',     tanggalBayar:null,           aktif:true },
   { id:'4',  nama:'Dina Putri',      nis:'2401004', kelas:'VII-B',  noWa:'6281444444444', namaWali:'Hendra Gunawan',  nominal:450000, status:'lunas',     tanggalBayar:'5 Apr 2026',  aktif:true },
   { id:'5',  nama:'Eko Prasetyo',    nis:'2401005', kelas:'VII-C',  noWa:'6281555555555', namaWali:'Prasetyo Utomo',  nominal:450000, status:'lunas',     tanggalBayar:'3 Apr 2026',  aktif:true },
   { id:'6',  nama:'Fajar Nugroho',   nis:'2401006', kelas:'VIII-A', noWa:'6281666666666', namaWali:'Nugroho Santoso', nominal:475000, status:'terlambat', tanggalBayar:'18 Apr 2026', aktif:true },
