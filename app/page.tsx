@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import {KeySquare} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { MOCK_USER } from '@/lib/mockData'
 
@@ -12,12 +11,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
-
-  const autoFill = () => {
-    setEmail(MOCK_USER.email)
-    setPassword(MOCK_USER.password)
-    setError('')
-  }
 
   const handleLogin = async () => {
     setError('')
@@ -55,21 +48,6 @@ export default function LoginPage() {
         </div>
 
         <h1 className="login-title">Masuk ke Dashboard</h1>
-
-        {/* Demo credentials box */}
-        <div className="demo-creds">
-          <div className="demo-creds-label">
-            <KeySquare size={17} className="form-privacy-icon" />
-            Akun Demo
-          </div>
-          <div className="demo-creds-row">
-            <span>Password</span>
-            <code>{MOCK_USER.password}</code>
-          </div>
-          <button className="demo-autofill" onClick={autoFill}>
-            Isi Otomatis
-          </button>
-        </div>
 
         {error && <div className="login-error">{error}</div>}
 

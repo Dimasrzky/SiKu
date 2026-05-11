@@ -1066,14 +1066,27 @@ body {
 /* ─── LOGIN PAGE ────────────────────────────────── */
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(160deg, #EFF6FF 0%, #ECFDF5 50%, var(--cream) 100%);
+  position: relative;
+  background-image: url('/image/BgLoginSiKu.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem 5%;
 }
 
+.login-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+
 .login-card {
+  position: relative;
+  z-index: 1;
   background: var(--white);
   border-radius: 20px;
   padding: 2.5rem;
@@ -1131,6 +1144,7 @@ body {
   color: var(--navy-dark);
   margin-bottom: 0.4rem;
   line-height: 1.2;
+  text-align: center;
 }
 
 .login-subtitle {
