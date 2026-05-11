@@ -79,7 +79,7 @@ export default function LoginPage() {
             id="email"
             type="email"
             className="form-input"
-            placeholder="Email bendahara"
+            placeholder="Masukkan email demo"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -92,7 +92,7 @@ export default function LoginPage() {
             id="password"
             type="password"
             className="form-input"
-            placeholder="Password"
+            placeholder="Masukkan password demo"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
