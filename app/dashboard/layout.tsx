@@ -44,7 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = () => {
     localStorage.removeItem('siku_auth')
-    router.push('https://si-ku.vercel.app')
+    router.push('https://siku-demo.vercel.app')
   }
 
   if (!user) return (

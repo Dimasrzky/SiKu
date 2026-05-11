@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import {KeySquare} from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { MOCK_USER } from '@/lib/mockData'
 
 export default function LoginPage() {
@@ -50,9 +50,9 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
 
-        <Link href="https://landing-siku.vercel.app" className="login-back">
-          ← Kembali ke beranda
-        </Link>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+          <Image src="/image/LogoSiKu.png" alt="Logo SiKu" width={80} height={80} priority />
+        </div>
 
         <h1 className="login-title">Masuk ke Dashboard</h1>
 
@@ -107,14 +107,6 @@ export default function LoginPage() {
         >
           {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
         </button>
-
-        <div className="form-privacy" style={{ marginTop: '1rem' }}>
-          Belum punya akun?{' '}
-          <Link href="/daftar" style={{ color: 'var(--emerald)', fontWeight: 600, textDecoration: 'none' }}>
-            Daftar demo gratis
-          </Link>
-        </div>
-
       </div>
     </div>
   )
