@@ -54,14 +54,7 @@ export default function LoginPage() {
           ← Kembali ke beranda
         </Link>
 
-        {/* Logo */}
-        <div className="login-logo">
-          <span className="login-logo-text">SiKu</span>
-          <span className="login-logo-badge">BETA</span>
-        </div>
-
         <h1 className="login-title">Masuk ke Dashboard</h1>
-        <p className="login-subtitle">Akses khusus bendahara &amp; admin sekolah</p>
 
         {/* Demo credentials box */}
         <div className="demo-creds">

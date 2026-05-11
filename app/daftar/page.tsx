@@ -5,21 +5,23 @@ import { useState } from 'react'
 
 interface FormData {
   nama: string
-  wa: string
+  email: string
   jabatan: string
   sekolah: string
   jenjang: string
   jumlah: string
+  provinsi: string
   kota: string
   tantangan: string
 }
 
 interface FormErrors {
   nama?: string
-  wa?: string
+  email?: string
   jabatan?: string
   sekolah?: string
   jenjang?: string
+  provinsi?: string
   kota?: string
 }
 
@@ -41,16 +43,21 @@ const JUMLAH_OPTIONS = [
 const JABATAN_OPTIONS = [
   'Bendahara Sekolah',
   'Bendahara Yayasan',
+  'Kepala Sekolah',
+  'Kepala Yayasan',
+  'Pemilik / Direktur',
+  'Lainnya',
 ]
 
 export default function DaftarPage() {
   const [form, setForm] = useState<FormData>({
     nama: '',
-    wa: '',
+    email: '',
     jabatan: '',
     sekolah: '',
     jenjang: '',
     jumlah: '',
+    provinsi: '',
     kota: '',
     tantangan: '',
   })
@@ -72,13 +79,12 @@ export default function DaftarPage() {
 
   const validate = (): boolean => {
     const newErrors: FormErrors = {}
-    const phoneRegex = /^(08|628|\+628)[0-9]{8,11}$/
 
     if (!form.nama.trim()) newErrors.nama = 'Nama wajib diisi'
-    if (!form.wa.trim()) {
-      newErrors.wa = 'Nomor WhatsApp wajib diisi'
-    } else if (!phoneRegex.test(form.wa.replace(/\s/g, ''))) {
-      newErrors.wa = 'Format tidak valid. Contoh: 081234567890'
+    if (!form.email.trim()) {
+      newErrors.email = 'Email wajib diisi'
+    } else if (!/\S+@\S+\.\S+/.test(form.email)) {
+      newErrors.email = 'Format email tidak valid'
     }
     if (!form.jabatan) newErrors.jabatan = 'Pilih jabatan Anda'
     if (!form.sekolah.trim()) newErrors.sekolah = 'Nama sekolah wajib diisi'
@@ -120,14 +126,14 @@ export default function DaftarPage() {
             {!isSuccess ? (
               <>
                 <div className="form-header-label">Demo Gratis 1 Bulan</div>
-                <h1 className="form-title">Daftar Sekarang</h1>
+                <h1 className="form-title">Jadwalkan Sekarang</h1>
                 <p className="form-subtitle">
                   Isi formulir di bawah. Tim kami akan menghubungi Anda melalui
                   WhatsApp dalam <strong>1×24 jam</strong> untuk proses onboarding.
                   Tidak perlu tanda tangan kontrak, tidak perlu kartu kredit.
                 </p>
 
-                {/* Nama & WA */}
+                {/* Nama & Email */}
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label" htmlFor="nama">
@@ -148,20 +154,20 @@ export default function DaftarPage() {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="wa">
-                      No. WhatsApp Aktif <span>*</span>
+                    <label className="form-label" htmlFor="email">
+                      Email <span>*</span>
                     </label>
                     <input
-                      id="wa"
-                      name="wa"
-                      type="tel"
-                      className={`form-input${errors.wa ? ' error' : ''}`}
-                      placeholder="cth: 081234567890"
-                      value={form.wa}
+                      id="email"
+                      name="email"
+                      type="email"
+                      className={`form-input${errors.email ? ' error' : ''}`}
+                      placeholder="cth: bu.sari.dewi@example.com"
+                      value={form.email}
                       onChange={handleChange}
                     />
-                    {errors.wa && (
-                      <div className="form-error-msg">{errors.wa}</div>
+                    {errors.email && (
+                      <div className="form-error-msg">{errors.email}</div>
                     )}
                   </div>
                 </div>
@@ -248,6 +254,25 @@ export default function DaftarPage() {
                     </select>
                   </div>
                 </div>
+                
+                {/* Provinsi */}
+                <div className="form-group">
+                  <label className="form-label" htmlFor="provinsi">
+                    Provinsi <span>*</span>
+                  </label>
+                  <input
+                    id="provinsi"
+                    name="provinsi"
+                    type="text"
+                    className={`form-input${errors.provinsi ? ' error' : ''}`}
+                    placeholder="cth: DI Yogyakarta"
+                    value={form.provinsi}
+                    onChange={handleChange}
+                  />
+                  {errors.provinsi && (
+                    <div className="form-error-msg">{errors.provinsi}</div>
+                  )}
+                </div>
 
                 {/* Kota */}
                 <div className="form-group">
@@ -259,7 +284,7 @@ export default function DaftarPage() {
                     name="kota"
                     type="text"
                     className={`form-input${errors.kota ? ' error' : ''}`}
-                    placeholder="cth: Yogyakarta"
+                    placeholder="cth: Sleman"
                     value={form.kota}
                     onChange={handleChange}
                   />
@@ -291,7 +316,7 @@ export default function DaftarPage() {
                 >
                   {isSubmitting
                     ? 'Mendaftarkan...'
-                    : 'Daftar Sekarang — 100% Gratis 1 Bulan ✦'}
+                    : 'Jadwalkan Sekarang — 100% Gratis 1 Bulan ✦'}
                 </button>
 
                 <div className="form-privacy">
