@@ -1088,7 +1088,7 @@ body {
   position: relative;
   z-index: 1;
   background: var(--white);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 2.5rem;
   border: 1px solid var(--border);
   box-shadow: 0 8px 40px rgba(26, 53, 87, 0.1);
