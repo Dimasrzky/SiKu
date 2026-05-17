@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -31,6 +31,8 @@ function getAuthRawServer() { return null }
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
     getAuthRaw,
@@ -44,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = () => {
     localStorage.removeItem('siku_auth')
-    router.push('https://siku-demo.vercel.app')
+    router.push('/')
   }
 
   if (!user) return (
@@ -87,11 +89,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="sidebar-user-name">{user?.nama}</div>
             <div className="sidebar-user-role">{user?.jabatan}</div>
           </div>
-          <button className="sidebar-logout" onClick={handleLogout} title="Keluar"><LogOut size={16} /></button>
+          <button className="sidebar-logout" onClick={() => setShowLogoutModal(true)} title="Keluar"><LogOut size={16} /></button>
         </div>
       </aside>
 
       <main className="dashboard-main">{children}</main>
+
+      {showLogoutModal && (
+        <div className="logout-modal-overlay" onClick={() => setShowLogoutModal(false)}>
+          <div className="logout-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="logout-modal-icon">
+              <LogOut size={28} />
+            </div>
+            <h3 className="logout-modal-title">Keluar dari SiKu?</h3>
+            <p className="logout-modal-desc">Anda akan keluar dari akun <strong>{user?.nama}</strong>. Pastikan semua pekerjaan sudah tersimpan.</p>
+            <div className="logout-modal-actions">
+              <button className="logout-modal-cancel" onClick={() => setShowLogoutModal(false)}>Batal</button>
+              <button className="logout-modal-confirm" onClick={handleLogout}>Ya, Keluar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

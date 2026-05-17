@@ -43,21 +43,28 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+        <div
+          className="login-card-item"
+          style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', animationDelay: '0.35s' }}
+        >
           <Image src="/image/LogoSiKu.png" alt="Logo SiKu" width={80} height={80} priority />
         </div>
 
-        <h1 className="login-title">Masuk ke Dashboard</h1>
+        <h1 className="login-title login-card-item" style={{ animationDelay: '0.44s' }}>Masuk ke Dashboard</h1>
 
-        <div style={{
-          background: '#f0f9ff',
-          border: '1px solid #bae6fd',
-          borderRadius: '8px',
-          padding: '0.75rem 1rem',
-          marginBottom: '1rem',
-          fontSize: '0.85rem',
-          color: '#0369a1',
-        }}>
+        <div
+          className="login-card-item"
+          style={{
+            background: '#f0f9ff',
+            border: '1px solid #bae6fd',
+            borderRadius: '8px',
+            padding: '0.75rem 1rem',
+            marginBottom: '1rem',
+            fontSize: '0.85rem',
+            color: '#0369a1',
+            animationDelay: '0.53s',
+          }}
+        >
           <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Akun Demo</div>
           <div>Email&nbsp;&nbsp;: <strong>{MOCK_USER.email}</strong></div>
           <div>Password: <strong>{MOCK_USER.password}</strong></div>
@@ -78,9 +85,9 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {error && <div className="login-error">{error}</div>}
+        {error && <div className="login-error login-card-item">{error}</div>}
 
-        <div className="form-group">
+        <div className="form-group login-card-item" style={{ animationDelay: '0.62s' }}>
           <label className="form-label" htmlFor="email">Email</label>
           <input
             id="email"
@@ -93,7 +100,7 @@ export default function LoginPage() {
           />
         </div>
 
-        <div className="form-group">
+        <div className="form-group login-card-item" style={{ animationDelay: '0.71s' }}>
           <label className="form-label" htmlFor="password">Password</label>
           <input
             id="password"
@@ -107,10 +114,10 @@ export default function LoginPage() {
         </div>
 
         <button
-          className="submit-btn"
+          className="submit-btn login-card-item"
           onClick={handleLogin}
           disabled={loading}
-          style={{ marginTop: '0.5rem' }}
+          style={{ marginTop: '0.5rem', animationDelay: '0.8s' }}
         >
           {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
         </button>
