@@ -49,6 +49,35 @@ export default function LoginPage() {
 
         <h1 className="login-title">Masuk ke Dashboard</h1>
 
+        <div style={{
+          background: '#f0f9ff',
+          border: '1px solid #bae6fd',
+          borderRadius: '8px',
+          padding: '0.75rem 1rem',
+          marginBottom: '1rem',
+          fontSize: '0.85rem',
+          color: '#0369a1',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Akun Demo</div>
+          <div>Email&nbsp;&nbsp;: <strong>{MOCK_USER.email}</strong></div>
+          <div>Password: <strong>{MOCK_USER.password}</strong></div>
+          <button
+            onClick={() => { setEmail(MOCK_USER.email); setPassword(MOCK_USER.password) }}
+            style={{
+              marginTop: '0.5rem',
+              background: '#0ea5e9',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '0.3rem 0.75rem',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            Isi Otomatis
+          </button>
+        </div>
+
         {error && <div className="login-error">{error}</div>}
 
         <div className="form-group">
