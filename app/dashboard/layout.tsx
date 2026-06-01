@@ -16,7 +16,7 @@ import './dashboard.css'
 
 const NAV_ITEMS = [
   { href: '/dashboard',            label: 'Dashboard',  icon: LayoutDashboard },
-  { href: '/dashboard/siswa',      label: 'Data Siswa', icon: Users           },
+  { href: '/dashboard/siswa',      label: 'Manajemen Siswa', icon: Users           },
   { href: '/dashboard/tagihan',    label: 'Tagihan',    icon: Receipt         },
   { href: '/dashboard/pembayaran', label: 'Pembayaran', icon: Banknote        },
   { href: '/dashboard/laporan',    label: 'Laporan',    icon: BarChart2       },
@@ -67,7 +67,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="sidebar-school">
           <div className="sidebar-school-name">{user?.sekolah}</div>
-          <div className="sidebar-school-period">● April 2025 aktif</div>
+          <div className="sidebar-school-period">
+            ● {new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })} aktif
+          </div>
         </div>
 
         <nav className="sidebar-nav">

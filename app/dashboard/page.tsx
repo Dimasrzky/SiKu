@@ -39,6 +39,14 @@ export default function DashboardPage() {
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('semua')
   const [kelasFilter,  setKelasFilter]  = useState('Semua Kelas')
+  const [greeting] = useState(() => {
+    if (typeof window === 'undefined') return 'Selamat datang kembali'
+    if (!localStorage.getItem('siku_has_visited')) {
+      localStorage.setItem('siku_has_visited', '1')
+      return 'Selamat datang di SiKu'
+    }
+    return 'Selamat datang kembali'
+  })
 
   // Kalkulasi stats dari mock data
   const totalSiswa      = MOCK_SISWA.length
@@ -81,7 +89,7 @@ export default function DashboardPage() {
       {/* ─── HEADER ─────────────────────────────────── */}
       <div className="dashboard-header">
         <div>
-          <div className="dashboard-greeting">Selamat datang kembali</div>
+          <div className="dashboard-greeting">{greeting}</div>
           <h1 className="dashboard-title">Rekap Bulanan</h1>
           <p className="dashboard-subtitle">Periode: {BULAN_AKTIF}</p>
         </div>
