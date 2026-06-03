@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -106,7 +105,6 @@ export default function LoginPage() {
               tabIndex={-1}
               aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
             >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
         </div>
