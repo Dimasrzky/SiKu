@@ -11,19 +11,22 @@ import {
   BarChart2,
   Settings,
   LogOut,
+  RotateCcw,
+  GraduationCap,
 } from 'lucide-react'
 import './dashboard.css'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',            label: 'Dashboard',  icon: LayoutDashboard },
+  { href: '/dashboard',            label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/dashboard/kelas',      label: 'Kelas',           icon: GraduationCap   },
   { href: '/dashboard/siswa',      label: 'Manajemen Siswa', icon: Users           },
-  { href: '/dashboard/tagihan',    label: 'Tagihan',    icon: Receipt         },
-  { href: '/dashboard/pembayaran', label: 'Pembayaran', icon: Banknote        },
-  { href: '/dashboard/laporan',    label: 'Laporan',    icon: BarChart2       },
-  { href: '/dashboard/pengaturan', label: 'Pengaturan', icon: Settings        },
+  { href: '/dashboard/tagihan',    label: 'Tagihan',         icon: Receipt         },
+  { href: '/dashboard/pembayaran', label: 'Pembayaran',      icon: Banknote        },
+  { href: '/dashboard/laporan',    label: 'Laporan',         icon: BarChart2       },
+  { href: '/dashboard/pengaturan', label: 'Pengaturan',      icon: Settings        },
 ]
 
-interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string }
+interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string }
 
 function getAuthRaw() { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
@@ -32,6 +35,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router   = useRouter()
   const pathname = usePathname()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [showResetModal,  setShowResetModal]  = useState(false)
+  const [resetting,       setResetting]       = useState(false)
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -40,9 +45,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   )
   const user: AuthUser | null = raw ? (JSON.parse(raw) as AuthUser) : null
 
+  // Baca localStorage setelah hydration selesai — menghindari false-redirect
+  // akibat server snapshot (null) dari useSyncExternalStore
   useEffect(() => {
-    if (!user) router.replace('/login')
-  }, [user, router])
+    if (!localStorage.getItem('siku_auth')) router.replace('/')
+  }, [router])
 
   const handleLogout = () => {
     localStorage.removeItem('siku_auth')
@@ -85,6 +92,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
 
+        {user?.role === 'super_admin' && (
+          <button
+            className="sidebar-item"
+            onClick={() => setShowResetModal(true)}
+            style={{ color:'#F87171', marginTop:'0.25rem' }}
+            title="Reset demo untuk sekolah baru"
+          >
+            <RotateCcw size={18} className="sidebar-icon" />
+            <span>Reset Demo</span>
+          </button>
+        )}
+
         <div className="sidebar-user">
           <div className="sidebar-avatar">{avatarLabel}</div>
           <div className="sidebar-user-info">
@@ -108,6 +127,53 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="logout-modal-actions">
               <button className="logout-modal-cancel" onClick={() => setShowLogoutModal(false)}>Batal</button>
               <button className="logout-modal-confirm" onClick={handleLogout}>Ya, Keluar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResetModal && (
+        <div className="logout-modal-overlay" onClick={() => setShowResetModal(false)}>
+          <div className="logout-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="logout-modal-icon" style={{ background:'#FEF2F2', color:'#EF4444' }}>
+              <RotateCcw size={28} />
+            </div>
+            <h3 className="logout-modal-title">Reset Demo?</h3>
+            <p className="logout-modal-desc">
+              Semua data demo akan <strong>dihapus permanen</strong> — siswa, tagihan, pembayaran, dan profil sekolah saat ini.
+            </p>
+            <p className="logout-modal-desc" style={{ marginTop:'0.5rem', color:'#6B7280', fontSize:'0.8rem' }}>
+              Kamu akan mengisi ulang nama, jabatan, dan profil sekolah untuk kunjungan berikutnya.
+            </p>
+            <div className="logout-modal-actions">
+              <button className="logout-modal-cancel" onClick={() => setShowResetModal(false)}>Batal</button>
+              <button
+                className="logout-modal-confirm"
+                style={{ background:'#EF4444', borderColor:'#EF4444', opacity: resetting ? 0.7 : 1 }}
+                disabled={resetting}
+                onClick={async () => {
+                  setResetting(true)
+                  try {
+                    const { createBrowserClient } = await import('@supabase/ssr')
+                    const sb = createBrowserClient(
+                      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                    )
+                    const { data: { session } } = await sb.auth.getSession()
+                    await fetch('/api/demo-reset', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+                    })
+                  } finally {
+                    localStorage.removeItem('siku_auth')
+                    setResetting(false)
+                    setShowResetModal(false)
+                    router.push('/')
+                  }
+                }}
+              >
+                {resetting ? 'Mereset...' : 'Ya, Reset Demo'}
+              </button>
             </div>
           </div>
         </div>

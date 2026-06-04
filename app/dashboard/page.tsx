@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { Users, CheckCircle, Clock, TrendingUp, ClipboardCheck, Search,AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Users, CheckCircle, Clock, TrendingUp, ClipboardCheck, Search, AlertCircle } from 'lucide-react'
 import { MOCK_SISWA, BULAN_AKTIF, type Siswa, type StatusBayar } from '@/lib/mockData'
+import { supabase } from '@/lib/supabase'
+import { SetupChecklist } from '@/components/SetupChecklist'
 
 // ─── Opsi filter ──────────────────────────────────────────────────────
 const STATUS_OPTIONS = [
@@ -35,10 +37,50 @@ const STATUS_MAP: Record<StatusBayar, { cls: string; label: string }> = {
 }
 
 // ─── Komponen utama ───────────────────────────────────────────────────
+function DemoNotSetup() {
+  return (
+    <div className="dashboard-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '70vh' }}>
+      <div style={{ textAlign: 'center', maxWidth: 400 }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: '50%',
+          background: '#FEF3C7', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', margin: '0 auto 1.25rem',
+          fontSize: '2rem',
+        }}>
+          ⚠️
+        </div>
+        <h2 style={{
+          fontFamily: 'var(--font-serif,Georgia,serif)',
+          fontSize: '1.2rem', fontWeight: 700,
+          color: 'var(--navy-dark)', marginBottom: '0.5rem',
+        }}>
+          Akun demo belum di-setup
+        </h2>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.7, marginBottom: '1.5rem' }}>
+          Akun ini belum dikonfigurasi untuk sekolah yang akan di-demo.
+          Kembali ke halaman daftar untuk mengisi profil sekolah terlebih dahulu.
+        </p>
+        <a
+          href="/daftar"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'var(--navy)', color: '#fff',
+            padding: '0.7rem 1.75rem', borderRadius: 10,
+            fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none',
+          }}
+        >
+          Kembali ke Halaman Daftar →
+        </a>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState('semua')
   const [kelasFilter,  setKelasFilter]  = useState('Semua Kelas')
+  const [hasSiswa,     setHasSiswa]     = useState<boolean | null>(null)
   const [greeting] = useState(() => {
     if (typeof window === 'undefined') return 'Selamat datang kembali'
     if (!localStorage.getItem('siku_has_visited')) {
@@ -47,6 +89,23 @@ export default function DashboardPage() {
     }
     return 'Selamat datang kembali'
   })
+
+  useEffect(() => {
+    async function checkSiswa() {
+      const { count } = await supabase
+        .from('siswa')
+        .select('id', { count: 'exact', head: true })
+      setHasSiswa((count ?? 0) > 0)
+    }
+    checkSiswa()
+  }, [])
+
+  // Demo account belum di-setup (nama masih 'Tim SiKu')
+  const authRaw  = typeof window !== 'undefined' ? localStorage.getItem('siku_auth') : null
+  const authUser = authRaw ? JSON.parse(authRaw) as { nama: string; role?: string } : null
+  if (authUser?.role === 'super_admin' && authUser?.nama === 'Tim SiKu') {
+    return <DemoNotSetup />
+  }
 
   // Kalkulasi stats dari mock data
   const totalSiswa      = MOCK_SISWA.length
@@ -83,8 +142,30 @@ export default function DashboardPage() {
 
   const persenLunas = Math.round((jumlahLunas / totalSiswa) * 100)
 
+  // ─── Loading ──────────────────────────────────────────────────────────
+  if (hasSiswa === null) {
+    return (
+      <div className="dashboard-content">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 320 }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Memuat data...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Empty state: tampilkan hanya checklist setup ────────────────────
+  if (!hasSiswa) {
+    return (
+      <div className="dashboard-content">
+        <SetupChecklist />
+      </div>
+    )
+  }
+
   return (
     <div className="dashboard-content">
+
+      <SetupChecklist />
 
       {/* ─── HEADER ─────────────────────────────────── */}
       <div className="dashboard-header">

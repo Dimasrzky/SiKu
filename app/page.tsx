@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -34,7 +35,7 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email, nama, jabatan, sekolah, avatar')
+      .select('email, nama, jabatan, sekolah, avatar, role')
       .eq('id', data.user.id)
       .single()
 
@@ -46,6 +47,7 @@ export default function LoginPage() {
         jabatan: profile?.jabatan ?? 'Admin',
         sekolah: profile?.sekolah ?? '',
         avatar:  profile?.avatar  ?? '',
+        role:    profile?.role    ?? 'admin',
       })
     )
 
@@ -105,6 +107,18 @@ export default function LoginPage() {
               tabIndex={-1}
               aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
             >
+              {showPassword ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              )}
             </button>
           </div>
         </div>
@@ -117,6 +131,13 @@ export default function LoginPage() {
         >
           {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
         </button>
+
+        <p className="login-card-item" style={{ textAlign:'center', marginTop:'1rem', fontSize:'0.8rem', color:'var(--text-muted)', animationDelay:'0.8s' }}>
+          Belum punya akun?{' '}
+          <Link href="/daftar" style={{ color:'var(--navy)', fontWeight:600, textDecoration:'none' }}>
+            Daftar gratis
+          </Link>
+        </p>
 
       </div>
     </div>

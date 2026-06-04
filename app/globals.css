@@ -1247,6 +1247,12 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Sembunyikan ikon reveal password bawaan browser (Edge/Chrome) */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 /* ─── FOOTER ─────────────────────────────────────── */
 .footer {
   background: var(--navy-dark);
