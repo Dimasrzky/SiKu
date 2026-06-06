@@ -62,6 +62,73 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Simpan komponen tagihan ke tabel tersendiri ──────────────────────
+  if (step === 'komponen_tagihan' && stepData) {
+    type KomponenCard = {
+      id: string
+      jenis: 'wajib' | 'beasiswa' | 'ekskul' | 'aktivitas'
+      nama?: string
+      kelasJenjang?: string
+      kelasWarna?: string
+      kelasJumlah?: number
+      kelasRef?: string
+      scope?: 'semua' | 'perorangan'
+      items: Array<{ id: string; nama: string; nominal: number }>
+      potonganData?: Array<{ kelasJenjang?: string; namaItem: string; nominalAsli: number; persenPotong: number }>
+    }
+    const { tahun_ajaran, semester, komponen } = stepData as {
+      tahun_ajaran: string
+      semester:     string
+      komponen:     KomponenCard[]
+    }
+
+    await supabaseAdmin.from('komponen_tagihan').delete().eq('sekolah_id', profile.sekolah_id)
+
+    for (const card of komponen) {
+      const { data: ins } = await supabaseAdmin
+        .from('komponen_tagihan')
+        .insert({
+          sekolah_id:    profile.sekolah_id,
+          jenis:         card.jenis,
+          nama:          card.nama          ?? null,
+          kelas_jenjang: card.kelasJenjang  ?? null,
+          kelas_warna:   card.kelasWarna    ?? null,
+          kelas_jumlah:  card.kelasJumlah   ?? null,
+          kelas_ref:     card.kelasRef      ?? null,
+          scope:         card.scope         ?? null,
+          tahun_ajaran,
+          semester,
+        })
+        .select('id')
+        .single()
+
+      if (!ins) continue
+
+      if (card.items.length > 0) {
+        await supabaseAdmin.from('komponen_tagihan_item').insert(
+          card.items.map((item, i) => ({
+            komponen_id: ins.id,
+            nama:        item.nama,
+            nominal:     item.nominal,
+            urutan:      i,
+          }))
+        )
+      }
+
+      if (card.potonganData && card.potonganData.length > 0) {
+        await supabaseAdmin.from('komponen_tagihan_potongan').insert(
+          card.potonganData.map(p => ({
+            komponen_id:   ins.id,
+            kelas_jenjang: p.kelasJenjang ?? '',
+            nama_item:     p.namaItem,
+            nominal_asli:  p.nominalAsli,
+            persen_potong: p.persenPotong,
+          }))
+        )
+      }
+    }
+  }
+
   // ── Update flag setup_steps di pengaturan ─────────────────────────────
   const { data: pengaturan } = await supabaseAdmin
     .from('pengaturan')
@@ -70,8 +137,8 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   const current = { ...(pengaturan?.setup_steps ?? {}) } as Record<string, unknown>
-  delete current[`${step}_config`]
   const updated = { ...current, [step]: true }
+  delete updated['komponen_tagihan_data']
 
   const { error: updateError } = await supabaseAdmin
     .from('pengaturan')

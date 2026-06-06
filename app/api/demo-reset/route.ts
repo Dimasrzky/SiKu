@@ -6,7 +6,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const DEMO_EMAIL      = process.env.DEMO_EMAIL!
 const DEMO_SEKOLAH_ID = process.env.DEMO_SEKOLAH_ID!
 
 const DEMO_TABLES = [
@@ -17,6 +16,22 @@ const DEMO_TABLES = [
   'siswa',
   'kelas',
 ] as const
+
+// Tabel komponen_tagihan child-nya tidak punya sekolah_id,
+// sehingga perlu dihapus lewat komponen_id dari parent.
+async function deleteKomponenTagihanDemo() {
+  const { data: komponenIds } = await supabaseAdmin
+    .from('komponen_tagihan')
+    .select('id')
+    .eq('sekolah_id', DEMO_SEKOLAH_ID)
+
+  if (komponenIds && komponenIds.length > 0) {
+    const ids = komponenIds.map((k: { id: string }) => k.id)
+    await supabaseAdmin.from('komponen_tagihan_potongan').delete().in('komponen_id', ids)
+    await supabaseAdmin.from('komponen_tagihan_item').delete().in('komponen_id', ids)
+  }
+  await supabaseAdmin.from('komponen_tagihan').delete().eq('sekolah_id', DEMO_SEKOLAH_ID)
+}
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -52,6 +67,7 @@ export async function POST(req: NextRequest) {
   for (const table of DEMO_TABLES) {
     await supabaseAdmin.from(table).delete().eq('sekolah_id', DEMO_SEKOLAH_ID)
   }
+  await deleteKomponenTagihanDemo()
 
   // Reset profiles ke template default
   await supabaseAdmin.from('profiles').update({
@@ -66,11 +82,17 @@ export async function POST(req: NextRequest) {
     .update({ nama: 'Demo SiKu' })
     .eq('id', DEMO_SEKOLAH_ID)
 
-  // Reset pengaturan
+  // Reset pengaturan + setup_steps agar semua modul kembali ke state awal
   await supabaseAdmin.from('pengaturan').upsert({
     sekolah_id:   DEMO_SEKOLAH_ID,
     nama_sekolah: 'Demo SiKu',
     telepon:      '',
+    setup_steps: {
+      profil_sekolah:     true,
+      kelas_tahun_ajaran: false,
+      komponen_tagihan:   false,
+      import_siswa:       false,
+    },
   }, { onConflict: 'sekolah_id' })
 
   return NextResponse.json({ data: { ok: true }, error: null })

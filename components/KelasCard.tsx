@@ -10,24 +10,25 @@ export interface KelasCardData {
 }
 
 interface Props {
-  card:      KelasCardData
-  onEdit?:   (card: KelasCardData) => void
-  onDelete?: (id: string) => void
-  readonly?: boolean
+  card:            KelasCardData
+  onEdit?:         (card: KelasCardData) => void
+  onDelete?:       (id: string) => void
+  readonly?:       boolean
+  showIdentitas?:  boolean
 }
 
-export function KelasCard({ card, onEdit, onDelete, readonly = false }: Props) {
+export function KelasCard({ card, onEdit, onDelete, readonly = false, showIdentitas = false }: Props) {
   return (
     <div style={{
-      background:   card.warna,
-      borderRadius: 12,
-      padding:      '1rem 1.1rem',
-      boxShadow:    `0 4px 16px rgba(0,0,0,0.22), 0 1px 4px ${card.warna}88`,
-      position:     'relative',
-      minHeight:    120,
-      display:      'flex',
+      background:    card.warna,
+      borderRadius:  12,
+      padding:       '1rem 1.1rem',
+      boxShadow:     `0 4px 16px rgba(0,0,0,0.22), 0 1px 4px ${card.warna}88`,
+      position:      'relative',
+      minHeight:     showIdentitas ? 120 : undefined,
+      display:       'flex',
       flexDirection: 'column',
-      gap:          '0.6rem',
+      gap:           '0.6rem',
     }}>
 
       {/* Tombol edit & hapus — hanya muncul kalau bukan readonly */}
@@ -44,30 +45,32 @@ export function KelasCard({ card, onEdit, onDelete, readonly = false }: Props) {
 
       {/* Judul */}
       <div>
-        <div style={{ fontWeight: 800, fontSize: '1rem', color: '#fff', letterSpacing: '0.02em' }}>
+        <div style={{ fontWeight: 800, fontSize: '1.3rem', color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
           Kelas {card.jenjang}
         </div>
-        <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+        <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginTop: 3 }}>
           {card.identitas.length} kelas
         </div>
       </div>
 
-      {/* Identitas */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-        {card.identitas.map(id => (
-          <span key={id} style={{
-            background:   'rgba(255,255,255,0.2)',
-            color:        '#fff',
-            borderRadius: 6,
-            padding:      '0.2rem 0.6rem',
-            fontSize:     '0.8rem',
-            fontWeight:   600,
-            backdropFilter: 'blur(4px)',
-          }}>
-            {card.jenjang}-{id}
-          </span>
-        ))}
-      </div>
+      {/* Identitas — hanya ditampilkan jika showIdentitas */}
+      {showIdentitas && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+          {card.identitas.map(id => (
+            <span key={id} style={{
+              background:     'rgba(255,255,255,0.2)',
+              color:          '#fff',
+              borderRadius:   6,
+              padding:        '0.2rem 0.6rem',
+              fontSize:       '0.8rem',
+              fontWeight:     600,
+              backdropFilter: 'blur(4px)',
+            }}>
+              {card.jenjang}-{id}
+            </span>
+          ))}
+        </div>
+      )}
 
     </div>
   )
