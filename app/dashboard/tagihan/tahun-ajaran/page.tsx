@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 
-import { CalendarDays, CalendarX } from 'lucide-react'
+
+
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
@@ -159,7 +160,7 @@ export default function TahunAjaranSetupPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)',
           }}>
-            <CalendarDays size={40} color="#fff" />
+            <Image src="/icons/IconCalender.png" width={35} height={35} alt="Kalender" />
           </div>
           <div>
             <h1 style={{
@@ -298,10 +299,10 @@ export default function TahunAjaranSetupPage() {
               padding: '2rem', textAlign: 'center',
               color: '#6F788A', display: 'flex', flexDirection: 'column',
               fontWeight: 600, fontSize: '0.9rem',
-              alignItems: 'center', gap: '0.6rem',
+              alignItems: 'center', gap: '1.6rem',
               boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)',
             }}>
-              <CalendarX size={40} strokeWidth={1.5} />
+              <Image src="/icons/IconNotDate.png" width={65} height={65} alt="Belum ada tanggal" />
               <span style={{ fontSize: '0.875rem' }}>Isi tanggal mulai &amp; selesai untuk melihat pembagian semester</span>
             </div>
           ) : (
@@ -372,7 +373,7 @@ export default function TahunAjaranSetupPage() {
 
         {/* Footer: catatan + tombol */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-          <p style={{ fontSize: '1rem', color: 'var(--text-muted)', margin: 0, position: 'relative', top: '-1.5rem' }}>
+          <p style={{ fontSize: '1rem', color: 'var(--text-muted)', margin: 0, position: 'relative', top: '-2rem', fontWeight: 500 }}>
             <span style={{ fontWeight: 700 }}>ⓘ</span>{' '}
             Tahun ajaran ini akan langsung diset sebagai aktif karena ini setup pertama.
           </p>
@@ -394,6 +395,7 @@ export default function TahunAjaranSetupPage() {
               whiteSpace: 'nowrap',
               transition: 'background 0.15s',
               boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)',
+              marginTop: '2.2rem',
             }}
           >
             {saving ? 'Menyimpan...' : 'Simpan & Lanjutkan →'}
