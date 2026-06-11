@@ -6,9 +6,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-type SetupStep = 'kelas_tahun_ajaran' | 'komponen_tagihan' | 'import_siswa'
+type SetupStep = 'tahun_ajaran' | 'komponen_tagihan' | 'buat_kelas' | 'import_siswa'
 
-const VALID_STEPS: SetupStep[] = ['kelas_tahun_ajaran', 'komponen_tagihan', 'import_siswa']
+const VALID_STEPS: SetupStep[] = ['tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -34,32 +34,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Profil tidak lengkap' }, { status: 400 })
   }
 
-  // ── Simpan data kelas ke tabel kelas ──────────────────────────────────
-  if (step === 'kelas_tahun_ajaran' && stepData) {
-    const { tahun_ajaran, semester, kelas } = stepData as {
-      tahun_ajaran: string
-      semester:     string
-      kelas:        { nama: string; warna: string }[]
+  // ── Simpan data tahun ajaran ke tabel tahun_ajaran ───────────────────
+  if (step === 'tahun_ajaran' && stepData) {
+    const {
+      nama, tanggal_mulai, tanggal_selesai,
+      semester_ganjil_mulai, semester_ganjil_selesai,
+      semester_genap_mulai, semester_genap_selesai,
+    } = stepData as {
+      nama: string
+      tanggal_mulai: string; tanggal_selesai: string
+      semester_ganjil_mulai: string; semester_ganjil_selesai: string
+      semester_genap_mulai: string; semester_genap_selesai: string
     }
 
-    await supabaseAdmin.from('kelas').delete().eq('sekolah_id', profile.sekolah_id)
+    await supabaseAdmin.from('tahun_ajaran').delete().eq('sekolah_id', profile.sekolah_id)
 
-    const rows = kelas.map(k => {
-      const dashIdx = k.nama.indexOf('-')
-      return {
-        sekolah_id:   profile.sekolah_id,
-        nama:         k.nama,
-        jenjang:      dashIdx >= 0 ? k.nama.slice(0, dashIdx) : k.nama,
-        warna:        k.warna,
-        tahun_ajaran,
-        semester,
-      }
+    const { error: taError } = await supabaseAdmin.from('tahun_ajaran').insert({
+      sekolah_id: profile.sekolah_id,
+      nama,
+      tanggal_mulai,
+      tanggal_selesai,
+      semester_ganjil_mulai,
+      semester_ganjil_selesai,
+      semester_genap_mulai,
+      semester_genap_selesai,
+      is_aktif: true,
     })
 
-    const { error: kelasError } = await supabaseAdmin.from('kelas').insert(rows)
-    if (kelasError) {
-      return NextResponse.json({ error: 'Gagal simpan kelas' }, { status: 500 })
-    }
+    if (taError) return NextResponse.json({ error: taError.message ?? 'Gagal simpan tahun ajaran' }, { status: 500 })
   }
 
   // ── Simpan komponen tagihan ke tabel tersendiri ──────────────────────

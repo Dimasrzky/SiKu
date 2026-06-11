@@ -23,7 +23,7 @@ const STEPS = [
   {
     key:   'tahun_ajaran',
     label: 'Mengatur tahun ajaran (Sub fitur tagihan)',
-    href:  '/dashboard/tagihan',
+    href:  '/dashboard/tagihan/tahun-ajaran',
   },
   {
     key:   'komponen_tagihan',
@@ -138,12 +138,12 @@ export function SetupChecklist() {
         background: '#1A2C4E',
         borderRadius: 12,
         padding: '1rem 1.25rem',
-        marginBottom: '0.75rem',
+        marginBottom: '2rem',
         color: '#fff',
         boxShadow: '3px 6px 14px rgba(26, 44, 78, 0.58)',
       }}>
         <p style={{ flex: 1, fontSize: '1.2rem', lineHeight: 1.65, margin: 0 }}>
-          Tahun ajaran adalah fondasi dari semua tagihan di SiKu. Isi periode di bawah lalu sistem akan <br />otomatis membagi semester 1 dan 2.
+          Tahun ajaran adalah fondasi dari semua tagihan di SiKu. Isi periode di bawah lalu sistem akan <br />otomatis membagi semester Ganjil dan Genap.
         </p>
         <div style={{
           flexShrink: 0,
@@ -175,7 +175,7 @@ export function SetupChecklist() {
         borderLeft: '30px solid var(--navy)',
         borderRadius: 12,
         padding: '1.25rem 1.5rem',
-        boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)',
+        boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)',
       }}>
 
         {/* Header card */}
