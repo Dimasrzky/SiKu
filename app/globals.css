@@ -30,7 +30,7 @@ html {
 body {
   font-family: var(--font-sans), system-ui, sans-serif;
   color: var(--text-dark);
-  background: var(--white);
+  background: #CEE1F8;
   line-height: 1.6;
 }
 
@@ -38,7 +38,7 @@ body {
 .nav {
   position: fixed;
   top: 0; left: 0; right: 0;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.919);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
   z-index: 100;

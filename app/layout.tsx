@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Fraunces, Plus_Jakarta_Sans } from 'next/font/google'
+import { Fraunces, Plus_Jakarta_Sans, DM_Sans } from 'next/font/google'
 import './globals.css'
 
 const fraunces = Fraunces({
@@ -14,6 +14,12 @@ const jakarta = Plus_Jakarta_Sans({
   display: 'swap',
 })
 
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  variable: '--font-dm-sans',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
   title: 'SiKu - Sistem Keuangan Sekolah Swasta Modern',
   description: 'Kelola SPP, tagihan, dan laporan keuangan sekolah swasta Indonesia dalam satu platform digital. Notifikasi otomatis ke orang tua via WhatsApp.',
@@ -23,7 +29,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id" data-scroll-behavior="smooth">
-      <body className={`${fraunces.variable} ${jakarta.variable}`}>
+      <body className={`${fraunces.variable} ${jakarta.variable} ${dmSans.variable}`}>
         {children}
       </body>
     </html>

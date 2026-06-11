@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Circle, Info } from 'lucide-react'
+import { CheckCircle2, Circle } from 'lucide-react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 interface SetupSteps {
-  profil_sekolah:       boolean
-  kelas_tahun_ajaran:   boolean
-  komponen_tagihan:     boolean
-  import_siswa:         boolean
+  profil_sekolah:     boolean
+  tahun_ajaran:       boolean
+  komponen_tagihan:   boolean
+  buat_kelas:         boolean
+  import_siswa:       boolean
 }
 
 const STEPS = [
@@ -19,9 +21,9 @@ const STEPS = [
     href:  null,
   },
   {
-    key:   'kelas_tahun_ajaran',
-    label: 'Buat kelas & tahun ajaran',
-    href:  '/dashboard/kelas',
+    key:   'tahun_ajaran',
+    label: 'Mengatur tahun ajaran (Sub fitur tagihan)',
+    href:  '/dashboard/tagihan',
   },
   {
     key:   'komponen_tagihan',
@@ -29,8 +31,13 @@ const STEPS = [
     href:  '/dashboard/tagihan',
   },
   {
+    key:   'buat_kelas',
+    label: 'Buat kelas (Manajemen siswa sub fitur siswa)',
+    href:  '/dashboard/kelas',
+  },
+  {
     key:   'import_siswa',
-    label: 'Import data siswa',
+    label: 'Import siswa',
     href:  '/dashboard/siswa',
   },
 ] as const
@@ -113,7 +120,7 @@ export function SetupChecklist() {
   if (loading || !steps) return null
 
   const allComplete = (Object.keys(steps) as StepKey[])
-    .filter(k => ['profil_sekolah','kelas_tahun_ajaran','komponen_tagihan','import_siswa'].includes(k))
+    .filter(k => ['profil_sekolah','tahun_ajaran','komponen_tagihan','buat_kelas','import_siswa'].includes(k))
     .every(k => steps[k])
 
   if (allComplete) return null
@@ -121,97 +128,148 @@ export function SetupChecklist() {
   const currentIndex = STEPS.findIndex(s => !steps[s.key])
 
   return (
-    <div style={{
-      background: '#fff',
-      border: '1px solid var(--border)',
-      borderLeft: '4px solid var(--navy)',
-      borderRadius: 12,
-      padding: '1.25rem 1.5rem',
-      marginBottom: '1.5rem',
-    }}>
+    <div style={{ marginBottom: '1.5rem' }}>
 
-      <div style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-          <span style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.95rem' }}>
-            Sambutan &amp; checklist setup
-          </span>
-        </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          Sistem belum aktif — selesaikan {STEPS.length} langkah setup berikut.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-        {STEPS.map((step, index) => {
-          const done    = steps[step.key]
-          const current = index === currentIndex
-          const locked  = !done && index > currentIndex
-
-          return (
-            <div
-              key={step.key}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0.6rem 0.75rem',
-                borderRadius: 8,
-                background: current ? '#EFF6FF' : 'transparent',
-                opacity: locked ? 0.45 : 1,
-                transition: 'opacity 0.2s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                {done
-                  ? <CheckCircle2 size={17} color="var(--emerald)" />
-                  : <Circle size={17} color={current ? 'var(--navy)' : '#CBD5E1'} />
-                }
-                <span style={{
-                  fontSize: '0.875rem',
-                  fontWeight: current ? 600 : 400,
-                  color: done ? '#94A3B8' : current ? 'var(--navy-dark)' : 'var(--text-muted)',
-                  textDecoration: done ? 'line-through' : 'none',
-                }}>
-                  {step.label}
-                </span>
-              </div>
-
-              {current && step.href && (
-                <button
-                  onClick={() => router.push(step.href!)}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--navy)', fontWeight: 700, fontSize: '0.8rem',
-                    display: 'flex', alignItems: 'center', gap: 3,
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: 6,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Mulai →
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
+      {/* ── Info Banner ─────────────────────────────────────────────── */}
       <div style={{
-        marginTop: '0.875rem',
-        background: '#F8FAFC',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: '0.6rem 0.75rem',
-        fontSize: '0.75rem',
-        color: 'var(--text-muted)',
         display: 'flex',
-        gap: '0.5rem',
         alignItems: 'flex-start',
-        lineHeight: 1.5,
+        gap: '0.75rem',
+        background: '#1A2C4E',
+        borderRadius: 12,
+        padding: '1rem 1.25rem',
+        marginBottom: '0.75rem',
+        color: '#fff',
+        boxShadow: '3px 6px 14px rgba(26, 44, 78, 0.58)',
       }}>
-        <Info size={13} style={{ marginTop: 1, flexShrink: 0 }} />
-        <span>
-          Checklist hilang otomatis setelah semua langkah selesai.
-          Tidak bisa di-dismiss manual — karena sistem memang belum bisa jalan tanpa ini.
-        </span>
+        <p style={{ flex: 1, fontSize: '1.2rem', lineHeight: 1.65, margin: 0 }}>
+          Tahun ajaran adalah fondasi dari semua tagihan di SiKu. Isi periode di bawah lalu sistem akan <br />otomatis membagi semester 1 dan 2.
+        </p>
+        <div style={{
+          flexShrink: 0,
+          position: 'relative',
+          top: '-0.4rem',
+          right: '-0.65rem',
+          width: 40,
+          height: 40,
+          background: '#F7DD7D',
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <Image
+            src="/icons/IconTSeru.png"
+            width={3.5}
+            height={3.5}
+            alt="Informasi"
+            style={{ display: 'block' }}
+          />
+        </div>
+      </div>
+
+      {/* ── Card Setup Checklist ─────────────────────────────────────── */}
+      <div style={{
+        background: '#fff',
+        border: '1px solid var(--border)',
+        borderLeft: '30px solid var(--navy)',
+        borderRadius: 12,
+        padding: '1.25rem 1.5rem',
+        boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)',
+      }}>
+
+        {/* Header card */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <span style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '1.8rem', display: 'block', fontFamily: 'var(--font-dm-sans), sans-serif', marginTop: '-0.5rem' }}>
+              Sambutan &amp; cheklist setup
+            </span>
+            <p style={{ fontSize: '0.98rem', color: 'var(--text-muted)', lineHeight: 1.5, margin: '0.2rem 0 0' }}>
+              Selesaikan {STEPS.length} langkah setup berikut terlebih dahulu.
+            </p>
+          </div>
+
+          {/* Badge Sistem belum aktif */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: '#1B2B45',
+            color: '#fff',
+            padding: '0.3rem 0.85rem',
+            borderRadius: 20,
+            fontSize: '0.9rem',
+            fontWeight: 400,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            marginLeft: '1rem',
+          }}>
+            <span style={{
+              position: 'relative',
+              right: 6,
+              width: 18, height: 18,
+              borderRadius: '50%',
+              background: '#D35E5E',
+              flexShrink: 0,
+            }} />
+            Sistem belum aktif
+          </div>
+        </div>
+
+        {/* Step list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+          {STEPS.map((step, index) => {
+            const done    = steps[step.key]
+            const current = index === currentIndex
+            const locked  = !done && index > currentIndex
+
+            return (
+              <div
+                key={step.key}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.6rem 0.75rem',
+                  borderRadius: 15,
+                  background: current ? '#E6E8EC' : 'transparent',
+                  opacity: locked ? 0.45 : 1,
+                  transition: 'opacity 0.2s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  {done
+                    ? <CheckCircle2 size={17} color="var(--emerald)" />
+                    : <Circle size={17} color={current ? 'var(--navy)' : '#CBD5E1'} />
+                  }
+                  <span style={{
+                    fontSize: '1.2rem',
+                    fontWeight: current ? 600 : 400,
+                    color: done ? '#94A3B8' : current ? 'var(--navy-dark)' : 'var(--text-muted)',
+                    textDecoration: done ? 'line-through' : 'none',
+                  }}>
+                    {step.label}
+                  </span>
+                </div>
+
+                {current && step.href && (
+                  <button
+                    onClick={() => router.push(step.href!)}
+                    style={{
+                      position: 'relative',
+                      right: 6,
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--navy)', fontWeight: 700, fontSize: '1rem',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: 6,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Mulai<Image src="/icons/IconArrowKanan.png" width={12} height={12} alt="" style={{ display: 'block' }} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
       </div>
     </div>
   )
