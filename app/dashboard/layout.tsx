@@ -31,6 +31,212 @@ interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: str
 function getAuthRaw() { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
 
+/* ─── Reset Demo Popup ──────────────────────────────────────────── */
+
+const RESET_CSS = `
+@keyframes rd-backdrop { from{opacity:0} to{opacity:1} }
+@keyframes rd-card {
+  0%   { opacity:0; transform:scale(0.78) translateY(44px) }
+  65%  { opacity:1; transform:scale(1.03) translateY(-4px) }
+  100% { opacity:1; transform:scale(1)    translateY(0) }
+}
+@keyframes rd-shake {
+  0%,100% { transform:translateX(0) }
+  20%      { transform:translateX(-5px) }
+  40%      { transform:translateX(5px) }
+  60%      { transform:translateX(-4px) }
+  80%      { transform:translateX(4px) }
+}
+@keyframes rd-icon-pulse {
+  0%,100% { transform:scale(1) }
+  50%     { transform:scale(1.12) }
+}
+@keyframes rd-fade-up {
+  from { opacity:0; transform:translateY(10px) }
+  to   { opacity:1; transform:translateY(0) }
+}
+@keyframes rd-spin { to { transform:rotate(360deg) } }
+`
+
+const DELETED_ITEMS = [
+  'Semua data siswa',
+  'Tagihan & riwayat pembayaran',
+  'Kelas & komponen tagihan',
+  'Tahun ajaran',
+  'Profil & nama sekolah',
+]
+
+function ResetDemoPopup({
+  resetting,
+  onClose,
+  onConfirm,
+}: {
+  resetting: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <>
+      <style>{RESET_CSS}</style>
+      {/* Backdrop */}
+      <div
+        style={{
+          position: 'fixed', inset: 0, zIndex: 999,
+          background: 'rgba(8,16,34,0.75)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'rd-backdrop 0.28s ease forwards',
+        }}
+        onClick={() => { if (!resetting) onClose() }}
+      >
+        {/* Card */}
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 24,
+            padding: '2.5rem 2.75rem',
+            maxWidth: 420,
+            width: '90%',
+            boxShadow: '0 40px 100px rgba(0,0,0,0.32)',
+            animation: 'rd-card 0.56s cubic-bezier(0.34,1.56,0.64,1) forwards',
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Red top bar */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+            background: 'linear-gradient(90deg,#EF4444,#F97316)',
+          }} />
+
+          {/* Icon */}
+          <div style={{
+            width: 68, height: 68, borderRadius: '50%',
+            background: '#FEF2F2',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 1.5rem',
+            animation: 'rd-icon-pulse 2s ease-in-out infinite',
+          }}>
+            <RotateCcw size={30} color="#EF4444" />
+          </div>
+
+          {/* Title */}
+          <h2 style={{
+            fontSize: '1.55rem', fontWeight: 800,
+            color: '#0F172A', textAlign: 'center',
+            margin: '0 0 0.5rem',
+            fontFamily: 'var(--font-dm-sans), sans-serif',
+            animation: 'rd-fade-up 0.4s ease 0.15s backwards',
+          }}>
+            Reset Semua Data Demo?
+          </h2>
+
+          {/* Desc */}
+          <p style={{
+            textAlign: 'center', color: '#64748B',
+            fontSize: '0.9rem', lineHeight: 1.6,
+            margin: '0 0 1.25rem',
+            animation: 'rd-fade-up 0.4s ease 0.25s backwards',
+          }}>
+            Tindakan ini <strong style={{ color: '#EF4444' }}>tidak dapat dibatalkan</strong>.
+            Data berikut akan dihapus permanen:
+          </p>
+
+          {/* List */}
+          <ul style={{
+            margin: '0 0 1.75rem',
+            padding: 0,
+            listStyle: 'none',
+            display: 'flex', flexDirection: 'column', gap: '0.4rem',
+            animation: 'rd-fade-up 0.4s ease 0.32s backwards',
+          }}>
+            {DELETED_ITEMS.map(item => (
+              <li key={item} style={{
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                background: '#FFF5F5',
+                border: '1px solid #FEE2E2',
+                borderRadius: 8,
+                padding: '0.45rem 0.75rem',
+                fontSize: '0.875rem',
+                color: '#7F1D1D',
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: '#EF4444', flexShrink: 0,
+                }} />
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          {/* Actions */}
+          <div style={{
+            display: 'flex', gap: '0.75rem',
+            animation: 'rd-fade-up 0.4s ease 0.42s backwards',
+          }}>
+            <button
+              onClick={onClose}
+              disabled={resetting}
+              style={{
+                flex: 1,
+                background: '#F1F5F9', color: '#475569',
+                border: 'none', borderRadius: 12,
+                padding: '0.8rem', fontSize: '0.9rem',
+                fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'var(--font-dm-sans), sans-serif',
+                opacity: resetting ? 0.5 : 1,
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { if (!resetting) (e.currentTarget as HTMLButtonElement).style.background = '#E2E8F0' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F1F5F9' }}
+            >
+              Batal
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={resetting}
+              style={{
+                flex: 1,
+                background: resetting ? '#FCA5A5' : 'linear-gradient(135deg,#EF4444,#DC2626)',
+                color: '#fff',
+                border: 'none', borderRadius: 12,
+                padding: '0.8rem', fontSize: '0.9rem',
+                fontWeight: 700, cursor: resetting ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-dm-sans), sans-serif',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                boxShadow: resetting ? 'none' : '0 6px 20px rgba(239,68,68,0.4)',
+                transition: 'box-shadow 0.15s, transform 0.15s',
+              }}
+              onMouseEnter={e => { if (!resetting) (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = '' }}
+            >
+              {resetting ? (
+                <>
+                  <span style={{
+                    width: 14, height: 14, borderRadius: '50%',
+                    border: '2px solid rgba(255,255,255,0.4)',
+                    borderTopColor: '#fff',
+                    display: 'inline-block',
+                    animation: 'rd-spin 0.7s linear infinite',
+                  }} />
+                  Mereset...
+                </>
+              ) : (
+                <>
+                  Ya, Reset Semua
+                </>
+              )}
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
@@ -55,9 +261,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (wasOnSiswa   && !nowOnSiswa)  setSiswaOpen(false)
   }
 
-  // Toggle dropdown tanpa navigasi — pengguna pilih sendiri subfiturnya
-  const toggleTagihan = () => setTagihanOpen(o => !o)
-  const toggleSiswa   = () => setSiswaOpen(o => !o)
+  // Toggle dropdown — accordion: buka satu, tutup yang lain
+  const toggleTagihan = () => {
+    setTagihanOpen(o => { if (!o) setSiswaOpen(false); return !o })
+  }
+  const toggleSiswa = () => {
+    setSiswaOpen(o => { if (!o) setTagihanOpen(false); return !o })
+  }
 
   const raw = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -160,7 +370,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <ChevronDown size={14} className={`sidebar-chevron${tagihanOpen ? ' rotated' : ''}`} />
           </button>
           <div className={`sidebar-submenu${tagihanOpen ? ' sidebar-submenu--open' : ''}`}>
-              <Link href="/dashboard/tagihan/tahun-ajaran" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/tahun-ajaran' ? ' active' : ''}`}>
+              <Link href="/dashboard/tagihan/tahun-ajaran" className={`sidebar-sub-item${pathname.startsWith('/dashboard/tagihan/tahun-ajaran') ? ' active' : ''}`}>
                 <Calendar size={13} /><span>Tahun Ajaran</span>
               </Link>
               {allDone ? (
@@ -174,7 +384,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {tahunAjaranDone ? (
-                <Link href="/dashboard/tagihan/komponen" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/komponen' ? ' active' : ''}`}>
+                <Link href="/dashboard/tagihan/komponen" className={`sidebar-sub-item${pathname.startsWith('/dashboard/tagihan/komponen') ? ' active' : ''}`}>
                   <Layers size={13} /><span>Komponen Tagihan</span>
                 </Link>
               ) : (
@@ -208,7 +418,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Siswa dropdown */}
           {komponenDone ? (
             <button
-              className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/siswa') || pathname === '/dashboard/siswa/manajemen-kelas' ? ' active' : ''}`}
+              className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/siswa') ? ' active' : ''}`}
               onClick={toggleSiswa}
             >
               <Users size={18} className="sidebar-icon" />
@@ -234,7 +444,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {komponenDone ? (
-                <Link href="/dashboard/siswa/manajemen-kelas" className={`sidebar-sub-item${pathname === '/dashboard/siswa/manajemen-kelas' ? ' active' : ''}`}>
+                <Link href="/dashboard/siswa/manajemen-kelas" className={`sidebar-sub-item${pathname.startsWith('/dashboard/siswa/manajemen-kelas') ? ' active' : ''}`}>
                   <GraduationCap size={13} /><span>Manajemen Kelas</span>
                 </Link>
               ) : (
@@ -282,21 +492,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
 
-          {/* Reset Demo — super_admin only */}
-          {user?.role === 'super_admin' && (
-            <button
-              className="sidebar-item"
-              onClick={() => setShowResetModal(true)}
-              style={{ color: '#F87171', marginTop: 'auto', marginLeft: '-0.75rem' }}
-            >
-              <RotateCcw size={18} className="sidebar-icon" />
-              <span>Reset Demo</span>
-            </button>
-          )}
         </nav>
 
         {/* ── Bottom (kuning) ── */}
         <div className="sidebar-bottom">
+          <button
+            className="sidebar-bottom-item"
+            onClick={() => setShowResetModal(true)}
+            style={{ color: '#e83232' }}
+          >
+            <RotateCcw size={18} />
+            <span>Reset Demo</span>
+          </button>
           <Link
             href="/dashboard/pengaturan"
             className={`sidebar-bottom-item${pathname === '/dashboard/pengaturan' ? ' active' : ''}`}
@@ -335,51 +542,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Reset Demo Modal */}
       {showResetModal && (
-        <div className="logout-modal-overlay" onClick={() => setShowResetModal(false)}>
-          <div className="logout-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="logout-modal-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
-              <RotateCcw size={28} />
-            </div>
-            <h3 className="logout-modal-title">Reset Demo?</h3>
-            <p className="logout-modal-desc">
-              Semua data demo akan <strong>dihapus permanen</strong> — siswa, tagihan, pembayaran, dan profil sekolah saat ini.
-            </p>
-            <p className="logout-modal-desc" style={{ marginTop: '0.5rem', color: '#6B7280', fontSize: '0.8rem' }}>
-              Kamu akan mengisi ulang nama, jabatan, dan profil sekolah untuk kunjungan berikutnya.
-            </p>
-            <div className="logout-modal-actions">
-              <button className="logout-modal-cancel" onClick={() => setShowResetModal(false)}>Batal</button>
-              <button
-                className="logout-modal-confirm"
-                style={{ background: '#EF4444', borderColor: '#EF4444', opacity: resetting ? 0.7 : 1 }}
-                disabled={resetting}
-                onClick={async () => {
-                  setResetting(true)
-                  try {
-                    const { createBrowserClient } = await import('@supabase/ssr')
-                    const sb = createBrowserClient(
-                      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-                    )
-                    const { data: { session } } = await sb.auth.getSession()
-                    await fetch('/api/demo-reset', {
-                      method: 'POST',
-                      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
-                    })
-                  } finally {
-                    localStorage.removeItem('siku_auth')
-                    localStorage.removeItem('siku_setup_steps')
-                    setResetting(false)
-                    setShowResetModal(false)
-                    router.push('/')
-                  }
-                }}
-              >
-                {resetting ? 'Mereset...' : 'Ya, Reset Demo'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ResetDemoPopup
+          resetting={resetting}
+          onClose={() => setShowResetModal(false)}
+          onConfirm={async () => {
+            setResetting(true)
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              await fetch('/api/demo-reset', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+              })
+            } finally {
+              localStorage.removeItem('siku_auth')
+              localStorage.removeItem('siku_setup_steps')
+              localStorage.removeItem('siku_setup_done')
+              setResetting(false)
+              setShowResetModal(false)
+              router.push('/')
+            }
+          }}
+        />
       )}
     </div>
   )

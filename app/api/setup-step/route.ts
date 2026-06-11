@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       semester_genap_mulai: string; semester_genap_selesai: string
     }
 
-    await supabaseAdmin.from('tahun_ajaran').delete().eq('sekolah_id', profile.sekolah_id)
+    await supabaseAdmin.from('tahun_ajaran').delete().eq('sekolah_id', profile.sekolah_id).eq('is_aktif', true)
 
     const { error: taError } = await supabaseAdmin.from('tahun_ajaran').insert({
       sekolah_id: profile.sekolah_id,
@@ -90,14 +90,10 @@ export async function POST(req: NextRequest) {
       const { data: ins } = await supabaseAdmin
         .from('komponen_tagihan')
         .insert({
-          sekolah_id:    profile.sekolah_id,
-          jenis:         card.jenis,
-          nama:          card.nama          ?? null,
-          kelas_jenjang: card.kelasJenjang  ?? null,
-          kelas_warna:   card.kelasWarna    ?? null,
-          kelas_jumlah:  card.kelasJumlah   ?? null,
-          kelas_ref:     card.kelasRef      ?? null,
-          scope:         card.scope         ?? null,
+          sekolah_id:  profile.sekolah_id,
+          jenis:       card.jenis,
+          nama:        card.nama       ?? null,
+          kelas_warna: card.kelasWarna ?? null,
           tahun_ajaran,
           semester,
         })
@@ -128,6 +124,30 @@ export async function POST(req: NextRequest) {
           }))
         )
       }
+    }
+  }
+
+  // ── Simpan kelas ke tabel kelas ───────────────────────────────────────
+  if (step === 'buat_kelas' && stepData) {
+    const { tahun_ajaran, semester, kelas } = stepData as {
+      tahun_ajaran: string
+      semester:     string
+      kelas:        { nama: string; warna: string }[]
+    }
+
+    await supabaseAdmin.from('kelas').delete().eq('sekolah_id', profile.sekolah_id)
+
+    if (kelas.length > 0) {
+      await supabaseAdmin.from('kelas').insert(
+        kelas.map(k => ({
+          sekolah_id:   profile.sekolah_id,
+          nama:         k.nama,
+          jenjang:      k.nama.split('-')[0] ?? '',
+          warna:        k.warna,
+          tahun_ajaran,
+          semester,
+        }))
+      )
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, MessageCircle, Users } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Users, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface KelasDetail {
@@ -83,7 +83,7 @@ export default function KelasDetailPage() {
           <button
             onClick={() => router.push('/dashboard/siswa/manajemen-kelas')}
             style={{
-              background: 'none', border: '1.5px solid var(--border)', borderRadius: 8,
+              background: 'none', border: '1.5px solid #1A2C4E', borderRadius: 8,
               width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', color: 'var(--navy)', flexShrink: 0, padding: 0,
             }}
@@ -103,6 +103,14 @@ export default function KelasDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Tombol Edit */}
+        <button
+          onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}/edit`)}
+          style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}
+        >
+          <Pencil size={13} /> Edit Kelas
+        </button>
 
         {/* Wali kelas */}
         <div style={{ textAlign: 'right' }}>
@@ -176,6 +184,8 @@ export default function KelasDetailPage() {
     </div>
   )
 }
+
+const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 
 const sBadge: React.CSSProperties = {
   background: '#F1F5F9', color: 'var(--navy-dark)',

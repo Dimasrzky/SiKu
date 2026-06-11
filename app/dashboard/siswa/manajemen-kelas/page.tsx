@@ -2,15 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Plus, GraduationCap, Pencil, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { KelasCard, type KelasCardData } from '@/components/KelasCard'
 
-const SEMESTER_OPTIONS     = ['Ganjil', 'Genap']
-const TAHUN_AJARAN_OPTIONS = (() => {
-  const base = new Date().getFullYear()
-  return Array.from({ length: 5 }, (_, i) => `${base - 1 + i}/${base + i}`)
-})()
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const WARNA_OPTIONS = [
   '#1E3A8A', '#1D4ED8', '#0891B2', '#059669',
   '#7C3AED', '#BE185D', '#DC2626', '#D97706',
@@ -24,6 +22,11 @@ const JENJANG_MAP: Record<string, string[]> = {
   SMA: ['X', 'XI', 'XII'],
   SMK: ['X', 'XI', 'XII'],
 }
+
+const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
+const THIS_STEP_INDEX = 3
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface KelasRow {
   id:           string
@@ -62,12 +65,14 @@ function buildCards(rows: KelasRow[]): KelasCardData[] {
   }))
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function KelasPage() {
   const router   = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const [tahunAjaran,    setTahunAjaran]    = useState('2025/2026')
-  const [semester,       setSemester]       = useState('Genap')
+  const [tahunAjaran,    setTahunAjaran]    = useState('')
+  const [semester,       setSemester]       = useState('')
   const [cards,          setCards]          = useState<KelasCardData[]>([])
   const [modal,          setModal]          = useState<ModalState>(defaultModal())
   const [newSuffix,      setNewSuffix]      = useState('')
@@ -78,18 +83,17 @@ export default function KelasPage() {
   const [dataLoading,    setDataLoading]    = useState(true)
   const [rawRows,        setRawRows]        = useState<KelasRow[]>([])
   const [expandedGroup,  setExpandedGroup]  = useState<string | null>(null)
+  const [setupSteps,     setSetupSteps]     = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     Promise.all([
-      supabase
-        .from('pengaturan')
-        .select('jenjang_sekolah, setup_steps')
+      supabase.from('pengaturan').select('jenjang_sekolah, setup_steps').maybeSingle(),
+      supabase.from('kelas').select('id, nama, jenjang, warna, tahun_ajaran, semester').order('jenjang'),
+      supabase.from('tahun_ajaran')
+        .select('nama, semester_ganjil_mulai, semester_ganjil_selesai')
+        .eq('is_aktif', true)
         .maybeSingle(),
-      supabase
-        .from('kelas')
-        .select('id, nama, jenjang, warna, tahun_ajaran, semester')
-        .order('jenjang'),
-    ]).then(([{ data: pData }, { data: kData }]) => {
+    ]).then(([{ data: pData }, { data: kData }, { data: taData }]) => {
       const peng = pData as { jenjang_sekolah?: string; setup_steps?: Record<string, unknown> } | null
 
       if (!peng?.setup_steps?.['komponen_tagihan']) {
@@ -97,11 +101,14 @@ export default function KelasPage() {
         return
       }
 
+      const steps = (peng?.setup_steps ?? {}) as Record<string, boolean>
+      setSetupSteps(steps)
+
       const opts = JENJANG_MAP[peng?.jenjang_sekolah ?? 'SMP'] ?? JENJANG_MAP['SMP']
       setJenjangOptions(opts)
       setModal(defaultModal(opts[0]))
 
-      if (peng?.setup_steps?.['buat_kelas'] === true) {
+      if (steps['buat_kelas'] === true) {
         setSetupDone(true)
       }
 
@@ -111,11 +118,21 @@ export default function KelasPage() {
         setSemester(rows[0].semester)
         setCards(buildCards(rows))
         setRawRows(rows)
+      } else if (taData) {
+        type TaRow = { nama: string; semester_ganjil_mulai: string; semester_ganjil_selesai: string }
+        const ta = taData as TaRow
+        const today    = new Date()
+        const gMulai   = new Date(ta.semester_ganjil_mulai)
+        const gSelesai = new Date(ta.semester_ganjil_selesai)
+        setTahunAjaran(ta.nama)
+        setSemester(today >= gMulai && today <= gSelesai ? 'Ganjil' : 'Genap')
       }
 
       setDataLoading(false)
     })
   }, [router])
+
+  // ── Modal helpers ─────────────────────────────────────────────────────────
 
   const openAdd  = () => { setModal({ open: true, mode: 'add', jenjang: jenjangOptions[0] ?? 'VII', identitas: [], warna: '#1D4ED8' }); setNewSuffix('') }
   const openEdit = (c: KelasCardData) => { setModal({ open: true, mode: 'edit', editId: c.id, jenjang: c.jenjang, identitas: [...c.identitas], warna: c.warna }); setNewSuffix('') }
@@ -152,7 +169,7 @@ export default function KelasPage() {
     const res = await fetch('/api/setup-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
-      body: JSON.stringify({ step: 'kelas_tahun_ajaran', data: { tahun_ajaran: tahunAjaran, semester, kelas: kelasFlat } }),
+      body: JSON.stringify({ step: 'buat_kelas', data: { tahun_ajaran: tahunAjaran, semester, kelas: kelasFlat } }),
     })
     const json = await res.json() as { error?: string }
     if (!res.ok) { setError(json.error ?? 'Gagal menyimpan.'); setLoading(false); return }
@@ -160,6 +177,8 @@ export default function KelasPage() {
   }
 
   const totalKelas = cards.reduce((s, c) => s + c.identitas.length, 0)
+
+  // ── Loading ───────────────────────────────────────────────────────────────
 
   if (dataLoading) {
     return (
@@ -171,7 +190,8 @@ export default function KelasPage() {
     )
   }
 
-  // ── VIEW MODE ─────────────────────────────────────────────────────────
+  // ── VIEW MODE ─────────────────────────────────────────────────────────────
+
   if (setupDone) {
     const groups: { jenjang: string; warna: string; items: { id: string; identitas: string }[] }[] = []
     const groupMap = new Map<string, typeof groups[0]>()
@@ -189,7 +209,6 @@ export default function KelasPage() {
     const toggleGroup = (jenjang: string) =>
       setExpandedGroup(prev => prev === jenjang ? null : jenjang)
 
-    // Bagi groups ke 3 kolom secara berurutan
     const NUM_COLS = 3
     const columns: typeof groups[0][][] = Array.from({ length: NUM_COLS }, () => [])
     groups.forEach((g, i) => columns[i % NUM_COLS].push(g))
@@ -208,14 +227,13 @@ export default function KelasPage() {
             </div>
           </div>
           <button
-            onClick={() => setSetupDone(false)}
+            onClick={() => router.push('/dashboard/siswa/manajemen-kelas/edit')}
             style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '0.5rem 1rem' }}
           >
             <Pencil size={13} /> Edit
           </button>
         </div>
 
-        {/* Grid 3 kolom eksplisit — expand hanya pengaruhi kolom sendiri */}
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${NUM_COLS}, 1fr)`, gap: '0.75rem', alignItems: 'start' }}>
           {columns.map((col, colIdx) => (
             <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -223,7 +241,6 @@ export default function KelasPage() {
                 const isExpanded = expandedGroup === group.jenjang
                 return (
                   <div key={group.jenjang} style={{ background: group.warna, borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
-                    {/* Header — 2:1 aspect ratio */}
                     <button
                       onClick={() => toggleGroup(group.jenjang)}
                       style={{
@@ -233,30 +250,20 @@ export default function KelasPage() {
                         background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
                       }}
                     >
-                      {/* Judul — pojok kiri atas */}
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '1.3rem', color: '#fff', lineHeight: 1.2 }}>Kelas {group.jenjang}</div>
                         <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginTop: 3, fontWeight: 500 }}>{group.items.length} kelas</div>
                       </div>
-                      {/* Chevron — pojok kanan bawah */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                         <ChevronDown
                           size={18}
                           color="rgba(255,255,255,0.85)"
-                          style={{
-                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                            transition: 'transform 0.2s ease',
-                          }}
+                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}
                         />
                       </div>
                     </button>
 
-                    {/* Grid identitas — animasi smooth grid-template-rows */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateRows: isExpanded ? '1fr' : '0fr',
-                      transition: 'grid-template-rows 0.3s ease',
-                    }}>
+                    <div style={{ display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s ease' }}>
                       <div style={{ overflow: 'hidden' }}>
                         <div style={{ padding: '0 0.875rem 0.875rem' }}>
                           <div style={{ height: 1, background: 'rgba(255,255,255,0.25)', marginBottom: '0.65rem' }} />
@@ -266,8 +273,7 @@ export default function KelasPage() {
                                 key={id}
                                 onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}`)}
                                 style={{
-                                  background: 'rgba(255,255,255,0.18)',
-                                  color: '#fff',
+                                  background: 'rgba(255,255,255,0.18)', color: '#fff',
                                   border: '1px solid rgba(255,255,255,0.3)',
                                   borderRadius: 8, padding: '0.45rem 0.25rem',
                                   fontWeight: 700, fontSize: '0.82rem',
@@ -292,209 +298,253 @@ export default function KelasPage() {
     )
   }
 
-  // ── SETUP MODE ────────────────────────────────────────────────────────
+  // ── SETUP MODE ────────────────────────────────────────────────────────────
+
+  const completedBefore = STEP_ORDER.slice(0, THIS_STEP_INDEX).filter(k => setupSteps[k]).length
+  const greenCount      = completedBefore + 1
+
   return (
+    <>
+    <style>{`
+      @keyframes dot-blink {
+        0%, 100% { background-color: #69C183; }
+        50%       { background-color: #CBD5E1; }
+      }
+      .dot-active { animation: dot-blink 1.8s ease-in-out infinite; }
+    `}</style>
     <div className="dashboard-content">
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Kelas &amp; Tahun Ajaran</h1>
-          <p className="dashboard-subtitle">Setup kelas dan periode aktif sekolah</p>
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)' }}>
+            <GraduationCap size={30} color="#fff" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>
+              Buat kelas
+            </h1>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>Langkah 4 dari 5</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+          {STEP_ORDER.map((_, i) => {
+            const isActive = i === greenCount - 1
+            return (
+              <div key={i} className={isActive ? 'dot-active' : undefined}
+                style={{ width: 16, height: 16, borderRadius: '50%', position: 'relative', bottom: 10, right: 6, background: i < greenCount ? '#69C183' : '#CBD5E1', transition: 'background 0.2s', boxShadow: '3px 6px 14px rgba(26, 44, 78, 0.58)' }}
+              />
+            )
+          })}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem', alignItems: 'start' }}>
+      {/* Info Banner */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', background: '#1A2C4E', borderRadius: 12, padding: '1rem 1.25rem', marginBottom: '1rem', color: '#fff', boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)' }}>
+        <p style={{ flex: 1, fontSize: '1.25rem', lineHeight: 1.65, margin: 0 }}>
+          Buat daftar kelas yang ada di sekolah. Setiap kelas memiliki jenjang, identitas (A, B, 1, 2...), dan warna untuk memudahkan pengelolaan tagihan per kelas.
+        </p>
+        <div style={{ flexShrink: 0, marginLeft: 'auto', width: 40, height: 40, background: '#F7DD7D', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', top: '-0.4rem', right: '-0.65rem' }}>
+          <Image src="/icons/IconTSeru.png" width={3.5} height={3.5} alt="Info" style={{ display: 'block' }} />
+        </div>
+      </div>
 
+      {/* Form Card */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderLeft: '30px solid var(--navy)', borderRadius: 12, padding: '1.5rem 1.75rem', boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)' }}>
+
+        {error && (
+          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '0.65rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem', color: '#DC2626' }}>
+            {error}
+          </div>
+        )}
+
+        {/* Periode Aktif — text only */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>Periode Aktif</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={sViewItem}>
+              <span style={sViewLabel}>Tahun Ajaran</span>
+              <span style={sViewValue}>{tahunAjaran || '—'}</span>
+            </div>
+            <div style={sViewItem}>
+              <span style={sViewLabel}>Semester</span>
+              <span style={sViewValue}>Semester {semester || '—'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Daftar Kelas */}
         <div>
-          {error && <div className="login-error" style={{ marginBottom: '1rem' }}>{error}</div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.9rem' }}>Daftar Kelas</div>
+            <button onClick={openAdd} style={{ ...sBtnPrimary, padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Plus size={14} /> Tambah Kelas
+            </button>
+          </div>
 
-          <div style={sCard}>
-            <div style={sCardTitle}>Periode Aktif</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div>
-                <label style={sLabel}>Tahun Ajaran</label>
-                <select style={{ ...sInput, appearance: 'auto' }} value={tahunAjaran} onChange={e => setTahunAjaran(e.target.value)}>
-                  {TAHUN_AJARAN_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                </select>
+          {cards.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Belum ada kelas. Klik <strong>Tambah Kelas</strong> untuk memulai.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+              {cards.map(c => (
+                <KelasCard key={c.id} card={c} onEdit={openEdit} onDelete={id => setCards(prev => prev.filter(x => x.id !== id))} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Simpan */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
+          <p style={{ fontSize: '1rem', color: 'var(--text-muted)', margin: 0, fontWeight: 500 }}>
+            <span style={{ fontWeight: 700 }}>ⓘ</span>{' '}
+            Data kelas akan disimpan untuk <strong>{tahunAjaran || 'tahun ajaran aktif'}</strong>.
+          </p>
+          <button onClick={handleSimpan} disabled={loading}
+            style={{ flexShrink: 0, background: loading ? '#D1D5DB' : '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.7rem 1.5rem', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'background 0.15s', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)' }}>
+            {loading ? 'Menyimpan...' : 'Simpan & Lanjutkan →'}
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    {/* Modal tambah / edit kelas */}
+    {modal.open && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }} onClick={closeModal}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+          <h3 style={{ fontFamily: 'var(--font-serif,Georgia,serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', marginBottom: '1.25rem' }}>
+            {modal.mode === 'add' ? 'Tambah Kelas Baru' : 'Edit Kelas'}
+          </h3>
+
+          {modal.mode === 'add' && (
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={sLabel}>Kelas</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {jenjangOptions.map(j => {
+                  const sudahAda = cards.some(c => c.jenjang === j)
+                  return (
+                    <button key={j} onClick={() => !sudahAda && setModal(m => ({ ...m, jenjang: j }))}
+                      disabled={sudahAda}
+                      style={{
+                        flex: 1, padding: '0.6rem', borderRadius: 8, fontFamily: 'inherit',
+                        fontWeight: 700, fontSize: '0.875rem', cursor: sudahAda ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s', opacity: sudahAda ? 0.4 : 1,
+                        border: `2px solid ${modal.jenjang === j ? 'var(--navy)' : 'var(--border)'}`,
+                        background: modal.jenjang === j ? 'var(--navy)' : '#fff',
+                        color: modal.jenjang === j ? '#fff' : 'var(--text-muted)',
+                      }}
+                    >
+                      {j}
+                    </button>
+                  )
+                })}
               </div>
-              <div>
-                <label style={sLabel}>Semester</label>
-                <select style={{ ...sInput, appearance: 'auto' }} value={semester} onChange={e => setSemester(e.target.value)}>
-                  {SEMESTER_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
+            </div>
+          )}
+
+          {/* Warna Kelas — hybrid picker */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={sLabel}>Warna Kelas</label>
+            <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              {WARNA_OPTIONS.map(w => (
+                <button key={w} onClick={() => setModal(m => ({ ...m, warna: w }))}
+                  style={{
+                    width: 30, height: 30, borderRadius: 8, background: w, cursor: 'pointer',
+                    border: modal.warna === w ? '3px solid #1E3A8A' : '2px solid transparent',
+                    outline: modal.warna === w ? '2px solid #fff' : 'none', outlineOffset: -4,
+                    boxShadow: `0 2px 6px ${w}55`,
+                    transform: modal.warna === w ? 'scale(1.18)' : 'scale(1)', transition: 'transform 0.12s',
+                  }}
+                />
+              ))}
+
+              {/* Rainbow custom picker */}
+              <label title="Pilih warna kustom" style={{ position: 'relative', width: 30, height: 30, cursor: 'pointer' }}>
+                <input type="color" value={modal.warna} onChange={e => setModal(m => ({ ...m, warna: e.target.value }))}
+                  style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%' }} />
+                <div style={{
+                  width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: !WARNA_OPTIONS.includes(modal.warna)
+                    ? modal.warna
+                    : 'conic-gradient(from 0deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+                  transform: !WARNA_OPTIONS.includes(modal.warna) ? 'scale(1.18)' : 'scale(1)',
+                  boxShadow: !WARNA_OPTIONS.includes(modal.warna) ? `0 0 0 2px #fff, 0 0 0 4px ${modal.warna}` : 'none',
+                  transition: 'transform 0.12s',
+                }}>
+                  {WARNA_OPTIONS.includes(modal.warna) && (
+                    <span style={{ fontSize: '0.65rem', color: '#fff', lineHeight: 1 }}>✦</span>
+                  )}
+                </div>
+              </label>
             </div>
           </div>
 
-          <div style={sCard}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <div style={sCardTitle}>Daftar Kelas</div>
-              <button onClick={openAdd} style={{ ...sBtnPrimary, padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Plus size={14} /> Tambah Kelas
-              </button>
-            </div>
+          {/* Identitas Kelas */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label style={sLabel}>Identitas Kelas</label>
 
-            {cards.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                Belum ada kelas. Klik <strong>Tambah Kelas</strong> untuk memulai.
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                {cards.map(c => (
-                  <KelasCard key={c.id} card={c} onEdit={openEdit} onDelete={id => setCards(prev => prev.filter(x => x.id !== id))} />
+            {modal.identitas.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.6rem' }}>
+                {modal.identitas.map(id => (
+                  <span key={id} style={{
+                    background: `${modal.warna}18`, color: modal.warna,
+                    border: `1px solid ${modal.warna}44`, borderRadius: 6,
+                    padding: '0.25rem 0.6rem', fontSize: '0.82rem', fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                  }}>
+                    {modal.jenjang}-{id}
+                    <button onClick={() => removeIdentitas(id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: modal.warna, padding: 0, lineHeight: 1, fontSize: '1rem' }}>×</button>
+                  </span>
                 ))}
               </div>
             )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', whiteSpace: 'nowrap' }}>
+                {modal.jenjang} -
+              </span>
+              <input
+                ref={inputRef}
+                type="text" style={{ ...sInput, flex: 1 }}
+                placeholder="A, B, 1, 2 ..."
+                value={newSuffix} maxLength={4}
+                onChange={e => setNewSuffix(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addIdentitas()}
+              />
+              <button onClick={addIdentitas} disabled={!newSuffix.trim()}
+                style={{ ...sBtnPrimary, padding: '0.6rem 0.9rem', opacity: newSuffix.trim() ? 1 : 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Plus size={14} /> Tambah
+              </button>
+            </div>
+            <p style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Tekan Enter atau klik Tambah untuk menambah identitas
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button onClick={() => router.push('/dashboard')} style={sBtnSecondary}>← Kembali</button>
-            <button onClick={handleSimpan} disabled={loading} style={{ ...sBtnPrimary, flex: 1, opacity: loading ? 0.7 : 1 }}>
-              {loading ? 'Menyimpan...' : 'Simpan'}
+            <button onClick={closeModal} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
+            <button onClick={handleSubmitModal} disabled={modal.identitas.length === 0}
+              style={{ ...sBtnPrimary, flex: 2, opacity: modal.identitas.length > 0 ? 1 : 0.5 }}>
+              {modal.mode === 'add' ? `Tambah Kelas (${modal.identitas.length})` : 'Simpan Perubahan'}
             </button>
           </div>
         </div>
-
-        <div style={{ position: 'sticky', top: '1.5rem' }}>
-          <div style={sCard}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <GraduationCap size={16} color="var(--navy)" />
-              <span style={sCardTitle}>Preview</span>
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-              <span style={sBadge}>{tahunAjaran}</span>
-              <span style={sBadge}>Semester {semester}</span>
-            </div>
-
-            {cards.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem', padding: '1.5rem 0' }}>
-                Belum ada kelas ditambahkan
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                  {cards.map(c => (
-                    <KelasCard key={c.id} card={c} readonly />
-                  ))}
-                </div>
-                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)', fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Total kelas</span>
-                  <strong style={{ color: 'var(--navy-dark)' }}>{totalKelas} kelas</strong>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
       </div>
-
-      {modal.open && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }} onClick={closeModal}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontFamily: 'var(--font-serif,Georgia,serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', marginBottom: '1.25rem' }}>
-              {modal.mode === 'add' ? 'Tambah Kelas Baru' : 'Edit Kelas'}
-            </h3>
-
-            {modal.mode === 'add' && (
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={sLabel}>Kelas</label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  {jenjangOptions.map(j => {
-                    const sudahAda = cards.some(c => c.jenjang === j)
-                    return (
-                      <button key={j} onClick={() => !sudahAda && setModal(m => ({ ...m, jenjang: j }))}
-                        disabled={sudahAda}
-                        style={{
-                          flex: 1, padding: '0.6rem', borderRadius: 8, fontFamily: 'inherit',
-                          fontWeight: 700, fontSize: '0.875rem', cursor: sudahAda ? 'not-allowed' : 'pointer',
-                          transition: 'all 0.15s', opacity: sudahAda ? 0.4 : 1,
-                          border: `2px solid ${modal.jenjang === j ? 'var(--navy)' : 'var(--border)'}`,
-                          background: modal.jenjang === j ? 'var(--navy)' : '#fff',
-                          color: modal.jenjang === j ? '#fff' : 'var(--text-muted)',
-                        }}
-                      >
-                        {j}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={sLabel}>Warna Kelas</label>
-              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-                {WARNA_OPTIONS.map(w => (
-                  <button key={w} onClick={() => setModal(m => ({ ...m, warna: w }))}
-                    style={{
-                      width: 30, height: 30, borderRadius: 8, background: w, cursor: 'pointer',
-                      border: modal.warna === w ? '3px solid #1E3A8A' : '2px solid transparent',
-                      outline: modal.warna === w ? '2px solid #fff' : 'none', outlineOffset: -4,
-                      boxShadow: `0 2px 6px ${w}55`,
-                      transform: modal.warna === w ? 'scale(1.18)' : 'scale(1)', transition: 'transform 0.12s',
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={sLabel}>Identitas Kelas</label>
-
-              {modal.identitas.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.6rem' }}>
-                  {modal.identitas.map(id => (
-                    <span key={id} style={{
-                      background: `${modal.warna}18`, color: modal.warna,
-                      border: `1px solid ${modal.warna}44`, borderRadius: 6,
-                      padding: '0.25rem 0.6rem', fontSize: '0.82rem', fontWeight: 600,
-                      display: 'flex', alignItems: 'center', gap: '0.35rem',
-                    }}>
-                      {modal.jenjang}-{id}
-                      <button onClick={() => removeIdentitas(id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: modal.warna, padding: 0, lineHeight: 1, fontSize: '1rem' }}>×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', whiteSpace: 'nowrap' }}>
-                  {modal.jenjang} -
-                </span>
-                <input
-                  ref={inputRef}
-                  type="text" style={{ ...sInput, flex: 1 }}
-                  placeholder="A, B, 1, 2 ..."
-                  value={newSuffix} maxLength={4}
-                  onChange={e => setNewSuffix(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addIdentitas()}
-                />
-                <button onClick={addIdentitas} disabled={!newSuffix.trim()}
-                  style={{ ...sBtnPrimary, padding: '0.6rem 0.9rem', opacity: newSuffix.trim() ? 1 : 0.5, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Plus size={14} /> Tambah
-                </button>
-              </div>
-              <p style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Tekan Enter atau klik Tambah untuk menambah identitas
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button onClick={closeModal} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
-              <button onClick={handleSubmitModal} disabled={modal.identitas.length === 0}
-                style={{ ...sBtnPrimary, flex: 2, opacity: modal.identitas.length > 0 ? 1 : 0.5 }}>
-                {modal.mode === 'add' ? `Tambah Kelas (${modal.identitas.length})` : 'Simpan Perubahan'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    )}
+    </>
   )
 }
 
-const sLabel: React.CSSProperties = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 4 }
-const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff' }
-const sCard: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
-const sCardTitle: React.CSSProperties = { fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.9rem', marginBottom: '1rem' }
-const sBadge: React.CSSProperties = { background: '#F1F5F9', color: 'var(--navy-dark)', fontSize: '0.75rem', fontWeight: 600, padding: '0.25rem 0.75rem', borderRadius: 20, border: '1px solid var(--border)' }
-const sBtnPrimary: React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
+// ── Style constants ───────────────────────────────────────────────────────────
+
+const sLabel:      React.CSSProperties = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 4 }
+const sInput:      React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff' }
+const sBadge:      React.CSSProperties = { background: '#F1F5F9', color: 'var(--navy-dark)', fontSize: '0.75rem', fontWeight: 600, padding: '0.25rem 0.75rem', borderRadius: 20, border: '1px solid var(--border)' }
+const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
+const sViewItem:  React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.2rem', background: '#F8FAFC', border: '1px solid var(--border)', borderRadius: 8, padding: '0.6rem 0.875rem' }
+const sViewLabel: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }
+const sViewValue: React.CSSProperties = { fontSize: '0.9rem', fontWeight: 700, color: 'var(--navy-dark)' }
