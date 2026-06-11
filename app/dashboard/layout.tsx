@@ -21,7 +21,9 @@ import {
   Package,
   Gift,
   GraduationCap,
+  Lock,
 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 import './dashboard.css'
 
 interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string }
@@ -35,32 +37,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [showResetModal,  setShowResetModal]  = useState(false)
   const [resetting,       setResetting]       = useState(false)
-  // Collapsed state — hanya berlaku saat on-path; reset otomatis saat masuk ulang ke section
-  const [tagihanCollapsed, setTagihanCollapsed] = useState(false)
-  const [siswaCollapsed,   setSiswaCollapsed]   = useState(false)
-  const [prevPath,         setPrevPath]         = useState(pathname)
+  const [tagihanOpen, setTagihanOpen] = useState(() => pathname.startsWith('/dashboard/tagihan'))
+  const [siswaOpen,   setSiswaOpen]   = useState(() => pathname.startsWith('/dashboard/siswa'))
+  const [prevPath,    setPrevPath]    = useState(pathname)
+  const [setupSteps,  setSetupSteps]  = useState<Record<string, boolean>>({})
 
-  // Bail-out pattern: deteksi perpindahan section, reset collapsed tanpa useEffect
+  // Bail-out pattern: auto-open saat masuk section, auto-close saat keluar
   if (prevPath !== pathname) {
     setPrevPath(pathname)
     const wasOnTagihan = prevPath.startsWith('/dashboard/tagihan')
     const nowOnTagihan = pathname.startsWith('/dashboard/tagihan')
-    const wasOnSiswa   = prevPath.startsWith('/dashboard/siswa') || prevPath === '/dashboard/kelas'
-    const nowOnSiswa   = pathname.startsWith('/dashboard/siswa') || pathname === '/dashboard/kelas'
-    if (!wasOnTagihan && nowOnTagihan && tagihanCollapsed) setTagihanCollapsed(false)
-    if (!wasOnSiswa   && nowOnSiswa   && siswaCollapsed)   setSiswaCollapsed(false)
+    const wasOnSiswa   = prevPath.startsWith('/dashboard/siswa')
+    const nowOnSiswa   = pathname.startsWith('/dashboard/siswa')
+    if (nowOnTagihan && !tagihanOpen) setTagihanOpen(true)
+    if (wasOnTagihan && !nowOnTagihan) setTagihanOpen(false)
+    if (nowOnSiswa   && !siswaOpen)   setSiswaOpen(true)
+    if (wasOnSiswa   && !nowOnSiswa)  setSiswaOpen(false)
   }
 
-  const tagihanPathOpen = pathname.startsWith('/dashboard/tagihan')
-  const siswaPathOpen   = pathname.startsWith('/dashboard/siswa') || pathname === '/dashboard/kelas'
-
-  // Dropdown hanya bisa terbuka saat on-path — tidak ada "force open" dari halaman lain
-  const tagihanOpen = tagihanPathOpen && !tagihanCollapsed
-  const siswaOpen   = siswaPathOpen   && !siswaCollapsed
-
-  // Toggle: saat on-path → buka/tutup; saat off-path → navigasi ke section default
-  const toggleTagihan = () => tagihanPathOpen ? setTagihanCollapsed(c => !c) : router.push('/dashboard/tagihan')
-  const toggleSiswa   = () => siswaPathOpen   ? setSiswaCollapsed(c => !c)   : router.push('/dashboard/siswa')
+  // Toggle dropdown tanpa navigasi — pengguna pilih sendiri subfiturnya
+  const toggleTagihan = () => setTagihanOpen(o => !o)
+  const toggleSiswa   = () => setSiswaOpen(o => !o)
 
   const raw = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -73,6 +70,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!localStorage.getItem('siku_auth')) router.replace('/')
   }, [router])
 
+  useEffect(() => {
+    const load = async () => {
+      // Render optimistis dari cache, lalu selalu fetch DB untuk pastikan data fresh
+      const cached = localStorage.getItem('siku_setup_steps')
+      if (cached) {
+        try { setSetupSteps(JSON.parse(cached) as Record<string, boolean>) } catch { /* ignore */ }
+      }
+      const { data } = await supabase.from('pengaturan').select('setup_steps').maybeSingle()
+      if (data?.setup_steps) {
+        const steps = data.setup_steps as Record<string, boolean>
+        setSetupSteps(steps)
+        localStorage.setItem('siku_setup_steps', JSON.stringify(steps))
+      }
+    }
+    load()
+  }, [pathname])
+
   const handleLogout = () => {
     localStorage.removeItem('siku_auth')
     router.push('/')
@@ -84,7 +98,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   )
 
-  const schoolInitial = user?.sekolah?.charAt(0)?.toUpperCase() || 'S'
+  const schoolInitial   = user?.sekolah?.charAt(0)?.toUpperCase() || 'S'
+  const tahunAjaranDone = setupSteps['tahun_ajaran']     === true
+  const komponenDone    = setupSteps['komponen_tagihan'] === true
+  const buatKelasDone   = setupSteps['buat_kelas']       === true
+  const allDone         = setupSteps['import_siswa']     === true
 
   return (
     <div className="dashboard-shell">
@@ -116,13 +134,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span>Dashboard</span>
           </Link>
 
-          <Link
-            href="/dashboard/pembayaran"
-            className={`sidebar-item${pathname === '/dashboard/pembayaran' ? ' active' : ''}`}
-          >
-            <Banknote size={18} className="sidebar-icon" />
-            <span>Pembayaran</span>
-          </Link>
+          {allDone ? (
+            <Link
+              href="/dashboard/pembayaran"
+              className={`sidebar-item${pathname === '/dashboard/pembayaran' ? ' active' : ''}`}
+            >
+              <Banknote size={18} className="sidebar-icon" />
+              <span>Pembayaran</span>
+            </Link>
+          ) : (
+            <div className="sidebar-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+              <Banknote size={18} className="sidebar-icon" />
+              <span>Pembayaran</span>
+              <Lock size={13} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+            </div>
+          )}
 
           {/* Tagihan dropdown */}
           <button
@@ -133,56 +159,117 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span>Tagihan</span>
             <ChevronDown size={14} className={`sidebar-chevron${tagihanOpen ? ' rotated' : ''}`} />
           </button>
-          {tagihanOpen && (
-            <div className="sidebar-submenu">
+          <div className={`sidebar-submenu${tagihanOpen ? ' sidebar-submenu--open' : ''}`}>
               <Link href="/dashboard/tagihan/tahun-ajaran" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/tahun-ajaran' ? ' active' : ''}`}>
                 <Calendar size={13} /><span>Tahun Ajaran</span>
               </Link>
-              <Link href="/dashboard/tagihan" className={`sidebar-sub-item${pathname === '/dashboard/tagihan' ? ' active' : ''}`}>
-                <FileCheck size={13} /><span>Tagihan Aktif</span>
-              </Link>
-              <Link href="/dashboard/tagihan/komponen" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/komponen' ? ' active' : ''}`}>
-                <Layers size={13} /><span>Komponen Tagihan</span>
-              </Link>
-              <Link href="/dashboard/tagihan/paket-kelas" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/paket-kelas' ? ' active' : ''}`}>
-                <Package size={13} /><span>Paket per Kelas</span>
-              </Link>
-              <Link href="/dashboard/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/beasiswa' ? ' active' : ''}`}>
-                <Gift size={13} /><span>Beasiswa &amp; Override</span>
-              </Link>
-            </div>
-          )}
+              {allDone ? (
+                <Link href="/dashboard/tagihan/aktif" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/aktif' ? ' active' : ''}`}>
+                  <FileCheck size={13} /><span>Tagihan Aktif</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <FileCheck size={13} /><span>Tagihan Aktif</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {tahunAjaranDone ? (
+                <Link href="/dashboard/tagihan/komponen" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/komponen' ? ' active' : ''}`}>
+                  <Layers size={13} /><span>Komponen Tagihan</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <Layers size={13} /><span>Komponen Tagihan</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {allDone ? (
+                <Link href="/dashboard/tagihan/paket-kelas" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/paket-kelas' ? ' active' : ''}`}>
+                  <Package size={13} /><span>Paket per Kelas</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <Package size={13} /><span>Paket per Kelas</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {allDone ? (
+                <Link href="/dashboard/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/beasiswa' ? ' active' : ''}`}>
+                  <Gift size={13} /><span>Beasiswa &amp; Override</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <Gift size={13} /><span>Beasiswa &amp; Override</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+          </div>
 
           {/* Siswa dropdown */}
-          <button
-            className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/siswa') || pathname === '/dashboard/kelas' ? ' active' : ''}`}
-            onClick={toggleSiswa}
-          >
-            <Users size={18} className="sidebar-icon" />
-            <span>Siswa</span>
-            <ChevronDown size={14} className={`sidebar-chevron${siswaOpen ? ' rotated' : ''}`} />
-          </button>
-          {siswaOpen && (
-            <div className="sidebar-submenu">
-              <Link href="/dashboard/siswa" className={`sidebar-sub-item${pathname === '/dashboard/siswa' ? ' active' : ''}`}>
-                <Users size={13} /><span>Daftar Siswa</span>
-              </Link>
-              <Link href="/dashboard/kelas" className={`sidebar-sub-item${pathname === '/dashboard/kelas' ? ' active' : ''}`}>
-                <GraduationCap size={13} /><span>Manajemen Kelas</span>
-              </Link>
-              <Link href="/dashboard/siswa/alumni" className={`sidebar-sub-item${pathname === '/dashboard/siswa/alumni' ? ' active' : ''}`}>
-                <GraduationCap size={13} /><span>Alumni</span>
-              </Link>
+          {komponenDone ? (
+            <button
+              className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/siswa') || pathname === '/dashboard/siswa/manajemen-kelas' ? ' active' : ''}`}
+              onClick={toggleSiswa}
+            >
+              <Users size={18} className="sidebar-icon" />
+              <span>Siswa</span>
+              <ChevronDown size={14} className={`sidebar-chevron${siswaOpen ? ' rotated' : ''}`} />
+            </button>
+          ) : (
+            <div className="sidebar-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+              <Users size={18} className="sidebar-icon" />
+              <span>Siswa</span>
+              <Lock size={13} style={{ marginLeft: 'auto', flexShrink: 0 }} />
             </div>
           )}
+          <div className={`sidebar-submenu${siswaOpen ? ' sidebar-submenu--open' : ''}`}>
+              {buatKelasDone ? (
+                <Link href="/dashboard/siswa/daftar-siswa" className={`sidebar-sub-item${pathname === '/dashboard/siswa/daftar-siswa' ? ' active' : ''}`}>
+                  <Users size={13} /><span>Daftar Siswa</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <Users size={13} /><span>Daftar Siswa</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {komponenDone ? (
+                <Link href="/dashboard/siswa/manajemen-kelas" className={`sidebar-sub-item${pathname === '/dashboard/siswa/manajemen-kelas' ? ' active' : ''}`}>
+                  <GraduationCap size={13} /><span>Manajemen Kelas</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <GraduationCap size={13} /><span>Manajemen Kelas</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {allDone ? (
+                <Link href="/dashboard/siswa/alumni" className={`sidebar-sub-item${pathname === '/dashboard/siswa/alumni' ? ' active' : ''}`}>
+                  <GraduationCap size={13} /><span>Alumni</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <GraduationCap size={13} /><span>Alumni</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+          </div>
 
-          <Link
-            href="/dashboard/laporan"
-            className={`sidebar-item${pathname === '/dashboard/laporan' ? ' active' : ''}`}
-          >
-            <BarChart2 size={18} className="sidebar-icon" />
-            <span>Laporan</span>
-          </Link>
+          {allDone ? (
+            <Link
+              href="/dashboard/laporan"
+              className={`sidebar-item${pathname === '/dashboard/laporan' ? ' active' : ''}`}
+            >
+              <BarChart2 size={18} className="sidebar-icon" />
+              <span>Laporan</span>
+            </Link>
+          ) : (
+            <div className="sidebar-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+              <BarChart2 size={18} className="sidebar-icon" />
+              <span>Laporan</span>
+              <Lock size={13} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+            </div>
+          )}
 
           {/* ── Notifikasi ── */}
           <div className="sidebar-notification-wrap">
@@ -281,6 +368,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     })
                   } finally {
                     localStorage.removeItem('siku_auth')
+                    localStorage.removeItem('siku_setup_steps')
                     setResetting(false)
                     setShowResetModal(false)
                     router.push('/')

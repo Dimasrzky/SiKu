@@ -164,12 +164,34 @@
   transform: rotate(180deg);
 }
 
+/* ── Badge dot pulse ── */
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1;    box-shadow: 0 0 0 0 rgba(211, 94, 94, 0.6); }
+  50%       { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 5px rgba(211, 94, 94, 0);  }
+}
+
+.dot-pulse {
+  animation: dot-pulse 1.6s ease-in-out infinite;
+}
+
 /* ── Sub-menu ── */
 .sidebar-submenu {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 2px 0 4px 0.5rem;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  padding: 0 0 0 0.5rem;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity    0.22s ease,
+              padding    0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-submenu--open {
+  max-height: 400px;
+  opacity: 1;
+  padding: 2px 0 6px 0.5rem;
 }
 
 .sidebar-sub-item {

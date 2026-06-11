@@ -90,11 +90,18 @@ export default function KelasPage() {
         .select('id, nama, jenjang, warna, tahun_ajaran, semester')
         .order('jenjang'),
     ]).then(([{ data: pData }, { data: kData }]) => {
-      const opts = JENJANG_MAP[(pData as { jenjang_sekolah?: string } | null)?.jenjang_sekolah ?? 'SMP'] ?? JENJANG_MAP['SMP']
+      const peng = pData as { jenjang_sekolah?: string; setup_steps?: Record<string, unknown> } | null
+
+      if (!peng?.setup_steps?.['komponen_tagihan']) {
+        router.replace('/dashboard/tagihan/komponen')
+        return
+      }
+
+      const opts = JENJANG_MAP[peng?.jenjang_sekolah ?? 'SMP'] ?? JENJANG_MAP['SMP']
       setJenjangOptions(opts)
       setModal(defaultModal(opts[0]))
 
-      if ((pData as { setup_steps?: Record<string, unknown> } | null)?.setup_steps?.['kelas_tahun_ajaran'] === true) {
+      if (peng?.setup_steps?.['buat_kelas'] === true) {
         setSetupDone(true)
       }
 
@@ -108,7 +115,7 @@ export default function KelasPage() {
 
       setDataLoading(false)
     })
-  }, [])
+  }, [router])
 
   const openAdd  = () => { setModal({ open: true, mode: 'add', jenjang: jenjangOptions[0] ?? 'VII', identitas: [], warna: '#1D4ED8' }); setNewSuffix('') }
   const openEdit = (c: KelasCardData) => { setModal({ open: true, mode: 'edit', editId: c.id, jenjang: c.jenjang, identitas: [...c.identitas], warna: c.warna }); setNewSuffix('') }
@@ -257,7 +264,7 @@ export default function KelasPage() {
                             {group.items.map(({ id, identitas }) => (
                               <button
                                 key={id}
-                                onClick={() => router.push(`/dashboard/kelas/${id}`)}
+                                onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}`)}
                                 style={{
                                   background: 'rgba(255,255,255,0.18)',
                                   color: '#fff',

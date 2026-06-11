@@ -22,18 +22,18 @@ const STEPS = [
   },
   {
     key:   'tahun_ajaran',
-    label: 'Mengatur tahun ajaran (Sub fitur tagihan)',
+    label: 'Mengatur tahun ajaran',
     href:  '/dashboard/tagihan/tahun-ajaran',
   },
   {
     key:   'komponen_tagihan',
     label: 'Buat komponen tagihan',
-    href:  '/dashboard/tagihan',
+    href:  '/dashboard/tagihan/komponen',
   },
   {
     key:   'buat_kelas',
-    label: 'Buat kelas (Manajemen siswa sub fitur siswa)',
-    href:  '/dashboard/kelas',
+    label: 'Buat kelas',
+    href:  '/dashboard/siswa/manajemen-kelas',
   },
   {
     key:   'import_siswa',
@@ -202,7 +202,7 @@ export function SetupChecklist() {
             flexShrink: 0,
             marginLeft: '1rem',
           }}>
-            <span style={{
+            <span className="dot-pulse" style={{
               position: 'relative',
               right: 6,
               width: 18, height: 18,

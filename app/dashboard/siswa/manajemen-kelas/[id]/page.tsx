@@ -81,7 +81,7 @@ export default function KelasDetailPage() {
       <div className="dashboard-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button
-            onClick={() => router.push('/dashboard/kelas')}
+            onClick={() => router.push('/dashboard/siswa/manajemen-kelas')}
             style={{
               background: 'none', border: '1.5px solid var(--border)', borderRadius: 8,
               width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',

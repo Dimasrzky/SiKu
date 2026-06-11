@@ -135,7 +135,7 @@ export default function LoginPage() {
         <p className="login-card-item" style={{ textAlign:'center', marginTop:'1rem', fontSize:'0.8rem', color:'var(--text-muted)', animationDelay:'0.8s' }}>
           Belum punya akun?{' '}
           <Link href="/daftar" style={{ color:'var(--navy)', fontWeight:600, textDecoration:'none' }}>
-            Daftar gratis
+            Daftar sekarang
           </Link>
         </p>
 

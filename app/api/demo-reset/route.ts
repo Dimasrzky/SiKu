@@ -15,6 +15,7 @@ const DEMO_TABLES = [
   'tagihan',
   'siswa',
   'kelas',
+  'tahun_ajaran',
 ] as const
 
 // Tabel komponen_tagihan child-nya tidak punya sekolah_id,
