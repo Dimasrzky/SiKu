@@ -93,10 +93,11 @@ export async function POST(req: NextRequest) {
       telepon:         noWaSekolah,
       jenjang_sekolah: jenjangSekolah,
       setup_steps: {
-        profil_sekolah:     true,
-        kelas_tahun_ajaran: false,
-        komponen_tagihan:   false,
-        import_siswa:       false,
+        profil_sekolah:   true,
+        tahun_ajaran:     false,
+        komponen_tagihan: false,
+        buat_kelas:       false,
+        import_siswa:     false,
       },
     }, { onConflict: 'sekolah_id' })
 
@@ -139,10 +140,11 @@ export async function POST(req: NextRequest) {
     telepon:        noWaSekolah,
     jenjang_sekolah: jenjangSekolah,
     setup_steps: {
-      profil_sekolah:     true,
-      kelas_tahun_ajaran: false,
-      komponen_tagihan:   false,
-      import_siswa:       false,
+      profil_sekolah:   true,
+      tahun_ajaran:     false,
+      komponen_tagihan: false,
+      buat_kelas:       false,
+      import_siswa:     false,
     },
   })
 

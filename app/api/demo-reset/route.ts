@@ -88,10 +88,11 @@ export async function POST(req: NextRequest) {
     nama_sekolah: 'Demo SiKu',
     telepon:      '',
     setup_steps: {
-      profil_sekolah:     true,
-      kelas_tahun_ajaran: false,
-      komponen_tagihan:   false,
-      import_siswa:       false,
+      profil_sekolah:   true,
+      tahun_ajaran:     false,
+      komponen_tagihan: false,
+      buat_kelas:       false,
+      import_siswa:     false,
     },
   }, { onConflict: 'sekolah_id' })
 
