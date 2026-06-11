@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,10 +124,6 @@ export default function TagihanAktifPage() {
             {tahunAjaran ? `${tahunAjaran} · Semester ${autoSemester}` : 'Kelola tagihan per kelas per bulan'}
           </p>
         </div>
-        <Link href="/dashboard/tagihan/komponen"
-          style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem', textDecoration: 'none' }}>
-          Komponen Tagihan
-        </Link>
       </div>
 
       {/* Summary Cards */}
@@ -239,4 +234,3 @@ export default function TagihanAktifPage() {
 // ── Style constants ───────────────────────────────────────────────────────────
 
 const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff' }
-const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }

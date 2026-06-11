@@ -313,6 +313,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const komponenDone    = setupSteps['komponen_tagihan'] === true
   const buatKelasDone   = setupSteps['buat_kelas']       === true
   const allDone         = setupSteps['import_siswa']     === true
+  const isDemo          = user?.role === 'super_admin' && user?.nama === 'Tim SiKu'
 
   return (
     <div className="dashboard-shell">
@@ -496,14 +497,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* ── Bottom (kuning) ── */}
         <div className="sidebar-bottom">
-          <button
-            className="sidebar-bottom-item"
-            onClick={() => setShowResetModal(true)}
-            style={{ color: '#e83232' }}
-          >
-            <RotateCcw size={18} />
-            <span>Reset Demo</span>
-          </button>
+          {isDemo && (
+            <button
+              className="sidebar-bottom-item"
+              onClick={() => setShowResetModal(true)}
+              style={{ color: '#e83232' }}
+            >
+              <RotateCcw size={18} />
+              <span>Reset Demo</span>
+            </button>
+          )}
           <Link
             href="/dashboard/pengaturan"
             className={`sidebar-bottom-item${pathname === '/dashboard/pengaturan' ? ' active' : ''}`}
