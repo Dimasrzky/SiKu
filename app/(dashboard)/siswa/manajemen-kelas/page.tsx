@@ -377,9 +377,22 @@ export default function KelasPage() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.9rem' }}>Daftar Kelas</div>
-            <button onClick={openAdd} style={{ ...sBtnPrimary, padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Plus size={14} /> Tambah Kelas
-            </button>
+            {(() => {
+              const semuaTerisi = jenjangOptions.every(j => cards.some(c => c.jenjang === j))
+              return (
+                <button
+                  onClick={openAdd}
+                  disabled={semuaTerisi}
+                  style={{
+                    ...sBtnPrimary, padding: '0.45rem 0.9rem', fontSize: '0.8rem',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    ...(semuaTerisi ? { background: '#9CA3AF', borderColor: '#9CA3AF', cursor: 'not-allowed', opacity: 0.7 } : {}),
+                  }}
+                >
+                  <Plus size={14} /> Tambah Kelas
+                </button>
+              )
+            })()}
           </div>
 
           {cards.length === 0 ? (
@@ -422,25 +435,21 @@ export default function KelasPage() {
           {modal.mode === 'add' && (
             <div style={{ marginBottom: '1rem' }}>
               <label style={sLabel}>Kelas</label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {jenjangOptions.map(j => {
-                  const sudahAda = cards.some(c => c.jenjang === j)
-                  return (
-                    <button key={j} onClick={() => !sudahAda && setModal(m => ({ ...m, jenjang: j }))}
-                      disabled={sudahAda}
-                      style={{
-                        flex: 1, padding: '0.6rem', borderRadius: 8, fontFamily: 'inherit',
-                        fontWeight: 700, fontSize: '0.875rem', cursor: sudahAda ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.15s', opacity: sudahAda ? 0.4 : 1,
-                        border: `2px solid ${modal.jenjang === j ? 'var(--navy)' : 'var(--border)'}`,
-                        background: modal.jenjang === j ? 'var(--navy)' : '#fff',
-                        color: modal.jenjang === j ? '#fff' : 'var(--text-muted)',
-                      }}
-                    >
-                      {j}
-                    </button>
-                  )
-                })}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {jenjangOptions.filter(j => !cards.some(c => c.jenjang === j)).map(j => (
+                  <button key={j} onClick={() => setModal(m => ({ ...m, jenjang: j }))}
+                    style={{
+                      flex: 1, padding: '0.6rem', borderRadius: 8, fontFamily: 'inherit',
+                      fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      border: `2px solid ${modal.jenjang === j ? 'var(--navy)' : 'var(--border)'}`,
+                      background: modal.jenjang === j ? 'var(--navy)' : '#fff',
+                      color: modal.jenjang === j ? '#fff' : 'var(--text-muted)',
+                    }}
+                  >
+                    {j}
+                  </button>
+                ))}
               </div>
             </div>
           )}

@@ -30,17 +30,17 @@ function detectSemester(
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface TagihanRow {
-  id:            string
-  jenis:         string
-  bulan:         string
-  tahun:         number
-  nominal:       number
-  kelas_jenjang: string | null
-  nama:          string | null
-  jatuh_tempo:   string | null
-  status:        'draft' | 'aktif' | 'selesai'
-  total_siswa:   number
-  sudah_bayar:   number
+  id:                   string
+  jenis:                string
+  bulan:                string
+  tahun:                number
+  nominal:              number
+  kelas_jenjang:        string | null
+  nama:                 string | null
+  tanggal_jatuh_tempo:  string | null
+  status:               'draft' | 'aktif' | 'selesai'
+  total_siswa:          number
+  sudah_bayar:          number
 }
 
 const STATUS_BADGE: Record<string, { label: string; bg: string; color: string }> = {
@@ -69,7 +69,7 @@ export default function TagihanAktifPage() {
           .maybeSingle(),
         supabase
           .from('tagihan')
-          .select('id, jenis, bulan, tahun, nominal, kelas_jenjang, nama, jatuh_tempo, status, total_siswa, sudah_bayar')
+          .select('id, jenis, bulan, tahun, nominal, kelas_jenjang, nama, tanggal_jatuh_tempo, status, total_siswa, sudah_bayar')
           .order('tahun', { ascending: false })
           .order('bulan')
           .limit(200),
@@ -208,7 +208,7 @@ export default function TagihanAktifPage() {
                       </div>
                     </td>
                     <td style={{ fontSize: '0.82rem', color: 'var(--text-mid)' }}>
-                      {t.jatuh_tempo ? new Date(t.jatuh_tempo).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                      {t.tanggal_jatuh_tempo ? new Date(t.tanggal_jatuh_tempo).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                     </td>
                     <td>
                       <span style={{ background: badge.bg, color: badge.color, fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>

@@ -71,7 +71,9 @@ export default function DaftarSiswaPage() {
   const [showImportConfirm, setShowImportConfirm] = useState(false)
 
   // Manual modal
-  const [showModal,  setShowModal]  = useState(false)
+  const [showModal,       setShowModal]       = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [savedInSetupMode, setSavedInSetupMode] = useState(false)
   const [mNama,      setMNama]      = useState('')
   const [mNis,       setMNis]       = useState('')
   const [mKelasId,   setMKelasId]   = useState('')
@@ -219,8 +221,10 @@ export default function DaftarSiswaPage() {
   }
 
   const handleManualSave = async () => {
-    if (!mNama.trim() || !mNis.trim() || !mKelasId) { setMError('Nama, NIS, dan Kelas wajib diisi.'); return }
-    if (mNoWa.trim() && !/^\d+$/.test(mNoWa.trim())) { setMNoWaError('Nomor WhatsApp hanya boleh berisi angka.'); return }
+    if (!mNama.trim() || !mNis.trim() || !mKelasId || !mNamaWali.trim() || !mNoWa.trim()) {
+      setMError('Semua field wajib diisi.'); return
+    }
+    if (!/^\d+$/.test(mNoWa.trim())) { setMNoWaError('Nomor WhatsApp hanya boleh berisi angka.'); return }
     setMNoWaError(''); setMSaving(true); setMError('')
 
     const { data: { session } } = await supabase.auth.getSession()
@@ -235,7 +239,8 @@ export default function DaftarSiswaPage() {
     const json = await res.json() as { error?: string }
     if (!res.ok) { setMError(json.error ?? 'Gagal menyimpan.'); setMSaving(false); return }
 
-    if (!setupDone) {
+    const wasSetupMode = !setupDone
+    if (wasSetupMode) {
       await fetch('/api/setup-step', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
@@ -244,9 +249,11 @@ export default function DaftarSiswaPage() {
       setSetupDone(true)
     }
 
-    setShowModal(false)
     await loadSiswa()
     setMSaving(false)
+    setShowModal(false)
+    setSavedInSetupMode(wasSetupMode)
+    setShowSuccessModal(true)
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -393,15 +400,15 @@ export default function DaftarSiswaPage() {
               </div>
               <div>
                 <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.95rem' }}>Import via Excel</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Upload file .xlsx / .xls / .csv</div>
+                <div style={{ fontSize: '0.75rem', color: '#8a0e0e' }}>Harus Download Template*</div>
               </div>
             </div>
 
             <button onClick={downloadTemplate} style={{
               display: 'flex', alignItems: 'center', gap: 6, width: '100%',
               padding: '0.6rem 0.875rem', marginBottom: '0.875rem',
-              background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8,
-              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#16A34A', fontFamily: 'inherit',
+              background: '#f9cece', border: '1px solid #dca1a1', borderRadius: 8,
+              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#bb1313', fontFamily: 'inherit',
             }}>
               <Download size={14} /> Download Template Excel
             </button>
@@ -468,6 +475,12 @@ export default function DaftarSiswaPage() {
       mSaving={mSaving} mError={mError}
       onSave={handleManualSave}
       onClose={() => setShowModal(false)}
+    />}
+
+    {showSuccessModal && <SuccessModal
+      savedInSetupMode={savedInSetupMode}
+      onAddMore={() => { setShowSuccessModal(false); openModal() }}
+      onExit={() => savedInSetupMode ? router.push('/dashboard') : setShowSuccessModal(false)}
     />}
 
     <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
@@ -561,6 +574,12 @@ export default function DaftarSiswaPage() {
       onClose={() => setShowModal(false)}
     />}
 
+    {showSuccessModal && <SuccessModal
+      savedInSetupMode={savedInSetupMode}
+      onAddMore={() => { setShowSuccessModal(false); openModal() }}
+      onExit={() => savedInSetupMode ? router.push('/dashboard') : setShowSuccessModal(false)}
+    />}
+
     {/* Popup konfirmasi template */}
     {showImportConfirm && (
       <>
@@ -602,6 +621,63 @@ export default function DaftarSiswaPage() {
 
     <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
     </>
+  )
+}
+
+// ── Success Modal ─────────────────────────────────────────────────────────────
+
+function SuccessModal({ savedInSetupMode, onAddMore, onExit }: {
+  savedInSetupMode: boolean
+  onAddMore: () => void
+  onExit:    () => void
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 20, padding: '2rem 1.75rem',
+        width: '100%', maxWidth: 380, boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
+        textAlign: 'center',
+      }}>
+        {/* Icon */}
+        <div style={{
+          width: 64, height: 64, borderRadius: '50%',
+          background: '#D1FAE5',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 1.25rem',
+        }}>
+          <CheckCircle2 size={32} color="#059669" />
+        </div>
+
+        <h3 style={{
+          fontFamily: 'var(--font-serif,Georgia,serif)',
+          fontSize: '1.15rem', fontWeight: 700,
+          color: 'var(--navy-dark)', margin: '0 0 0.5rem',
+        }}>
+          Siswa Berhasil Disimpan
+        </h3>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.75rem', lineHeight: 1.5 }}>
+          Data siswa telah berhasil ditambahkan ke sistem.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <button
+            onClick={onAddMore}
+            style={{ ...sBtnPrimary, width: '100%', padding: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <Plus size={15} /> Tambah Siswa Lagi
+          </button>
+          <button
+            onClick={onExit}
+            style={{ ...sBtnSecondary, width: '100%', padding: '0.7rem' }}
+          >
+            {savedInSetupMode ? 'Selesai & ke Dashboard →' : 'Tutup'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -686,15 +762,15 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
           </div>
 
           <div style={{ marginBottom: '0.875rem' }}>
-            <label style={sLabel}>Nama Orang Tua</label>
+            <label style={sLabel}>Nama Orang Tua <span style={{ color: '#DC2626' }}>*</span></label>
             <input type="text" style={sInput} placeholder="Nama orang tua / wali" value={mNamaWali} onChange={e => setMNamaWali(e.target.value)} />
           </div>
 
           <div>
-            <label style={sLabel}>Nomor WhatsApp</label>
+            <label style={sLabel}>Nomor WhatsApp <span style={{ color: '#DC2626' }}>*</span></label>
             <input
               type="tel"
-              style={{ ...sInput, ...(mNoWaError ? { borderColor: '#EF4444' } : {}) }}
+              style={{ ...sInput, ...(mNoWaError ? { border: '1.5px solid #EF4444' } : {}) }}
               placeholder="62812xxxx (untuk notifikasi tagihan)"
               value={mNoWa}
               onChange={e => { setMNoWa(e.target.value); if (mNoWaError) setMNoWaError('') }}

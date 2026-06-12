@@ -199,6 +199,7 @@ export default function KomponenTagihanPage() {
     if (!res.ok) { setError(json.error ?? 'Gagal menyimpan.'); setSaving(false); return }
     setSaving(false)
     setSetupDone(true)
+    router.push('/dashboard')
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -364,10 +365,9 @@ export default function KomponenTagihanPage() {
         </div>
 
         {/* Action buttons */}
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button onClick={() => router.push('/tagihan/komponen')} style={sBtnSecondary}>← Kembali</button>
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
           <button onClick={handleSimpan} disabled={saving}
-            style={{ ...sBtnPrimary, flex: 1, opacity: saving ? 0.7 : 1 }}>
+            style={{ ...sBtnPrimary, opacity: saving ? 0.7 : 1 }}>
             {saving ? 'Menyimpan...' : 'Simpan & Lanjutkan →'}
           </button>
         </div>
