@@ -16,10 +16,10 @@ interface SetupSteps {
 
 const STEPS = [
   { key: 'profil_sekolah',   label: 'Profil sekolah',           href: null },
-  { key: 'tahun_ajaran',     label: 'Mengatur tahun ajaran',     href: '/dashboard/tagihan/tahun-ajaran' },
-  { key: 'komponen_tagihan', label: 'Buat komponen tagihan',     href: '/dashboard/tagihan/komponen' },
-  { key: 'buat_kelas',       label: 'Buat kelas',               href: '/dashboard/siswa/manajemen-kelas' },
-  { key: 'import_siswa',     label: 'Import siswa',             href: '/dashboard/siswa' },
+  { key: 'tahun_ajaran',     label: 'Mengatur tahun ajaran',     href: '/tagihan/tahun-ajaran' },
+  { key: 'komponen_tagihan', label: 'Buat komponen tagihan',     href: '/tagihan/komponen' },
+  { key: 'buat_kelas',       label: 'Buat kelas',               href: '/siswa/manajemen-kelas' },
+  { key: 'import_siswa',     label: 'Import siswa',             href: '/siswa' },
 ] as const
 
 const CACHE_KEY = 'siku_setup_steps'
