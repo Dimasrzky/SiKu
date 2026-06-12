@@ -347,8 +347,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {allDone ? (
             <Link
-              href="/dashboard/pembayaran"
-              className={`sidebar-item${pathname === '/dashboard/pembayaran' ? ' active' : ''}`}
+              href="/pembayaran"
+              className={`sidebar-item${pathname === '/pembayaran' ? ' active' : ''}`}
             >
               <Banknote size={18} className="sidebar-icon" />
               <span>Pembayaran</span>
@@ -363,7 +363,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Tagihan dropdown */}
           <button
-            className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/tagihan') ? ' active' : ''}`}
+            className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/tagihan') ? ' active' : ''}`}
             onClick={toggleTagihan}
           >
             <Receipt size={18} className="sidebar-icon" />
@@ -371,11 +371,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <ChevronDown size={14} className={`sidebar-chevron${tagihanOpen ? ' rotated' : ''}`} />
           </button>
           <div className={`sidebar-submenu${tagihanOpen ? ' sidebar-submenu--open' : ''}`}>
-              <Link href="/dashboard/tagihan/tahun-ajaran" className={`sidebar-sub-item${pathname.startsWith('/dashboard/tagihan/tahun-ajaran') ? ' active' : ''}`}>
+              <Link href="/tagihan/tahun-ajaran" className={`sidebar-sub-item${pathname.startsWith('/tagihan/tahun-ajaran') ? ' active' : ''}`}>
                 <Calendar size={13} /><span>Tahun Ajaran</span>
               </Link>
               {allDone ? (
-                <Link href="/dashboard/tagihan/aktif" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/aktif' ? ' active' : ''}`}>
+                <Link href="/tagihan/aktif" className={`sidebar-sub-item${pathname === '/tagihan/aktif' ? ' active' : ''}`}>
                   <FileCheck size={13} /><span>Tagihan Aktif</span>
                 </Link>
               ) : (
@@ -385,7 +385,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {tahunAjaranDone ? (
-                <Link href="/dashboard/tagihan/komponen" className={`sidebar-sub-item${pathname.startsWith('/dashboard/tagihan/komponen') ? ' active' : ''}`}>
+                <Link href="/tagihan/komponen" className={`sidebar-sub-item${pathname.startsWith('/tagihan/komponen') ? ' active' : ''}`}>
                   <Layers size={13} /><span>Komponen Tagihan</span>
                 </Link>
               ) : (
@@ -395,7 +395,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {allDone ? (
-                <Link href="/dashboard/tagihan/paket-kelas" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/paket-kelas' ? ' active' : ''}`}>
+                <Link href="/tagihan/paket-kelas" className={`sidebar-sub-item${pathname === '/tagihan/paket-kelas' ? ' active' : ''}`}>
                   <Package size={13} /><span>Paket per Kelas</span>
                 </Link>
               ) : (
@@ -405,7 +405,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {allDone ? (
-                <Link href="/dashboard/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/dashboard/tagihan/beasiswa' ? ' active' : ''}`}>
+                <Link href="/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/tagihan/beasiswa' ? ' active' : ''}`}>
                   <Gift size={13} /><span>Beasiswa &amp; Override</span>
                 </Link>
               ) : (
@@ -419,7 +419,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Siswa dropdown */}
           {komponenDone ? (
             <button
-              className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/dashboard/siswa') ? ' active' : ''}`}
+              className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/siswa') ? ' active' : ''}`}
               onClick={toggleSiswa}
             >
               <Users size={18} className="sidebar-icon" />
@@ -435,7 +435,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
           <div className={`sidebar-submenu${siswaOpen ? ' sidebar-submenu--open' : ''}`}>
               {buatKelasDone ? (
-                <Link href="/dashboard/siswa/daftar-siswa" className={`sidebar-sub-item${pathname === '/dashboard/siswa/daftar-siswa' ? ' active' : ''}`}>
+                <Link href="/siswa/daftar-siswa" className={`sidebar-sub-item${pathname === '/siswa/daftar-siswa' ? ' active' : ''}`}>
                   <Users size={13} /><span>Daftar Siswa</span>
                 </Link>
               ) : (
@@ -445,7 +445,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {komponenDone ? (
-                <Link href="/dashboard/siswa/manajemen-kelas" className={`sidebar-sub-item${pathname.startsWith('/dashboard/siswa/manajemen-kelas') ? ' active' : ''}`}>
+                <Link href="/siswa/manajemen-kelas" className={`sidebar-sub-item${pathname.startsWith('/siswa/manajemen-kelas') ? ' active' : ''}`}>
                   <GraduationCap size={13} /><span>Manajemen Kelas</span>
                 </Link>
               ) : (
@@ -455,7 +455,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               )}
               {allDone ? (
-                <Link href="/dashboard/siswa/alumni" className={`sidebar-sub-item${pathname === '/dashboard/siswa/alumni' ? ' active' : ''}`}>
+                <Link href="/siswa/alumni" className={`sidebar-sub-item${pathname === '/siswa/alumni' ? ' active' : ''}`}>
                   <GraduationCap size={13} /><span>Alumni</span>
                 </Link>
               ) : (
@@ -468,8 +468,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {allDone ? (
             <Link
-              href="/dashboard/laporan"
-              className={`sidebar-item${pathname === '/dashboard/laporan' ? ' active' : ''}`}
+              href="/laporan"
+              className={`sidebar-item${pathname === '/laporan' ? ' active' : ''}`}
             >
               <BarChart2 size={18} className="sidebar-icon" />
               <span>Laporan</span>
@@ -508,8 +508,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           )}
           <Link
-            href="/dashboard/pengaturan"
-            className={`sidebar-bottom-item${pathname === '/dashboard/pengaturan' ? ' active' : ''}`}
+            href="/pengaturan"
+            className={`sidebar-bottom-item${pathname === '/pengaturan' ? ' active' : ''}`}
           >
             <Settings size={18} />
             <span>Pengaturan</span>
