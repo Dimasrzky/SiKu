@@ -31,6 +31,7 @@ export default function DaftarPage() {
   // Step 2
   const [namaSekolah,    setNamaSekolah]    = useState('')
   const [noWaSekolah,    setNoWaSekolah]    = useState('')
+  const [noWaError,      setNoWaError]      = useState('')
   const [jenjangSekolah, setJenjangSekolah] = useState('SMP')
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
@@ -105,8 +106,13 @@ export default function DaftarPage() {
 
   const handleStep2 = async () => {
     setError('')
+    setNoWaError('')
     if (!namaSekolah.trim() || !noWaSekolah.trim()) {
       setError('Nama sekolah dan nomor WhatsApp wajib diisi.')
+      return
+    }
+    if (!/^\d+$/.test(noWaSekolah.trim())) {
+      setNoWaError('Nomor WhatsApp hanya boleh berisi angka.')
       return
     }
     setLoading(true)
@@ -351,19 +357,18 @@ export default function DaftarPage() {
               <label className="form-label" htmlFor="noWa">Nomor WhatsApp Sekolah</label>
               <input
                 id="noWa" type="tel" className="form-input"
-                placeholder="cth: 6281234567890 (tanpa +)"
-                value={noWaSekolah} onChange={(e) => setNoWaSekolah(e.target.value)}
+                placeholder="Masukkan nomor WA aktif"
+                value={noWaSekolah}
+                onChange={(e) => {
+                  setNoWaSekolah(e.target.value)
+                  if (noWaError) setNoWaError('')
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
+                style={noWaError ? { borderColor: '#EF4444' } : undefined}
               />
-            </div>
-
-            <div style={{
-              background:'#F8FAFC', border:'1px solid var(--border)',
-              borderRadius:8, padding:'0.65rem 0.85rem',
-              fontSize:'0.78rem', color:'var(--text-muted)', marginBottom:'1rem',
-              lineHeight: 1.5,
-            }}>
-              💡 Logo sekolah bisa diupload kapan saja lewat menu <strong>Pengaturan</strong>.
+              {noWaError && (
+                <p style={{ color: '#EF4444', fontSize: '0.78rem', marginTop: 4 }}>{noWaError}</p>
+              )}
             </div>
 
             <div style={{ display:'flex', gap:'0.75rem' }}>

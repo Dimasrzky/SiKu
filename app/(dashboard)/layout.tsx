@@ -313,7 +313,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const komponenDone    = setupSteps['komponen_tagihan'] === true
   const buatKelasDone   = setupSteps['buat_kelas']       === true
   const allDone         = setupSteps['import_siswa']     === true
-  const isDemo          = user?.role === 'super_admin' && user?.nama === 'Tim SiKu'
+  const isDemo          = user?.role === 'super_admin'
 
   return (
     <div className="dashboard-shell">

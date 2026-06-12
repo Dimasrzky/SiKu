@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     // Update nama sekolah demo
     await supabaseAdmin.from('sekolah')
-      .update({ nama: namaSekolah })
+      .update({ nama: namaSekolah, no_wa: noWaSekolah })
       .eq('id', DEMO_SEKOLAH_ID)
 
     // Upsert pengaturan demo — termasuk jenjang_sekolah dan reset setup_steps
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 
   const { data: sekolah, error: sekolahError } = await supabaseAdmin
     .from('sekolah')
-    .insert({ nama: namaSekolah, kode, jenis: 'trial', trial_expires_at: trialExpiresAt })
+    .insert({ nama: namaSekolah, kode, jenis: 'trial', trial_expires_at: trialExpiresAt, no_wa: noWaSekolah })
     .select('id')
     .single()
 

@@ -77,6 +77,7 @@ export default function DaftarSiswaPage() {
   const [mKelasId,   setMKelasId]   = useState('')
   const [mNamaWali,  setMNamaWali]  = useState('')
   const [mNoWa,      setMNoWa]      = useState('')
+  const [mNoWaError, setMNoWaError] = useState('')
   const [mSaving,    setMSaving]    = useState(false)
   const [mError,     setMError]     = useState('')
 
@@ -213,13 +214,14 @@ export default function DaftarSiswaPage() {
   // ── Manual add ────────────────────────────────────────────────────────────
 
   const openModal = () => {
-    setMNama(''); setMNis(''); setMKelasId(''); setMNamaWali(''); setMNoWa(''); setMError('')
+    setMNama(''); setMNis(''); setMKelasId(''); setMNamaWali(''); setMNoWa(''); setMNoWaError(''); setMError('')
     setShowModal(true)
   }
 
   const handleManualSave = async () => {
     if (!mNama.trim() || !mNis.trim() || !mKelasId) { setMError('Nama, NIS, dan Kelas wajib diisi.'); return }
-    setMSaving(true); setMError('')
+    if (mNoWa.trim() && !/^\d+$/.test(mNoWa.trim())) { setMNoWaError('Nomor WhatsApp hanya boleh berisi angka.'); return }
+    setMNoWaError(''); setMSaving(true); setMError('')
 
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch('/api/siswa', {
@@ -462,6 +464,7 @@ export default function DaftarSiswaPage() {
       mKelasId={mKelasId} setMKelasId={setMKelasId}
       mNamaWali={mNamaWali} setMNamaWali={setMNamaWali}
       mNoWa={mNoWa} setMNoWa={setMNoWa}
+      mNoWaError={mNoWaError} setMNoWaError={setMNoWaError}
       mSaving={mSaving} mError={mError}
       onSave={handleManualSave}
       onClose={() => setShowModal(false)}
@@ -552,6 +555,7 @@ export default function DaftarSiswaPage() {
       mKelasId={mKelasId} setMKelasId={setMKelasId}
       mNamaWali={mNamaWali} setMNamaWali={setMNamaWali}
       mNoWa={mNoWa} setMNoWa={setMNoWa}
+      mNoWaError={mNoWaError} setMNoWaError={setMNoWaError}
       mSaving={mSaving} mError={mError}
       onSave={handleManualSave}
       onClose={() => setShowModal(false)}
@@ -610,13 +614,14 @@ interface ModalProps {
   mKelasId:     string; setMKelasId: (v: string) => void
   mNamaWali:    string; setMNamaWali:(v: string) => void
   mNoWa:        string; setMNoWa:    (v: string) => void
+  mNoWaError:   string; setMNoWaError:(v: string) => void
   mSaving:      boolean
   mError:       string
   onSave:       () => void
   onClose:      () => void
 }
 
-function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mSaving, mError, onSave, onClose }: ModalProps) {
+function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mNoWaError, setMNoWaError, mSaving, mError, onSave, onClose }: ModalProps) {
   const [kelasOpen, setKelasOpen] = useState(false)
 
   const selectedKelas = kelasList.find(k => k.id === mKelasId)
@@ -687,10 +692,17 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
 
           <div>
             <label style={sLabel}>Nomor WhatsApp</label>
-            <input type="tel" style={sInput} placeholder="62812xxxx (untuk notifikasi tagihan)" value={mNoWa} onChange={e => setMNoWa(e.target.value)} />
-            <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '0.3rem 0 0' }}>
-              Digunakan untuk mengirim informasi tagihan secara otomatis.
-            </p>
+            <input
+              type="tel"
+              style={{ ...sInput, ...(mNoWaError ? { borderColor: '#EF4444' } : {}) }}
+              placeholder="62812xxxx (untuk notifikasi tagihan)"
+              value={mNoWa}
+              onChange={e => { setMNoWa(e.target.value); if (mNoWaError) setMNoWaError('') }}
+            />
+            {mNoWaError
+              ? <p style={{ fontSize: '0.73rem', color: '#EF4444', margin: '0.3rem 0 0' }}>{mNoWaError}</p>
+              : <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '0.3rem 0 0' }}>Digunakan untuk mengirim informasi tagihan secara otomatis.</p>
+            }
           </div>
         </div>
 
