@@ -97,7 +97,7 @@ export default function KelasPage() {
       const peng = pData as { jenjang_sekolah?: string; setup_steps?: Record<string, unknown> } | null
 
       if (!peng?.setup_steps?.['komponen_tagihan']) {
-        router.replace('/dashboard/tagihan/komponen')
+        router.replace('/tagihan/komponen')
         return
       }
 
@@ -227,7 +227,7 @@ export default function KelasPage() {
             </div>
           </div>
           <button
-            onClick={() => router.push('/dashboard/siswa/manajemen-kelas/edit')}
+            onClick={() => router.push('/siswa/manajemen-kelas/edit')}
             style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '0.5rem 1rem' }}
           >
             <Pencil size={13} /> Edit
@@ -271,7 +271,7 @@ export default function KelasPage() {
                             {group.items.map(({ id, identitas }) => (
                               <button
                                 key={id}
-                                onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}`)}
+                                onClick={() => router.push(`/siswa/manajemen-kelas/${id}`)}
                                 style={{
                                   background: 'rgba(255,255,255,0.18)', color: '#fff',
                                   border: '1px solid rgba(255,255,255,0.3)',

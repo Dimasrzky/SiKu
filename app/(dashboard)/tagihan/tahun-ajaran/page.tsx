@@ -182,7 +182,7 @@ export default function TahunAjaranPage() {
       const endDate  = new Date(taData.tanggal_selesai); endDate.setHours(0, 0, 0, 0)
       const h2Minggu = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000)
       if (today >= h2Minggu) {
-        router.push('/dashboard/tagihan/tahun-ajaran/baru')
+        router.push('/tagihan/tahun-ajaran/baru')
       } else {
         setShowWarningModal(true)
       }
@@ -200,7 +200,7 @@ export default function TahunAjaranPage() {
             <p className="dashboard-subtitle">{taData.nama} · Aktif</p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => router.push('/dashboard/tagihan/tahun-ajaran/edit')}
+            <button onClick={() => router.push('/tagihan/tahun-ajaran/edit')}
               style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}>
               <Pencil size={13} /> Edit
             </button>
@@ -283,7 +283,7 @@ export default function TahunAjaranPage() {
                   {daysLeft > 0 ? `Aktif dalam ${daysLeft} hari` : 'Menunggu Aktivasi'}
                 </span>
                 <button
-                  onClick={() => router.push(`/dashboard/tagihan/tahun-ajaran/edit?id=${upcomingData.id}`)}
+                  onClick={() => router.push(`/tagihan/tahun-ajaran/edit?id=${upcomingData.id}`)}
                   style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.78rem', padding: '4px 12px' }}>
                   <Pencil size={12} /> Edit
                 </button>
@@ -364,7 +364,7 @@ export default function TahunAjaranPage() {
                   style={{ ...sBtnSecondary, flex: 1, textAlign: 'center' }}>
                   Batal
                 </button>
-                <button onClick={() => { setShowWarningModal(false); router.push('/dashboard/tagihan/tahun-ajaran/baru') }}
+                <button onClick={() => { setShowWarningModal(false); router.push('/tagihan/tahun-ajaran/baru') }}
                   style={{ ...sBtnPrimary, flex: 1, textAlign: 'center' }}>
                   Buat Tetap
                 </button>

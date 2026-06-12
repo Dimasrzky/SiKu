@@ -3,11 +3,11 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-export default function SiswaIndexPage() {
+export default function TagihanIndexPage() {
   const router = useRouter()
 
   useEffect(() => {
-    router.replace('/dashboard/siswa/daftar-siswa')
+    router.replace('/tagihan/aktif')
   }, [router])
 
   return null

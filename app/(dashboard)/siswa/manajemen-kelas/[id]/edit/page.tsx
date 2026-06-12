@@ -82,7 +82,7 @@ export default function EditKelasPage() {
       return
     }
 
-    router.push(`/dashboard/siswa/manajemen-kelas/${id}`)
+    router.push(`/siswa/manajemen-kelas/${id}`)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ export default function EditKelasPage() {
       <div className="dashboard-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button
-            onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}`)}
+            onClick={() => router.push(`/siswa/manajemen-kelas/${id}`)}
             style={{ background: 'none', border: '1.5px solid #1A2C4E', borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--navy)', flexShrink: 0, padding: 0 }}
           >
             <ArrowLeft size={16} />

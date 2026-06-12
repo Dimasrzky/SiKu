@@ -30,7 +30,7 @@ export default function AlumniPage() {
 
       const steps = (pData as { setup_steps?: Record<string, boolean> } | null)?.setup_steps ?? {}
       if (!steps['komponen_tagihan']) {
-        router.replace('/dashboard/tagihan/komponen')
+        router.replace('/tagihan/komponen')
         return
       }
 

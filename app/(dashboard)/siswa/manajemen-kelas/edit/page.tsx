@@ -141,7 +141,7 @@ export default function EditKelasSetupPage() {
     })
     const json = await res.json() as { error?: string }
     if (!res.ok) { setError(json.error ?? 'Gagal menyimpan.'); setSaving(false); return }
-    router.push('/dashboard/siswa/manajemen-kelas')
+    router.push('/siswa/manajemen-kelas')
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ export default function EditKelasSetupPage() {
       {/* Header */}
       <div className="dashboard-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button onClick={() => router.push('/dashboard/siswa/manajemen-kelas')}
+          <button onClick={() => router.push('/siswa/manajemen-kelas')}
             style={{ background: 'none', border: '1.5px solid #1A2C4E', borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--navy)', flexShrink: 0, padding: 0 }}>
             <ArrowLeft size={16} />
           </button>

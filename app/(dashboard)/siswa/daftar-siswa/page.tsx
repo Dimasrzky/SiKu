@@ -101,7 +101,7 @@ export default function DaftarSiswaPage() {
       const steps = (pData?.setup_steps ?? {}) as Record<string, boolean>
 
       if (!steps['buat_kelas']) {
-        router.replace('/dashboard/siswa/manajemen-kelas')
+        router.replace('/siswa/manajemen-kelas')
         return
       }
 

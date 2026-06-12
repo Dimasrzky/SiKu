@@ -99,7 +99,7 @@ export default function KomponenTagihanPage() {
 
       // Guard: redirect jika tahun_ajaran belum selesai
       if (!peng?.setup_steps?.['tahun_ajaran']) {
-        router.replace('/dashboard/tagihan/tahun-ajaran')
+        router.replace('/tagihan/tahun-ajaran')
         return
       }
 
@@ -365,7 +365,7 @@ export default function KomponenTagihanPage() {
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button onClick={() => router.push('/dashboard/tagihan/komponen')} style={sBtnSecondary}>← Kembali</button>
+          <button onClick={() => router.push('/tagihan/komponen')} style={sBtnSecondary}>← Kembali</button>
           <button onClick={handleSimpan} disabled={saving}
             style={{ ...sBtnPrimary, flex: 1, opacity: saving ? 0.7 : 1 }}>
             {saving ? 'Menyimpan...' : 'Simpan & Lanjutkan →'}
@@ -499,7 +499,7 @@ export default function KomponenTagihanPage() {
               <p className="dashboard-subtitle">{tahunAjaran} · Semester {autoSemester}</p>
             </div>
           </div>
-          <button onClick={() => router.push('/dashboard/tagihan/komponen/edit')}
+          <button onClick={() => router.push('/tagihan/komponen/edit')}
             style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}>
             <Pencil size={13} /> Edit Komponen
           </button>

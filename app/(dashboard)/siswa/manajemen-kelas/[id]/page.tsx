@@ -81,7 +81,7 @@ export default function KelasDetailPage() {
       <div className="dashboard-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button
-            onClick={() => router.push('/dashboard/siswa/manajemen-kelas')}
+            onClick={() => router.push('/siswa/manajemen-kelas')}
             style={{
               background: 'none', border: '1.5px solid #1A2C4E', borderRadius: 8,
               width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -106,7 +106,7 @@ export default function KelasDetailPage() {
 
         {/* Tombol Edit */}
         <button
-          onClick={() => router.push(`/dashboard/siswa/manajemen-kelas/${id}/edit`)}
+          onClick={() => router.push(`/siswa/manajemen-kelas/${id}/edit`)}
           style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}
         >
           <Pencil size={13} /> Edit Kelas
