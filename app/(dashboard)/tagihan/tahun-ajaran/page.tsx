@@ -465,11 +465,17 @@ export default function TahunAjaranPage() {
           </div>
           <div>
             <label style={sLabel}>Tanggal mulai</label>
-            <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={sInput} />
+            <div style={{ position: 'relative' }}>
+              <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem' }} className="custom-date-input" />
+              <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            </div>
           </div>
           <div>
             <label style={sLabel}>Tanggal selesai</label>
-            <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={sInput} />
+            <div style={{ position: 'relative' }}>
+              <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem' }} className="custom-date-input" />
+              <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            </div>
           </div>
         </div>
 
@@ -485,35 +491,45 @@ export default function TahunAjaranPage() {
               <span style={{ fontSize: '0.875rem' }}>Isi tanggal mulai &amp; selesai untuk melihat pembagian semester</span>
             </div>
           ) : (
-            <div style={{ border: '1.5px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ border: '2px solid #6F788A', borderRadius: 10, overflow: 'hidden', boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)' }}>
               {/* Semester Ganjil */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.25rem', borderBottom: '3px solid #C1C6CF', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3B82F6', flexShrink: 0 }} />
-                  <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--navy-dark)' }}>Semester Ganjil</span>
+                  <span style={{ fontWeight: 600, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Semester Ganjil</span>
                 </div>
                 <div>
-                  <label style={{ ...sLabel, marginBottom: 3 }}>Mulai</label>
-                  <input type="date" value={semester.ganjil.mulai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '0.82rem' }} />
+                  <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem', transform: 'translateX(60px)' }}>Mulai</label>
+                  <div style={{ position: 'relative', marginLeft: '5rem' }}>
+                    <input type="date" value={semester.ganjil.mulai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: -40, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none', }} />
+                  </div>
                 </div>
                 <div>
-                  <label style={{ ...sLabel, marginBottom: 3 }}>Selesai</label>
-                  <input type="date" value={semester.ganjil.selesai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '0.82rem' }} />
+                  <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem' }}>Selesai</label>
+                  <div style={{ position: 'relative', marginLeft: '5rem' }}>
+                    <input type="date" value={semester.ganjil.selesai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
+                  </div>
                 </div>
               </div>
               {/* Semester Genap */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.25rem', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10B981', flexShrink: 0 }} />
-                  <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--navy-dark)' }}>Semester Genap</span>
+                  <span style={{ fontWeight: 600, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Semester Genap</span>
                 </div>
                 <div>
-                  <label style={{ ...sLabel, marginBottom: 3 }}>Mulai</label>
-                  <input type="date" value={semester.genap.mulai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '0.82rem' }} />
+                  <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem', transform: 'translateX(60px)' }}>Mulai</label>
+                  <div style={{ position: 'relative', marginLeft: '5rem' }}>
+                    <input type="date" value={semester.genap.mulai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: -40, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
+                  </div>
                 </div>
                 <div>
-                  <label style={{ ...sLabel, marginBottom: 3 }}>Selesai</label>
-                  <input type="date" value={semester.genap.selesai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '0.82rem' }} />
+                  <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5rem' }}>Selesai</label>
+                  <div style={{ position: 'relative', marginLeft: '5rem' }}>
+                    <input type="date" value={semester.genap.selesai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
+                  </div>
                 </div>
               </div>
             </div>

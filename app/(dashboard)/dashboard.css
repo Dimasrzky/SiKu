@@ -849,6 +849,16 @@
   background: #B91C1C;
 }
 
+/* Custom date input — hide native calendar icon */
+.custom-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  position: absolute;
+  right: 0;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
