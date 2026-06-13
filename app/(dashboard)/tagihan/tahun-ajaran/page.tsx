@@ -459,7 +459,7 @@ export default function TahunAjaranPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
           <div>
             <label style={sLabel}>Nama tahun ajaran</label>
-            <select value={nama} onChange={e => setNama(e.target.value)} style={{ ...sInput, appearance: 'auto', cursor: 'pointer', fontSize: '1rem', fontWeight:'500', height: 48 }} className="custom-select">
+            <select value={nama} onChange={e => setNama(e.target.value)} style={{ ...sInput, appearance: 'auto', cursor: 'pointer', fontSize: '1rem', fontWeight:'500', height: 50 }} className="custom-select">
               {TAHUN_AJARAN_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </div>
@@ -486,12 +486,12 @@ export default function TahunAjaranPage() {
           </div>
 
           {!hasDates ? (
-            <div style={{ border: '2px solid #68748A', borderRadius: 10, padding: '2rem', textAlign: 'center', color: '#6F788A', display: 'flex', flexDirection: 'column', fontWeight: 600, fontSize: '0.9rem', alignItems: 'center', gap: '1.6rem', boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)' }}>
+            <div style={{ border: '3px solid #BABFC7', borderRadius: 15, padding: '2rem', textAlign: 'center', color: '#6F788A', display: 'flex', flexDirection: 'column', fontWeight: 600, fontSize: '0.9rem', alignItems: 'center', gap: '1.6rem', boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)' }}>
               <Image src="/icons/IconNotDate.png" width={65} height={65} alt="Belum ada tanggal" />
               <span style={{ fontSize: '0.875rem' }}>Isi tanggal mulai &amp; selesai untuk melihat pembagian semester</span>
             </div>
           ) : (
-            <div style={{ border: '2px solid #6F788A', borderRadius: 10, overflow: 'hidden', boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)' }}>
+            <div style={{ border: '2px solid #6F788A', borderRadius: 10, overflow: 'hidden', boxShadow: '0 0 12px #BABFC7' }}>
               {/* Semester Ganjil */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', padding: '1rem 1.25rem', borderBottom: '3px solid #C1C6CF', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -556,7 +556,7 @@ export default function TahunAjaranPage() {
 // ── Style constants ───────────────────────────────────────────────────────────
 
 const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 6 }
-const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2px solid #68748A', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff', boxShadow: '0 0 12px rgba(31, 86, 167, 0.437)' }
+const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '3px solid #BABFC7', borderRadius: 10, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff', boxShadow: '0 0 12px rgba(31, 86, 167, 0.437)' }
 const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sViewItem:  React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.2rem', background: '#F8FAFC', border: '1px solid var(--border)', borderRadius: 8, padding: '0.6rem 0.875rem' }
