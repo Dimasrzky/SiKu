@@ -459,21 +459,21 @@ export default function TahunAjaranPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
           <div>
             <label style={sLabel}>Nama tahun ajaran</label>
-            <select value={nama} onChange={e => setNama(e.target.value)} style={{ ...sInput, appearance: 'auto', cursor: 'pointer' }}>
+            <select value={nama} onChange={e => setNama(e.target.value)} style={{ ...sInput, appearance: 'auto', cursor: 'pointer', fontSize: '1rem', fontWeight:'500', height: 48 }} className="custom-select">
               {TAHUN_AJARAN_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </div>
           <div>
             <label style={sLabel}>Tanggal mulai</label>
             <div style={{ position: 'relative' }}>
-              <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem' }} className="custom-date-input" />
+              <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500' }} className="custom-date-input" />
               <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             </div>
           </div>
           <div>
             <label style={sLabel}>Tanggal selesai</label>
             <div style={{ position: 'relative' }}>
-              <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem' }} className="custom-date-input" />
+              <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500' }} className="custom-date-input" />
               <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             </div>
           </div>
