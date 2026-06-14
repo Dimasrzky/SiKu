@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Pencil, Plus, AlertTriangle } from 'lucide-react'
+import { Pencil, Plus, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -67,9 +67,11 @@ export default function TahunAjaranPage() {
     ganjil: { mulai: '', selesai: '' },
     genap:  { mulai: '', selesai: '' },
   })
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState('')
-  const [success, setSuccess] = useState(false)
+  const [saving,           setSaving]           = useState(false)
+  const [error,            setError]            = useState('')
+  const [apiError,         setApiError]         = useState('')
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
+  const [showErrorPopup,   setShowErrorPopup]   = useState(false)
 
   useEffect(() => {
     ;(async () => {
@@ -83,9 +85,9 @@ export default function TahunAjaranPage() {
       const steps = (pData?.setup_steps ?? {}) as Record<string, boolean>
       setSetupSteps(steps)
 
-      if (steps['tahun_ajaran'] && ta) {
-        setTaData(ta as TahunAjaranData)
+      if (steps['tahun_ajaran']) {
         setSetupDone(true)
+        if (ta) setTaData(ta as TahunAjaranData)
 
         if (upcoming) {
           const upcomingTyped = upcoming as TahunAjaranData
@@ -109,6 +111,18 @@ export default function TahunAjaranPage() {
       setPageLoading(false)
     })()
   }, [router])
+
+  useEffect(() => {
+    if (!showSuccessPopup) return
+    const nav = setTimeout(() => router.push('/tagihan/komponen'), 5000)
+    return () => clearTimeout(nav)
+  }, [showSuccessPopup, router])
+
+  useEffect(() => {
+    if (!showErrorPopup) return
+    const close = setTimeout(() => setShowErrorPopup(false), 5000)
+    return () => clearTimeout(close)
+  }, [showErrorPopup])
 
   // ── Setup mode helpers ────────────────────────────────────────────────────
 
@@ -155,11 +169,11 @@ export default function TahunAjaranPage() {
     })
 
     const json = await res.json() as { error?: string }
-    if (!res.ok) { setError(json.error ?? 'Gagal menyimpan.'); setSaving(false); return }
+    if (!res.ok) { setApiError(json.error ?? 'Gagal menyimpan.'); setShowErrorPopup(true); setSaving(false); return }
 
     try { localStorage.removeItem('siku_setup_steps') } catch { /* ignore */ }
-    setSuccess(true)
-    setTimeout(() => { window.location.href = '/dashboard' }, 1800)
+    setSaving(false)
+    setShowSuccessPopup(true)
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -384,30 +398,24 @@ export default function TahunAjaranPage() {
 
   return (
     <>
-    {success && (
-      <div style={{
-        position: 'fixed', top: '1.5rem', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 9999, background: '#1A2C4E', color: '#fff',
-        padding: '0.85rem 1.5rem', borderRadius: 12,
-        boxShadow: '0 8px 24px rgba(26,44,78,0.45)',
-        display: 'flex', alignItems: 'center', gap: '0.65rem',
-        fontWeight: 600, fontSize: '0.95rem', whiteSpace: 'nowrap',
-        animation: 'slideDown 0.3s ease',
-      }}>
-        <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#69C183', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.75rem' }}>✓</span>
-        Tahun ajaran berhasil disimpan!
-      </div>
-    )}
     <style>{`
-      @keyframes slideDown {
-        from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-        to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-      }
       @keyframes dot-blink {
         0%, 100% { background-color: #69C183; }
         50%       { background-color: #CBD5E1; }
       }
       .dot-active { animation: dot-blink 1.8s ease-in-out infinite; }
+      @keyframes popupBackdrop {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      @keyframes popupCard {
+        from { opacity: 0; transform: scale(0.88) translateY(20px); }
+        to   { opacity: 1; transform: scale(1)    translateY(0);    }
+      }
+      @keyframes popupBar {
+        from { width: 100%; }
+        to   { width: 0%;   }
+      }
     `}</style>
     <div className="dashboard-content">
 
@@ -466,14 +474,14 @@ export default function TahunAjaranPage() {
           <div>
             <label style={sLabel}>Tanggal mulai</label>
             <div style={{ position: 'relative' }}>
-              <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500' }} className="custom-date-input" />
+              <input type="date" value={mulai} onChange={e => { setMulai(e.target.value); const c = calcSemester(e.target.value, selesai); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500', color: mulai ? 'var(--text-dark)' : '#6F788A' }} className="custom-date-input" />
               <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             </div>
           </div>
           <div>
             <label style={sLabel}>Tanggal selesai</label>
             <div style={{ position: 'relative' }}>
-              <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500' }} className="custom-date-input" />
+              <input type="date" value={selesai} onChange={e => { setSelesai(e.target.value); const c = calcSemester(mulai, e.target.value); if (c) setSemester(c) }} style={{ ...sInput, paddingRight: '2.5rem', fontSize: '1rem', fontWeight:'500', color: selesai ? 'var(--text-dark)' : '#6F788A' }} className="custom-date-input" />
               <Image src="/icons/IconDate2.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             </div>
           </div>
@@ -549,6 +557,46 @@ export default function TahunAjaranPage() {
 
       </div>
     </div>
+
+    {showSuccessPopup && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'popupBackdrop 0.2s ease' }}>
+        <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 380, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', textAlign: 'center', overflow: 'hidden', animation: 'popupCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+          <div style={{ padding: '2rem 1.75rem 1.5rem' }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <CheckCircle2 size={32} color="#059669" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.5rem' }}>Berhasil Disimpan!</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.5 }}>Tahun ajaran berhasil disimpan.</p>
+            <button onClick={() => router.push('/tagihan/komponen')} style={{ ...sBtnPrimary, width: '100%', padding: '0.75rem', fontSize: '0.9rem' }}>
+              Lanjutkan Langkah Berikutnya →
+            </button>
+          </div>
+          <div style={{ height: 4, background: '#E5E7EB' }}>
+            <div style={{ height: '100%', background: '#059669', animation: 'popupBar 5s linear forwards' }} />
+          </div>
+        </div>
+      </div>
+    )}
+
+    {showErrorPopup && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'popupBackdrop 0.2s ease' }}>
+        <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 380, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', textAlign: 'center', overflow: 'hidden', animation: 'popupCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+          <div style={{ padding: '2rem 1.75rem 1.5rem' }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <XCircle size={32} color="#DC2626" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.5rem' }}>Gagal Tersimpan</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.5 }}>{apiError}</p>
+            <button onClick={() => setShowErrorPopup(false)} style={{ ...sBtnSecondary, width: '100%', padding: '0.75rem', fontSize: '0.9rem' }}>
+              Tutup
+            </button>
+          </div>
+          <div style={{ height: 4, background: '#E5E7EB' }}>
+            <div style={{ height: '100%', background: '#DC2626', animation: 'popupBar 5s linear forwards' }} />
+          </div>
+        </div>
+      </div>
+    )}
     </>
   )
 }

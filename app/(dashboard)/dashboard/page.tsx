@@ -529,10 +529,11 @@ function getAuthRawServer() { return null }
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [hasSiswa, setHasSiswa] = useState<boolean | null>(null)
-  const [data,     setData]     = useState<DashData | null>(null)
-  const [now,      setNow]      = useState(new Date())
-  const [lastUpd,  setLastUpd]  = useState<Date | null>(null)
+  const [hasSiswa,          setHasSiswa]          = useState<boolean | null>(null)
+  const [data,              setData]              = useState<DashData | null>(null)
+  const [now,               setNow]               = useState(new Date())
+  const [lastUpd,           setLastUpd]           = useState<Date | null>(null)
+  const [showSetupBerhasil, setShowSetupBerhasil] = useState(false)
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -540,6 +541,15 @@ export default function DashboardPage() {
     getAuthRawServer,
   )
   const user: AuthUser | null = raw ? (JSON.parse(raw) as AuthUser) : null
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('siku_setup_berhasil') === '1') {
+        localStorage.removeItem('siku_setup_berhasil')
+        setTimeout(() => setShowSetupBerhasil(true), 0)
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000)
@@ -616,6 +626,7 @@ export default function DashboardPage() {
   const sk = (val: string) => loading ? '—' : val
 
   return (
+    <>
     <div className="dashboard-content">
 
       {/* ── 1. Header ──────────────────────────────────────────────────────── */}
@@ -1020,5 +1031,31 @@ export default function DashboardPage() {
       )}
 
     </div>
+
+    {showSetupBerhasil && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+        <div style={{ background: '#fff', borderRadius: 20, padding: '2rem 1.75rem', width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', textAlign: 'center' }}>
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+            <CheckCircle2 size={38} color="#059669" />
+          </div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--navy-dark)', margin: '0 0 0.5rem', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+            Setup Berhasil! 🎉
+          </h2>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0 0 0.35rem', lineHeight: 1.6 }}>
+            SiKu sudah siap digunakan. Semua langkah setup telah selesai.
+          </p>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 1.75rem', lineHeight: 1.5 }}>
+            Kamu bisa mulai membuat tagihan, mengelola siswa, dan memantau pembayaran dari dashboard ini.
+          </p>
+          <button
+            onClick={() => setShowSetupBerhasil(false)}
+            style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.75rem 2rem', borderRadius: 10, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}
+          >
+            Mulai Gunakan SiKu →
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

@@ -205,7 +205,9 @@ export default function DaftarSiswaPage() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
         body: JSON.stringify({ step: 'import_siswa' }),
       })
-      setSetupDone(true)
+      try { localStorage.setItem('siku_setup_berhasil', '1') } catch { /* ignore */ }
+      router.push('/dashboard')
+      return
     }
 
     setPreviewRows(null)
@@ -480,7 +482,14 @@ export default function DaftarSiswaPage() {
     {showSuccessModal && <SuccessModal
       savedInSetupMode={savedInSetupMode}
       onAddMore={() => { setShowSuccessModal(false); openModal() }}
-      onExit={() => savedInSetupMode ? router.push('/dashboard') : setShowSuccessModal(false)}
+      onExit={() => {
+        if (savedInSetupMode) {
+          try { localStorage.setItem('siku_setup_berhasil', '1') } catch { /* ignore */ }
+          router.push('/dashboard')
+        } else {
+          setShowSuccessModal(false)
+        }
+      }}
     />}
 
     <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
@@ -577,7 +586,14 @@ export default function DaftarSiswaPage() {
     {showSuccessModal && <SuccessModal
       savedInSetupMode={savedInSetupMode}
       onAddMore={() => { setShowSuccessModal(false); openModal() }}
-      onExit={() => savedInSetupMode ? router.push('/dashboard') : setShowSuccessModal(false)}
+      onExit={() => {
+        if (savedInSetupMode) {
+          try { localStorage.setItem('siku_setup_berhasil', '1') } catch { /* ignore */ }
+          router.push('/dashboard')
+        } else {
+          setShowSuccessModal(false)
+        }
+      }}
     />}
 
     {/* Popup konfirmasi template */}
