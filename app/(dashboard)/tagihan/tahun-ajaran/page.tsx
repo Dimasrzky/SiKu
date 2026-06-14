@@ -516,7 +516,7 @@ export default function TahunAjaranPage() {
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem' }}>Selesai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
                     <input type="date" value={semester.ganjil.selesai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
-                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
                   </div>
                 </div>
               </div>
@@ -536,7 +536,7 @@ export default function TahunAjaranPage() {
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5rem' }}>Selesai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
                     <input type="date" value={semester.genap.selesai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
-                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
+                    <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
                   </div>
                 </div>
               </div>

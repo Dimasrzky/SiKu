@@ -32,6 +32,7 @@ export default function DaftarPage() {
   const [namaSekolah,    setNamaSekolah]    = useState('')
   const [noWaSekolah,    setNoWaSekolah]    = useState('')
   const [noWaError,      setNoWaError]      = useState('')
+  const [emailError,     setEmailError]     = useState('')
   const [jenjangSekolah, setJenjangSekolah] = useState('SMP')
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
@@ -39,6 +40,7 @@ export default function DaftarPage() {
 
   const handleStep1 = async () => {
     setError('')
+    setEmailError('')
     if (!nama.trim() || !jabatanFinal.trim() || !email.trim() || !password) {
       setError('Semua field wajib diisi.')
       return
@@ -61,34 +63,29 @@ export default function DaftarPage() {
       !signUpError && signUpData.user?.identities?.length === 0
 
     if (emailSudahAda || signUpError?.message === 'User already registered') {
-      // Email ada → harus login dengan password yang benar
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
-
-      if (signInError) {
-        setError('Password salah untuk email ini.')
+      if (email.trim() === 'demosiku@gmail.com') {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+        if (signInError) {
+          setError('Password salah untuk akun demo.')
+          setLoading(false)
+          return
+        }
+        const userId = signInData.user?.id
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('sekolah_id, role')
+          .eq('id', userId!)
+          .single()
+        if (profile?.role === 'super_admin') setIsDemo(true)
+        setStep(2)
         setLoading(false)
         return
       }
 
-      // Login berhasil — cek profil
-      const userId = signInData.user?.id
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('sekolah_id, role')
-        .eq('id', userId!)
-        .single()
-
-      if (profile?.sekolah_id && profile?.role !== 'super_admin') {
-        // Akun yang sudah selesai onboarding → langsung dashboard
-        router.push('/dashboard')
-        return
-      }
-
-      if (profile?.role === 'super_admin') setIsDemo(true)
-      setStep(2)
+      setEmailError('Email ini sudah terdaftar. Silakan masuk.')
       setLoading(false)
       return
     }
@@ -272,9 +269,20 @@ export default function DaftarPage() {
               <input
                 id="email" type="email" className="form-input"
                 placeholder="email@sekolah.sch.id"
-                value={email} onChange={(e) => setEmail(e.target.value)}
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (emailError) setEmailError('')
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
+                style={emailError ? { borderColor: '#EF4444' } : undefined}
               />
+              {emailError && (
+                <p style={{ color: '#EF4444', fontSize: '0.78rem', marginTop: 4 }}>
+                  {emailError}{' '}
+                  <Link href="/" style={{ color: '#EF4444', fontWeight: 600 }}>Masuk di sini</Link>
+                </p>
+              )}
             </div>
 
             <div className="form-group">

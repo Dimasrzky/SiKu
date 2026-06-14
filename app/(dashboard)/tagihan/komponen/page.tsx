@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Pencil, CheckCircle2, XCircle, ChevronDown } from 'lucide-react'
+import { Pencil, CheckCircle2, XCircle, ChevronDown, Search, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -24,21 +24,13 @@ const TIPE_OPTIONS = [
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type JenisTagihan = 'wajib' | 'ekskul' | 'aktivitas'
-
 interface KomponenItem {
-  id:    string
-  jenis: string
-  nama:  string
-  warna: string
-}
-
-function darkenHex(hex: string, amount = 60): string {
-  const n = parseInt(hex.replace('#', ''), 16)
-  const r = Math.max(0, (n >> 16) - amount)
-  const g = Math.max(0, ((n >> 8) & 0xff) - amount)
-  const b = Math.max(0, (n & 0xff) - amount)
-  return `rgb(${r},${g},${b})`
+  id:              string
+  jenis:           string
+  nama:            string
+  warna:           string
+  keterangan:      string
+  nominal_default: number | null
 }
 
 // ── Semester detection ────────────────────────────────────────────────────────
@@ -74,11 +66,24 @@ export default function KomponenTagihanPage() {
   const [tahunAjaran,    setTahunAjaran]    = useState('')
   const [autoSemester,   setAutoSemester]   = useState('')
 
-  // View mode state
-  const [cardsWajib,     setCardsWajib]     = useState<KomponenItem[]>([])
-  const [cardsEkskul,    setCardsEkskul]    = useState<KomponenItem[]>([])
-  const [cardsAktivitas, setCardsAktivitas] = useState<KomponenItem[]>([])
-  const [komponenTab,    setKomponenTab]    = useState<JenisTagihan>('wajib')
+  // View mode — list + filter
+  const [allKomponen,  setAllKomponen]  = useState<KomponenItem[]>([])
+  const [searchQuery,  setSearchQuery]  = useState('')
+  const [filterTipe,   setFilterTipe]   = useState('semua')
+
+  // Edit modal
+  const [editTarget,     setEditTarget]     = useState<KomponenItem | null>(null)
+  const [editNama,       setEditNama]       = useState('')
+  const [editTipe,       setEditTipe]       = useState('')
+  const [editNominal,    setEditNominal]    = useState('')
+  const [editKeterangan, setEditKeterangan] = useState('')
+  const [editWarna,      setEditWarna]      = useState(WARNA_OPTIONS[0])
+  const [editSaving,     setEditSaving]     = useState(false)
+  const [editError,      setEditError]      = useState('')
+
+  // Delete modal
+  const [deleteTarget,  setDeleteTarget]  = useState<KomponenItem | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Setup mode form state
   const [showForm,       setShowForm]       = useState(false)
@@ -130,22 +135,35 @@ export default function KomponenTagihanPage() {
 
       if (peng?.setup_steps?.['komponen_tagihan'] === true) {
         setSetupDone(true)
-        const { data: kRows } = await supabase
+
+        // Coba fetch dengan kolom lengkap; fallback ke kolom dasar jika kolom baru belum ada
+        let kRows: Record<string, unknown>[] | null = null
+        const { data: fullRows, error: fullErr } = await supabase
           .from('komponen_tagihan')
-          .select('id, jenis, nama, kelas_warna')
+          .select('id, jenis, nama, kelas_warna, keterangan, nominal_default')
           .order('created_at')
           .limit(100)
 
-        type KRow = { id: string; jenis: string; nama: string | null; kelas_warna: string | null }
-        const rows = (kRows ?? []) as KRow[]
-        const toItem = (r: KRow): KomponenItem => ({
-          id: r.id, jenis: r.jenis,
-          nama: r.nama ?? '', warna: r.kelas_warna ?? WARNA_OPTIONS[0],
-        })
+        if (!fullErr) {
+          kRows = fullRows as Record<string, unknown>[]
+        } else {
+          // kolom keterangan/nominal_default belum ada — fallback
+          const { data: baseRows } = await supabase
+            .from('komponen_tagihan')
+            .select('id, jenis, nama, kelas_warna')
+            .order('created_at')
+            .limit(100)
+          kRows = (baseRows ?? []) as Record<string, unknown>[]
+        }
 
-        setCardsWajib(rows.filter(r => r.jenis === 'wajib').map(toItem))
-        setCardsEkskul(rows.filter(r => r.jenis === 'ekskul').map(toItem))
-        setCardsAktivitas(rows.filter(r => r.jenis === 'aktivitas').map(toItem))
+        setAllKomponen((kRows ?? []).map(r => ({
+          id:              String(r.id ?? ''),
+          jenis:           String(r.jenis ?? ''),
+          nama:            String(r.nama ?? ''),
+          warna:           String(r.kelas_warna ?? WARNA_OPTIONS[0]),
+          keterangan:      String(r.keterangan ?? ''),
+          nominal_default: typeof r.nominal_default === 'number' ? r.nominal_default : null,
+        })))
       }
 
       setDataLoading(false)
@@ -198,10 +216,12 @@ export default function KomponenTagihanPage() {
           tahun_ajaran: tahunAjaran,
           semester:     autoSemester,
           komponen: [{
-            id:         Date.now().toString(),
-            jenis:      formTipe,
-            nama:       formNama.trim(),
-            kelasWarna: formWarna,
+            id:             Date.now().toString(),
+            jenis:          formTipe,
+            nama:           formNama.trim(),
+            kelasWarna:     formWarna,
+            keterangan:     formKeterangan.trim() || null,
+            nominalDefault: nominalNum > 0 ? nominalNum : null,
             items: nominalNum > 0
               ? [{ id: '1', nama: formNama.trim(), nominal: nominalNum }]
               : [],
@@ -213,6 +233,56 @@ export default function KomponenTagihanPage() {
     if (!res.ok) { setApiError(json.error ?? 'Gagal menyimpan.'); setShowErrorPopup(true); setSaving(false); return }
     setSaving(false)
     setShowSuccessPopup(true)
+  }
+
+  // ── Edit / Delete handlers ────────────────────────────────────────────────────
+
+  const openEdit = (k: KomponenItem) => {
+    setEditTarget(k)
+    setEditNama(k.nama)
+    setEditTipe(k.jenis)
+    setEditNominal(k.nominal_default ? k.nominal_default.toLocaleString('id-ID') : '')
+    setEditKeterangan(k.keterangan)
+    setEditWarna(k.warna)
+    setEditError('')
+  }
+
+  const handleEdit = async () => {
+    if (!editTarget) return
+    setEditError('')
+    if (!editNama.trim()) { setEditError('Nama komponen harus diisi.'); return }
+    if (!editTipe)        { setEditError('Tipe pembayaran harus dipilih.'); return }
+    setEditSaving(true)
+    const nominalNum = parseInt(editNominal.replace(/\./g, ''), 10) || 0
+    const { error } = await supabase
+      .from('komponen_tagihan')
+      .update({
+        nama:            editNama.trim(),
+        jenis:           editTipe,
+        nominal_default: nominalNum || null,
+        keterangan:      editKeterangan.trim() || null,
+        kelas_warna:     editWarna,
+      })
+      .eq('id', editTarget.id)
+    if (error) { setEditError(error.message); setEditSaving(false); return }
+    setAllKomponen(prev => prev.map(k => k.id === editTarget.id
+      ? { ...k, nama: editNama.trim(), jenis: editTipe, nominal_default: nominalNum || null, keterangan: editKeterangan.trim(), warna: editWarna }
+      : k
+    ))
+    setEditTarget(null)
+    setEditSaving(false)
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    const { error } = await supabase
+      .from('komponen_tagihan')
+      .delete()
+      .eq('id', deleteTarget.id)
+    if (!error) setAllKomponen(prev => prev.filter(k => k.id !== deleteTarget.id))
+    setDeleteTarget(null)
+    setDeleteLoading(false)
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────────
@@ -459,6 +529,78 @@ export default function KomponenTagihanPage() {
 
             <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
+            {/* Review tampilan */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.8rem' }}>
+                Review tampilan
+              </div>
+
+              {!formNama.trim() ? (
+                <div style={{
+                  border: '2.5px solid #BABFC7', borderRadius: 12,
+                  padding: '1.1rem 1.4rem', background: '#E7E9EC',
+                }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#64748B', marginBottom: '0.25rem' }}>
+                    Komponen tagihan yang akan dibuat
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: 500 }}>
+                    Isi nama &amp; tipe pembayaran untuk melihat tampilan
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  border: '2px solid #BABFC7', borderRadius: 12,
+                  padding: '1rem 1.25rem', background: '#E7E9EC',
+                  display: 'flex', alignItems: 'center', gap: '1rem',
+                  boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)',
+                }}>
+                  {/* Avatar */}
+                  <div style={{
+                    width: 48, height: 48, borderRadius: 10, background: formWarna,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>
+                      {formNama.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
+                    </span>
+                  </div>
+
+                  {/* Nama + badge + keterangan */}
+                  <div style={{ flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>
+                        {formNama}
+                      </span>
+                      {formTipe && (
+                        <span style={{
+                          background: formWarna, color: '#fff',
+                          fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px',
+                          borderRadius: 20, flexShrink: 0,
+                        }}>
+                          {TIPE_OPTIONS.find(t => t.value === formTipe)?.label}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      {formKeterangan.trim() || <span style={{ color: '#8a8e94' }}>Belum ada keterangan</span>}
+                    </div>
+                  </div>
+
+                  {/* Separator tegak */}
+                  <div style={{ width: 1.5, height: 40, background: '#CBD5E1', flexShrink: 0, marginLeft: '1%' }} />
+
+                  {/* Nominal */}
+                  <div style={{ flexShrink: 0 }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      Nominal default
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>
+                      {formNominal ? `Rp ${formNominal}` : <span style={{ color: '#878c92' }}>—</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Footer buttons */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
               <button
@@ -565,89 +707,247 @@ export default function KomponenTagihanPage() {
 
   // ── VIEW MODE ─────────────────────────────────────────────────────────────────
 
-  const KOMPONEN_TABS: { key: JenisTagihan; label: string; color: string; cards: KomponenItem[] }[] = [
-    { key: 'wajib',     label: 'Tagihan Wajib',  color: 'var(--navy)', cards: cardsWajib     },
-    { key: 'ekskul',    label: 'Ekstrakurikuler', color: '#047857',     cards: cardsEkskul    },
-    { key: 'aktivitas', label: 'Aktivitas Lain',  color: '#7C3AED',     cards: cardsAktivitas },
+  const countRutin    = allKomponen.filter(k => k.jenis === 'rutin_bulanan').length
+  const countSekali   = allKomponen.filter(k => k.jenis === 'sekali_bayar').length
+  const countSemester = allKomponen.filter(k => k.jenis === 'per_semester').length
+
+  const filteredKomponen = allKomponen
+    .filter(k => filterTipe === 'semua' || k.jenis === filterTipe)
+    .filter(k => k.nama.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const STAT_CARDS = [
+    { label: 'Total komponen', count: allKomponen.length,  valueColor: '#fff'     },
+    { label: 'Rutin Bulanan',  count: countRutin,          valueColor: '#6EE7B7'  },
+    { label: 'Sekali Bayar',   count: countSekali,         valueColor: '#93C5FD'  },
+    { label: 'Per Semester',   count: countSemester,       valueColor: '#FCD34D'  },
   ]
-  const activeKomponenCards = KOMPONEN_TABS.find(t => t.key === komponenTab)?.cards ?? []
+
+  const FORM_WARNA_EDIT  = WARNA_OPTIONS.slice(0, 7)
+  const isCustomWarnaEdit = !FORM_WARNA_EDIT.includes(editWarna)
 
   return (
     <div className="dashboard-content">
-      <div className="dashboard-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div>
-            <h1 className="dashboard-title">Komponen Tagihan</h1>
-            <p className="dashboard-subtitle">{tahunAjaran} · Semester {autoSemester}</p>
-          </div>
+      <style>{`
+        @keyframes modalBackdrop { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes modalCard { from { opacity: 0; transform: scale(0.92) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      `}</style>
+
+      {/* Header */}
+      <div className="dashboard-header" style={{ marginBottom: '1.25rem' }}>
+        <div>
+          <h1 className="dashboard-title">Komponen tagihan</h1>
+          <p className="dashboard-subtitle">Buat &amp; kelola item pembayaran sekolah</p>
         </div>
-        <button onClick={() => router.push('/tagihan/komponen/edit')}
-          style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}>
-          <Pencil size={13} /> Edit Komponen
+        <button
+          onClick={() => router.push('/tagihan/komponen/tambah')}
+          style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 8, padding: '0.6rem 1.1rem', background: '#1A2C4E' }}
+        >
+          + Tambah komponen
         </button>
       </div>
 
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', borderBottom: '2px solid var(--border)' }}>
-          {KOMPONEN_TABS.map(tab => (
-            <button key={tab.key} onClick={() => setKomponenTab(tab.key)}
-              style={{
-                flex: 1, padding: '0.75rem 0.5rem', background: 'none', border: 'none',
-                borderBottom: komponenTab === tab.key ? `3px solid ${tab.color}` : '3px solid transparent',
-                marginBottom: -2, fontWeight: komponenTab === tab.key ? 700 : 400,
-                fontSize: '0.82rem', color: komponenTab === tab.key ? tab.color : 'var(--text-muted)',
-                cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}
-            >
-              {tab.label}
-              <span style={{
-                background: komponenTab === tab.key ? tab.color : 'var(--border)',
-                color: komponenTab === tab.key ? '#fff' : 'var(--text-muted)',
-                fontSize: '0.68rem', fontWeight: 700, padding: '1px 7px', borderRadius: 20,
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.875rem', marginBottom: '1.25rem' }}>
+        {STAT_CARDS.map(s => (
+          <div key={s.label} style={{ background: '#1A2C4E', borderRadius: 12, padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: '0.4rem' }}>{s.label}</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700, color: s.valueColor, lineHeight: 1 }}>{s.count}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Search + filter */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input
+            placeholder="Cari komponen..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ ...sInput, paddingLeft: '2.25rem', border: '1.5px solid #E2E8F0', boxShadow: 'none' }}
+          />
+        </div>
+        <div style={{ position: 'relative' }}>
+          <select
+            value={filterTipe}
+            onChange={e => setFilterTipe(e.target.value)}
+            style={{ ...sInput, width: 'auto', minWidth: 180, appearance: 'none', WebkitAppearance: 'none', paddingRight: '2.25rem', border: '1.5px solid #E2E8F0', boxShadow: 'none' }}
+          >
+            <option value="semua">Semua tipe</option>
+            {TIPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <ChevronDown size={15} color="#6F788A" style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+        {filteredKomponen.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+            {allKomponen.length === 0 ? 'Belum ada komponen tagihan.' : 'Tidak ada komponen yang sesuai filter.'}
+          </div>
+        ) : (
+          filteredKomponen.map((k, i) => (
+            <div key={k.id} style={{
+              display: 'flex', alignItems: 'center', gap: '1rem',
+              padding: '0.875rem 1.25rem',
+              borderBottom: i < filteredKomponen.length - 1 ? '1px solid var(--border)' : 'none',
+            }}>
+              {/* Avatar */}
+              <div style={{
+                width: 42, height: 42, borderRadius: 10, background: k.warna, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {tab.cards.length}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div style={{ padding: '1.25rem 1.5rem' }}>
-          {activeKomponenCards.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Belum ada komponen {KOMPONEN_TABS.find(t => t.key === komponenTab)?.label.toLowerCase()}.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.875rem' }}>
-              {activeKomponenCards.map(card => (
-                <KomponenCard key={card.id} card={card} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+                <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '0.02em' }}>
+                  {k.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
+                </span>
+              </div>
 
-// ── Komponen Card ─────────────────────────────────────────────────────────────
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)' }}>{k.nama}</span>
+                  <span style={{
+                    background: k.warna, color: '#fff',
+                    fontSize: '0.7rem', fontWeight: 700, padding: '2px 9px',
+                    borderRadius: 20, flexShrink: 0,
+                  }}>
+                    {TIPE_OPTIONS.find(t => t.value === k.jenis)?.label ?? k.jenis}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {k.keterangan && <span>{k.keterangan}</span>}
+                  {k.keterangan && k.nominal_default != null && <span> · </span>}
+                  {k.nominal_default != null && (
+                    <span>Nominal default: Rp {k.nominal_default.toLocaleString('id-ID')}</span>
+                  )}
+                  {!k.keterangan && k.nominal_default == null && (
+                    <span style={{ color: '#CBD5E1' }}>Belum ada keterangan</span>
+                  )}
+                </div>
+              </div>
 
-function KomponenCard({ card }: { card: KomponenItem }) {
-  return (
-    <div style={{
-      position: 'relative', overflow: 'hidden',
-      background: card.warna,
-      borderRadius: 10, padding: '0.65rem 1rem',
-      boxShadow: `0 2px 12px ${card.warna}55`,
-    }}>
-      <div style={{ position: 'absolute', bottom: 0, right: 0, width: 130, height: 130, background: `linear-gradient(to right, transparent 30%, ${darkenHex(card.warna)} 100%)`, pointerEvents: 'none' }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.875rem', display: 'block', marginBottom: '0.15rem' }}>
-          {card.nama}
-        </span>
-        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
-          {card.jenis === 'rutin_bulanan' ? 'Rutin Bulanan' : card.jenis === 'sekali_bayar' ? 'Sekali Bayar' : card.jenis === 'per_semester' ? 'Per Semester' : card.jenis}
-        </span>
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                <button
+                  onClick={() => openEdit(k)}
+                  style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
+                >
+                  <Pencil size={13} /> Edit
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(k)}
+                  style={{ background: 'transparent', color: '#EF4444', border: '1.5px solid #EF4444', padding: '0.45rem 0.65rem', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', fontFamily: 'inherit' }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
+
+      {/* ── Edit Modal ── */}
+      {editTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 540, padding: '1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 1.25rem' }}>Edit Komponen</h3>
+
+            {editError && <div className="login-error" style={{ marginBottom: '1rem' }}>{editError}</div>}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={sLabel}>Nama komponen</label>
+                <input value={editNama} onChange={e => setEditNama(e.target.value)} style={sInput} />
+              </div>
+              <div>
+                <label style={sLabel}>Tipe pembayaran</label>
+                <div style={{ position: 'relative' }}>
+                  <select value={editTipe} onChange={e => setEditTipe(e.target.value)} style={{ ...sInput, appearance: 'none', WebkitAppearance: 'none', paddingRight: '2.5rem' }}>
+                    <option value="" disabled hidden>Pilih tipe</option>
+                    {TIPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <ChevronDown size={15} color="#6F788A" style={{ position: 'absolute', right: '0.85rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={sLabel}>Nominal default <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span></label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.875rem', color: 'var(--text-muted)', pointerEvents: 'none' }}>Rp</span>
+                  <input
+                    type="text" inputMode="numeric" placeholder="0"
+                    value={editNominal}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '')
+                      const num = parseInt(raw, 10)
+                      setEditNominal(raw ? num.toLocaleString('id-ID') : '')
+                    }}
+                    style={{ ...sInput, paddingLeft: '2.5rem' }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label style={sLabel}>Keterangan <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span></label>
+                <input value={editKeterangan} onChange={e => setEditKeterangan(e.target.value)} style={sInput} />
+              </div>
+            </div>
+
+            {/* Warna */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ ...sLabel, marginBottom: 8 }}>Warna komponen</label>
+              <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', background: '#fff', border: '2.5px solid #BABFC7', borderRadius: 13, padding: '0.5rem 0.75rem' }}>
+                {FORM_WARNA_EDIT.map(w => (
+                  <button key={w} onClick={() => setEditWarna(w)} style={{ width: 28, height: 28, borderRadius: 8, background: w, border: 'none', cursor: 'pointer', flexShrink: 0, boxShadow: editWarna === w ? `0 0 0 2px #fff, 0 0 0 4px ${w}` : 'none', transition: 'all 0.15s' }} />
+                ))}
+                <label style={{ position: 'relative', width: 30, height: 30, cursor: 'pointer', flexShrink: 0 }}>
+                  <input type="color" value={editWarna} onChange={e => setEditWarna(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }} />
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: isCustomWarnaEdit ? editWarna : 'transparent', boxShadow: isCustomWarnaEdit ? `0 0 0 2px #fff, 0 0 0 4px ${editWarna}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+                    {!isCustomWarnaEdit && <Image src="/icons/IconPipet.png" width={16} height={16} alt="Pipet" />}
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditTarget(null)} style={sBtnSecondary}>Batal</button>
+              <button onClick={handleEdit} disabled={editSaving} style={{ ...sBtnPrimary, background: editSaving ? '#D1D5DB' : '#1A2C4E' }}>
+                {editSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 400, padding: '1.75rem', textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.2)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <Trash2 size={26} color="#EF4444" />
+            </div>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
+              Anda yakin ingin menghapus <strong>{deleteTarget.nama}</strong>?
+            </p>
+            <p style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, margin: '0 0 1.5rem' }}>
+              Tindakan ini akan mempengaruhi tagihan aktif yang terkait.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                style={{ flex: 1, background: deleteLoading ? '#D1D5DB' : '#EF4444', color: '#fff', border: 'none', padding: '0.65rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: deleteLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -68,13 +68,15 @@ export async function POST(req: NextRequest) {
   if (step === 'komponen_tagihan' && stepData) {
     type KomponenCard = {
       id: string
-      jenis: 'wajib' | 'beasiswa' | 'ekskul' | 'aktivitas'
+      jenis: string
       nama?: string
       kelasJenjang?: string
       kelasWarna?: string
       kelasJumlah?: number
       kelasRef?: string
       scope?: 'semua' | 'perorangan'
+      keterangan?: string | null
+      nominalDefault?: number | null
       items: Array<{ id: string; nama: string; nominal: number }>
       potonganData?: Array<{ kelasJenjang?: string; namaItem: string; nominalAsli: number; persenPotong: number }>
     }
@@ -90,10 +92,12 @@ export async function POST(req: NextRequest) {
       const { data: ins } = await supabaseAdmin
         .from('komponen_tagihan')
         .insert({
-          sekolah_id:  profile.sekolah_id,
-          jenis:       card.jenis,
-          nama:        card.nama       ?? null,
-          kelas_warna: card.kelasWarna ?? null,
+          sekolah_id:      profile.sekolah_id,
+          jenis:           card.jenis,
+          nama:            card.nama            ?? null,
+          kelas_warna:     card.kelasWarna      ?? null,
+          keterangan:      card.keterangan      ?? null,
+          nominal_default: card.nominalDefault  ?? null,
           tahun_ajaran,
           semester,
         })
