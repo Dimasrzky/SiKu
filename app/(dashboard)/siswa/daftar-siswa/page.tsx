@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  GraduationCap, Upload, FileSpreadsheet,
+  GraduationCap, Upload,
   Plus, Download, MessageCircle, X,
   AlertCircle, CheckCircle2, Users,
 } from 'lucide-react'
@@ -392,27 +392,27 @@ export default function DaftarSiswaPage() {
 
       {/* Preview atau opsi import */}
       {previewRows ? renderPreview() : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '2rem' }}>
 
           {/* Card: Import Excel */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileSpreadsheet size={18} color="#16A34A" />
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem',  boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '3rem' }}>
+              <div style={{ width: 60, height: 60, borderRadius: 13, background: '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
+                <Image src="/icons/IconExcel.png" width={22} height={22} alt="Excel" />
               </div>
-              <div>
-                <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.95rem' }}>Import via Excel</div>
-                <div style={{ fontSize: '0.75rem', color: '#8a0e0e' }}>Harus Download Template*</div>
+              <div style={{ marginLeft: '0.5rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '1.2rem' }}>Import via Excel</div>
+                <div style={{ fontSize: '1rem', color: '#6F788A' }}>Harus Download Template*</div>
               </div>
             </div>
 
             <button onClick={downloadTemplate} style={{
-              display: 'flex', alignItems: 'center', gap: 6, width: '100%',
-              padding: '0.6rem 0.875rem', marginBottom: '0.875rem',
-              background: '#f9cece', border: '1px solid #dca1a1', borderRadius: 8,
-              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#bb1313', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: 6, width: '40%',
+              padding: '0.5rem 0.875rem', marginBottom: '1.2rem', marginLeft: '19.5rem',
+              background: '#f9cece', borderRadius: 8, boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)',
+              cursor: 'pointer', fontSize: '1rem', fontWeight: 600, color: '#bb1313', fontFamily: 'inherit',
             }}>
-              <Download size={14} /> Download Template Excel
+              <Download size={18} /> Download Template
             </button>
 
             <div
@@ -422,17 +422,17 @@ export default function DaftarSiswaPage() {
               onClick={() => fileInputRef.current?.click()}
               style={{
                 border: `2px dashed ${dragging ? '#1D4ED8' : '#CBD5E1'}`,
-                borderRadius: 10, padding: '1.75rem 1rem',
+                borderRadius: 14, padding: '1.75rem 1rem',
                 textAlign: 'center', cursor: 'pointer',
-                background: dragging ? '#EFF6FF' : '#FAFAFA',
+                background: dragging ? '#ffffff' : '#ffffff',
                 transition: 'all 0.15s',
               }}
             >
-              <Upload size={24} style={{ margin: '0 auto 0.5rem', color: dragging ? '#1D4ED8' : 'var(--text-muted)', display: 'block' }} />
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: dragging ? '#1D4ED8' : 'var(--navy-dark)', marginBottom: 4 }}>
+              <Upload size={35} style={{ margin: '0 auto 0.5rem', color: dragging ? '#1D4ED8' : '#BDC1C9', display: 'block' }} />
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: dragging ? '#1D4ED8' : '#6F788A', marginBottom: 4 }}>
                 {dragging ? 'Lepaskan file di sini' : 'Drag & drop file Excel'}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>atau klik untuk pilih file</div>
+              <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>atau klik untuk pilih file</div>
             </div>
 
             {importError && (
@@ -443,18 +443,18 @@ export default function DaftarSiswaPage() {
           </div>
 
           {/* Card: Tambah Manual */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem', display: 'flex', flexDirection: 'column',  boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-              <div style={{ width: 36, height: 36, borderRadius: 8, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Users size={18} color="#1D4ED8" />
+              <div style={{ width: 60, height: 60, borderRadius: 13, background: '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Users size={30} color="#ffffff" />
               </div>
-              <div>
-                <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.95rem' }}>Tambah Manual</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tambah siswa satu per satu</div>
+              <div style={{ marginLeft: '0.5rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '1.2rem' }}>Tambah Manual</div>
+                <div style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>Tambah siswa satu per satu</div>
               </div>
             </div>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6, flex: 1, margin: '0 0 1.25rem' }}>
-              Masukkan data siswa langsung melalui form. Cocok untuk menambah sedikit siswa atau melengkapi data yang terlewat.
+            <p style={{ fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1.6, flex: 1, margin: '0 0 1.25rem', marginTop: '1.4rem', fontWeight: 500 }}>
+              Masukkan data siswa langsung melalui form. Cocok untuk <br />menambah sedikit siswa atau melengkapi data yang terlewat.
             </p>
             <button onClick={openModal} style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Plus size={15} /> Tambah Siswa
@@ -719,18 +719,17 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
   const selectedKelas = kelasList.find(k => k.id === mKelasId)
 
   return (
+    <>
+    <style>{`.daftar-modal::-webkit-scrollbar { display: none; }`}</style>
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
       onClick={() => !mSaving && onClose()}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}
+      <div className="daftar-modal" style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 450, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
         onClick={e => e.stopPropagation()}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-          <h3 style={{ fontFamily: 'var(--font-serif,Georgia,serif)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0 }}>
+          <h3 style={{ fontFamily: 'var(--sans-serif)', fontSize: '1.4rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0 }}>
             Tambah Siswa
           </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
-            <X size={18} />
-          </button>
         </div>
 
         {/* Nama */}
@@ -755,9 +754,10 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '0.65rem 0.875rem', borderRadius: 8, cursor: 'pointer',
               fontFamily: 'inherit', fontSize: '0.875rem', background: '#fff',
-              border: selectedKelas ? `1.5px solid ${selectedKelas.warna}` : '1.5px solid var(--border)',
-              color: selectedKelas ? 'var(--navy-dark)' : 'var(--text-muted)',
+              border: selectedKelas ? `1.5px solid ${selectedKelas.warna}` : '2.5px solid #BABFC7',
+              color: selectedKelas ? '#6F788A' : '#6F788A',
               transition: 'border-color 0.15s',
+              boxShadow: '0 2px 4px #BABFC7'
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -772,8 +772,8 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
         </div>
 
         {/* Separator + Informasi Orang Tua */}
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.875rem', marginBottom: '0.875rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>
+        <div style={{ borderTop: '3.5px solid var(--border)', paddingTop: '0.875rem', marginBottom: '0.875rem' }}>
+          <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1A2C4E', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>
             Informasi Orang Tua
           </div>
 
@@ -793,7 +793,7 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
             />
             {mNoWaError
               ? <p style={{ fontSize: '0.73rem', color: '#EF4444', margin: '0.3rem 0 0' }}>{mNoWaError}</p>
-              : <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '0.3rem 0 0' }}>Digunakan untuk mengirim informasi tagihan secara otomatis.</p>
+              : <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', margin: '1rem 0 0' }}> ⓘ Digunakan untuk mengirim informasi tagihan secara otomatis.</p>
             }
           </div>
         </div>
@@ -804,7 +804,7 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '0.65rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.8rem' }}>
           <button onClick={onClose} disabled={mSaving} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
           <button onClick={onSave} disabled={mSaving} style={{ ...sBtnPrimary, flex: 2, opacity: mSaving ? 0.6 : 1 }}>
             {mSaving ? 'Menyimpan...' : 'Simpan Siswa'}
@@ -830,13 +830,13 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
           onClick={() => setKelasOpen(false)}
         >
           <div
-            style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', animation: 'kelas-popup-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
+            style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, boxShadow: '0 24px 64px rgba(64, 132, 234, 0.28)', animation: 'kelas-popup-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)' }}>Pilih Kelas</span>
-              <button onClick={() => setKelasOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
-                <X size={16} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Pilih Kelas</span>
+              <button onClick={() => setKelasOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: 4 }}>
+                <X size={28} />
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
@@ -866,12 +866,13 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
         </>
       )}
     </div>
+    </>
   )
 }
 
 // ── Style constants ───────────────────────────────────────────────────────────
 
-const sLabel:        React.CSSProperties = { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 4 }
-const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff' }
-const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
-const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
+const sLabel:        React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 500, color: 'var(--text-mid)', marginBottom: 4 }
+const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', borderRadius: 8, fontFamily: 'sans-serif', fontSize: '0.875rem', fontWeight: 500, color: '#6F788A', outline: 'none', background: '#fff', boxShadow: '0 2px 4px #BABFC7' }
+const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 4px #BABFC7' }
+const sBtnSecondary: React.CSSProperties = { background: 'transparent', minWidth: '150px', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 800, fontSize: '0.95rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 4px #BABFC7' }

@@ -10,6 +10,9 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { SetupChecklist } from '@/components/SetupChecklist'
+import { StatCard } from '@/components/StatCard'
+import { FinanceCard } from '@/components/FinanceCard'
+import { ChartCard } from '@/components/ChartCard'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -112,26 +115,28 @@ interface DashData {
 function BarChart({ data }: { data: TrenItem[] }) {
   if (!data.length) return null
   const max  = Math.max(...data.map(d => Math.max(d.terkumpul, d.tunggakan)), 1)
-  const bW   = 11
-  const bGap = 3
-  const gGap = 14
+  const bW   = 16
+  const bGap = 4
+  const gGap = 18
   const gW   = bW * 2 + bGap
-  const cH   = 68
+  const cH   = 140
 
   return (
-    <svg viewBox={`0 0 260 90`} style={{ width: '100%', maxHeight: 90 }}>
-      {data.map((d, i) => {
-        const x  = 2 + i * (gW + gGap)
-        const h1 = (d.terkumpul / max) * cH
-        const h2 = (d.tunggakan / max) * cH
-        return (
-          <g key={d.short}>
-            <rect x={x}              y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={3} fill="#10B981" opacity={0.85} />
-            <rect x={x + bW + bGap}  y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={3} fill="#EF4444" opacity={0.75} />
-            <text x={x + bW}         y={87}       textAnchor="middle" fontSize={9} fill="#9CA3AF">{d.short}</text>
-          </g>
-        )
-      })}
+    <svg viewBox={`0 0 280 160`} style={{ width: '100%', maxHeight: 160, marginBottom: 16 }}>
+      <g transform="translate(-20 0)">
+        {data.map((d, i) => {
+          const x  = 2 + i * (gW + gGap)
+          const h1 = (d.terkumpul / max) * cH
+          const h2 = (d.tunggakan / max) * cH
+          return (
+            <g key={d.short}>
+              <rect x={x}              y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={4} fill="#10B981" opacity={0.85} />
+              <rect x={x + bW + bGap}  y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={4} fill="#EF4444" opacity={0.75} />
+              <text x={x + bW}         y={155}      textAnchor="middle" fontSize={10} fill="#9CA3AF">{d.short}</text>
+            </g>
+          )
+        })}
+      </g>
     </svg>
   )
 }
@@ -687,11 +692,12 @@ export default function DashboardPage() {
 
       {/* ── 2. Card Total Tunggakan ─────────────────────────────────────────── */}
       <div style={{
+        marginTop: '2rem',
         background: '#fff',
-        border: '1px solid var(--border)',
         borderRadius: 16,
         overflow: 'hidden',
         marginBottom: '1rem',
+        boxShadow: '2px 2px 8px 8px rgba(45, 91, 145, 0.74)',
       }}>
         {/* Body */}
         <div style={{ display: 'flex', padding: '1.5rem', gap: '1.25rem', position: 'relative' }}>
@@ -702,29 +708,30 @@ export default function DashboardPage() {
           />
 
           {/* Left */}
-          <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
+          <div style={{ flex: 1, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: '#FEE2E2', color: '#DC2626',
-              padding: '3px 12px', borderRadius: 20,
-              fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.03em',
+              display: 'inline-flex', alignItems: 'center', gap: 12,
+              background: '#1A2C4E', color: '#ffffff',
+              padding: '6px 12px', borderRadius: 20,
+              fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.03em',
               marginBottom: '0.65rem',
+              boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
             }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#DC2626', animation: 'dot-pulse 1.6s ease-in-out infinite' }} />
+              <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#D35E5E', animation: 'dot-pulse 1.6s ease-in-out infinite' }} />
               Total Tunggakan Aktif
             </div>
 
-            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.1, marginBottom: '0.6rem', letterSpacing: '-0.02em' }}>
+            <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.5, marginBottom: '0.6rem', letterSpacing: '-0.02em', borderBottom: '5px solid #1A2C4E', paddingBottom: '0.25rem', display: 'inline-block' }}>
               {sk(rpFull(d?.totalTunggakan ?? 0))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <Users size={13} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap', position: 'relative', top: 8 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
+                <Users size={16} />
                 {sk(`${d?.siswaBelumBayar ?? 0} Siswa belum bayar`)}
               </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <Clock size={13} />
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
+                <Clock size={16} />
                 {lastUpd ? (() => {
                   const menit = Math.floor((now.getTime() - lastUpd.getTime()) / 60_000)
                   if (menit < 1)  return 'Baru saja diperbarui'
@@ -739,7 +746,6 @@ export default function DashboardPage() {
           <div style={{
             background: '#1A2C4E',
             borderRadius: 12,
-            padding: '1.1rem 1.25rem',
             minWidth: 138,
             textAlign: 'center',
             flexShrink: 0,
@@ -748,20 +754,22 @@ export default function DashboardPage() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 4,
+            boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
           }}>
             <div style={{
-              width: 28, height: 28, borderRadius: '50%',
+              width: 40, height: 40, borderRadius: '12px',
               background: '#F7DD7D',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginBottom: 4, fontSize: '0.9rem',
+              marginBottom: 4, fontSize: '0.9rem', position: 'relative', bottom: 13,
+              marginLeft: '7rem',
             }}>
-              💰
+              <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
-            <div style={{ fontSize: '2.2rem', fontWeight: 800, color: '#fff', lineHeight: 1 }}>
+            <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-3.8rem' }}>
               {sk(`${pctLunas}%`)}
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.65)' }}>Siswa sudah lunas</div>
-            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah lunas</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-2rem' }}>
               {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
             </div>
           </div>
@@ -769,82 +777,53 @@ export default function DashboardPage() {
 
         {/* Bottom alert strip */}
         <div style={{
-          background: '#DC2626',
+          background: '#DE6666',
           padding: '0.6rem 1.5rem',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '1rem',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#fff', fontSize: '0.8rem', fontWeight: 600 }}>
-            <AlertTriangle size={13} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#fff', fontSize: '1rem', fontWeight: 600 }}>
+            <AlertTriangle size={16} />
             {d?.siswaTunggakanLama ? `${d.siswaTunggakanLama} Siswa memiliki tunggakan lebih dari 1 bulan` : 'Periksa status tunggakan siswa'}
           </div>
           <Link href="/tagihan/aktif" style={{
-            color: '#fff', fontSize: '0.8rem', fontWeight: 700,
+            color: '#fff', fontSize: '1rem', fontWeight: 700,
             textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4,
             opacity: 0.9, whiteSpace: 'nowrap',
           }}>
-            Ingatkan sekarang <ChevronRight size={13} />
+            Ingatkan sekarang <ChevronRight size={20} />
           </Link>
         </div>
       </div>
 
       {/* ── 3. Row 1: Stats cards ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 230px) 1fr', gap: '1.2rem', marginBottom: '1.3rem', marginTop: '2rem' }}>
 
-        {/* Total Siswa Aktif */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem', borderLeft: '4px solid #1A2C4E' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 6 }}>TOTAL SISWA AKTIF</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }}>
-              {sk(String(d?.totalSiswaAktif ?? 0))}
-            </div>
-            <Users size={32} color="#E2E8F0" />
-          </div>
-        </div>
-
-        {/* Kelas Aktif */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem', borderLeft: '4px solid #3B82F6' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 6 }}>KELAS AKTIF</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }}>
-              {sk(String(d?.totalKelas ?? 0))}
-            </div>
-            <BookOpen size={32} color="#E2E8F0" />
-          </div>
-        </div>
-
-        {/* Tahun Ajaran */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem', borderLeft: '4px solid #10B981' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 6 }}>TAHUN AJARAN AKTIF</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }}>
-              {sk(d?.tahunAjaranNama ?? '-')}
-            </div>
-            <Calendar size={32} color="#E2E8F0" />
-          </div>
-        </div>
+        <StatCard title="Total siswa aktif" value={sk(String(d?.totalSiswaAktif ?? 0))} icon={Users} />
+        <StatCard title="Kelas aktif" value={sk(String(d?.totalKelas ?? 0))} icon={BookOpen} />
+        <StatCard title="Tahun ajaran aktif" value={sk((d?.tahunAjaranNama ?? '-').replace(/(\d{4})\/(\d{4})/, (_, y1, y2: string) => `${y1}/${y2.slice(2)}`))} icon={Calendar} valueStyle={{ marginLeft: '-1.8rem', marginTop: '0.2rem', fontSize: '2.2rem' }} />
 
         {/* Target Pembayaran */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem', borderLeft: '4px solid #6366F1' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
-              TARGET PEMBAYARAN – {mName.toUpperCase()} {yyyy}
+        <div style={{ background: '#fff', borderRadius: 13, padding: '0.6rem 1.25rem', boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',}}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#1A2C4E', letterSpacing: '0.05em', display: 'flex', alignItems: 'center' }}>
+              <Image src="/icons/IconTarget.png" alt="Target" width={30} height={16} style={{ marginRight: 8 }} />
+              Target Pembayaran – {mName} {yyyy}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--navy-dark)' }}>
-              {sk(`${pctTarget}%`)}
-            </span>
           </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 5 }}>
-            <div style={{ background: 'linear-gradient(90deg,#6366F1,#818CF8)', height: '100%', width: `${pctTarget}%`, borderRadius: 4, transition: 'width 0.6s ease' }} />
+          <div style={{ background: '#E5E7EB', borderRadius: 6, height: 20, overflow: 'hidden', marginBottom: 5, position: 'relative' }}>
+            <div style={{ background: 'linear-gradient(90deg,#6366F1,#818CF8)', height: '100%', width: `${pctTarget}%`, borderRadius: 6, transition: 'width 0.6s ease', position: 'absolute', left: 0, top: 0 }} />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, fontSize: '0.8rem', fontWeight: 600, color: '#1A2C4E', zIndex: 1 }}>
+              {pctTarget}%
+            </div>
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            {sk(`${d?.lunasRef ?? 0} siswa sudah lunas`)}
-            {' · '}
-            {sk(`Tersisa ${(d?.totalSiswaRef ?? 0) - (d?.lunasRef ?? 0)}`)}
+          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <span>{sk(`${d?.lunasRef ?? 0} siswa sudah lunas`)}</span>
+            <span>{sk(`Tersisa ${(d?.totalSiswaRef ?? 0) - (d?.lunasRef ?? 0)}`)}</span>
           </div>
         </div>
       </div>
@@ -852,114 +831,86 @@ export default function DashboardPage() {
       {/* ── 4. Row 2: Financial cards ───────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
 
-        {/* Terkumpul bulan ini */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 6 }}>TERKUMPUL BULAN INI</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>
-              {sk(rpCompact(d?.terkumpulIni ?? 0))}
-            </div>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: '0.7rem', fontWeight: 700,
-              color: diffTerkumpul >= 0 ? '#059669' : '#DC2626',
-            }}>
+        <FinanceCard
+          title="Terkumpul bulan ini"
+          value={sk(rpCompact(d?.terkumpulIni ?? 0))}
+          valueColor="#69C183"
+          info={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', fontWeight: 700, color: diffTerkumpul >= 0 ? '#69C183' : '#DE6666' }}>
               {diffTerkumpul >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-              {d && d.terkumpulLalu > 0
-                ? `${Math.abs(Math.round((diffTerkumpul / d.terkumpulLalu) * 100))}% vs bln lalu`
-                : '—'}
+              {d && d.terkumpulLalu > 0 ? `${Math.abs(Math.round((diffTerkumpul / d.terkumpulLalu) * 100))}% siswa sudah lunas` : '—'}
             </div>
-          </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 4, height: 4, overflow: 'hidden' }}>
-            <div style={{ background: '#10B981', height: '100%', width: `${pctTarget}%`, borderRadius: 4 }} />
-          </div>
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>{pctTarget}% dari target bulan ini</div>
-        </div>
+          }
+          progress={pctTarget}
+          progressColor="#69C183"
+          progressLabel={`${pctTarget}%`}
+        />
 
-        {/* Belum Dibayar */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 6 }}>BELUM DIBAYAR</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#DC2626', lineHeight: 1 }}>
-              {sk(rpCompact(d?.belumBayarNominal ?? 0))}
-            </div>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: '0.7rem', fontWeight: 700,
-              color: diffBelumBayar > 0 ? '#DC2626' : '#059669',
-            }}>
+        <FinanceCard
+          title="Belum dibayar"
+          value={sk(rpCompact(d?.belumBayarNominal ?? 0))}
+          valueColor="#DE6666"
+          info={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', fontWeight: 700, color: diffBelumBayar > 0 ? '#DE6666' : '#69C183' }}>
               {diffBelumBayar > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-              {d && d.belumBayarLalu > 0
-                ? `${diffBelumBayar > 0 ? 'Naik' : 'Turun'} ${rpCompact(Math.abs(diffBelumBayar))} dari bln lalu`
-                : '—'}
+              {d && d.belumBayarLalu > 0 ? `${diffBelumBayar > 0 ? 'Naik' : 'Turun'} ${rpCompact(Math.abs(diffBelumBayar))} dari bulan lalu` : '—'}
             </div>
-          </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 4, height: 4, overflow: 'hidden' }}>
-            <div style={{ background: '#EF4444', height: '100%', width: `${100 - pctTarget}%`, borderRadius: 4 }} />
-          </div>
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>{100 - pctTarget}% dari target belum terbayar</div>
-        </div>
+          }
+          progress={100 - pctTarget}
+          progressColor="#DE6666"
+          progressLabel={`${100 - pctTarget}%`}
+        />
 
-        {/* Total Beasiswa */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>TOTAL BEASISWA</div>
-            {d && d.penerimaBeasiswa > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#D97706' }}>
+        <FinanceCard
+          title="Total beasiswa"
+          value={sk(rpCompact(d?.totalBeasiswaNom ?? 0))}
+          valueColor="#BB8848"
+          info={d && d.penerimaBeasiswa > 0
+            ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#BB8848' }}>
                 <Gift size={11} />
                 {d.penerimaBeasiswa} penerima aktif
               </div>
-            )}
-          </div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#D97706', lineHeight: 1, marginBottom: 6 }}>
-            {sk(rpCompact(d?.totalBeasiswaNom ?? 0))}
-          </div>
-          {d && d.totalTagihanNom > 0 && (
-            <>
-              <div style={{ background: '#E5E7EB', borderRadius: 4, height: 4, overflow: 'hidden', marginBottom: 4 }}>
-                <div style={{ background: '#F59E0B', height: '100%', width: `${Math.min(Math.round((d.totalBeasiswaNom / d.totalTagihanNom) * 100), 100)}%`, borderRadius: 4 }} />
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                {Math.round((d.totalBeasiswaNom / d.totalTagihanNom) * 100)}% dari total tagihan
-              </div>
-            </>
-          )}
-        </div>
+            : undefined
+          }
+          progress={d && d.totalTagihanNom > 0 ? Math.min(Math.round((d.totalBeasiswaNom / d.totalTagihanNom) * 100), 100) : 0}
+          progressColor="#BB8848"
+          progressLabel={d && d.totalTagihanNom > 0 ? `${Math.round((d.totalBeasiswaNom / d.totalTagihanNom) * 100)}%` : '—'}
+          progressSub="dari total tagihan"
+        />
       </div>
 
       {/* ── 5. Row 3: Chart cards ───────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
 
-        {/* Tren Pemasukan Bulanan */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div>
-              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--navy-dark)' }}>Tren Pemasukan Bulanan</div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>6 bulan terakhir</div>
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+          <Link href="/laporan" style={{
+            position: 'absolute', top: '0.6rem', right: '1rem', zIndex: 1,
+            fontSize: '0.8rem', fontWeight: 600, color: '#1A2C4E',
+            textDecoration: 'none', opacity: 0.65,
+          }}>
+            Laporan →
+          </Link>
+          <ChartCard title="Tren Pemasukan Bulanan" subtitle="6 bulan terakhir" style={{ flex: 1 }}>
+            <div style={{ marginTop: 'auto' }}>
+              {d?.trenData.length ? <BarChart data={d.trenData} /> : (
+                <div style={{ height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1rem' }}>Belum ada data</div>
+              )}
             </div>
-            <Link href="/laporan" style={{ fontSize: '0.72rem', fontWeight: 700, color: '#3B82F6', textDecoration: 'none' }}>
-              Laporan →
-            </Link>
-          </div>
-          {d?.trenData.length ? <BarChart data={d.trenData} /> : (
-            <div style={{ height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data</div>
-          )}
-          <div style={{ display: 'flex', gap: '1rem', marginTop: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10B981', flexShrink: 0 }} /> Terkumpul
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10B981', flexShrink: 0 }} /> Terkumpul
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#EF4444', flexShrink: 0 }} /> Tunggakan
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: '#EF4444', flexShrink: 0 }} /> Tunggakan
-            </div>
-          </div>
+          </ChartCard>
         </div>
 
-        {/* Komposisi Pemasukan */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--navy-dark)' }}>Komposisi Pemasukan</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>Per komponen tagihan · {mName}</div>
-          </div>
+        <ChartCard
+          title="Komposisi Pemasukan"
+          subtitle={`Per komponen tagihan · ${mName}`}
+        >
           {d?.komposisi.length ? (
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
               <DonutChart items={d.komposisi} total={d.terkumpulIni} />
@@ -974,16 +925,15 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div style={{ height: 116, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data</div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data</div>
           )}
-        </div>
+        </ChartCard>
 
-        {/* Pembayaran per Kelas */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.1rem 1.25rem' }}>
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--navy-dark)' }}>Pembayaran per Kelas</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>% siswa lunas bulan ini</div>
-          </div>
+        <ChartCard
+          title="Pembayaran per Kelas"
+          subtitle="% siswa lunas bulan ini"
+          style={{ minHeight: 320 }}
+        >
           {d?.perKelas.length ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               {d.perKelas.map((kelas, i) => {
@@ -1006,9 +956,9 @@ export default function DashboardPage() {
               })}
             </div>
           ) : (
-            <div style={{ height: 116, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data kelas</div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data kelas</div>
           )}
-        </div>
+        </ChartCard>
       </div>
 
       {/* ── 6. Insights ─────────────────────────────────────────────────────── */}
