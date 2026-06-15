@@ -508,14 +508,14 @@ export default function TahunAjaranPage() {
                 <div>
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem', transform: 'translateX(60px)' }}>Mulai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
-                    <input type="date" value={semester.ganjil.mulai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
+                    <input type="date" value={semester.ganjil.mulai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'500', color: '#1A2C4E', backgroundColor: '#FFFFFF', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: '2px solid #1A2C4E', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
                     <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: -40, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none', }} />
                   </div>
                 </div>
                 <div>
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem' }}>Selesai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
-                    <input type="date" value={semester.ganjil.selesai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
+                    <input type="date" value={semester.ganjil.selesai} onChange={e => setSemester(s => ({ ...s, ganjil: { ...s.ganjil, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'500', color: '#1A2C4E', backgroundColor: '#FFFFFF', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: '2px solid #1A2C4E', borderRadius: 10 }} className="custom-date-input" />
                     <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
                   </div>
                 </div>
@@ -528,14 +528,14 @@ export default function TahunAjaranPage() {
                 <div>
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5.3rem', transform: 'translateX(60px)' }}>Mulai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
-                    <input type="date" value={semester.genap.mulai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
+                    <input type="date" value={semester.genap.mulai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, mulai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'500', color: '#1A2C4E', backgroundColor: '#FFFFFF', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: '2px solid #1A2C4E', borderRadius: 10, transform: 'translateX(60px)' }} className="custom-date-input" />
                     <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: -40, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
                   </div>
                 </div>
                 <div>
                   <label style={{ ...sLabel, marginBottom: 3, fontSize: '0.75rem', color: '#6F788A', marginLeft: '5rem' }}>Selesai</label>
                   <div style={{ position: 'relative', marginLeft: '5rem' }}>
-                    <input type="date" value={semester.genap.selesai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'bold', color: '#435D84', backgroundColor: '#A3CDFE', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: 'none', borderRadius: 10 }} className="custom-date-input" />
+                    <input type="date" value={semester.genap.selesai} onChange={e => setSemester(s => ({ ...s, genap: { ...s.genap, selesai: e.target.value } }))} style={{ ...sInput, fontSize: '1rem', fontWeight:'500', color: '#1A2C4E', backgroundColor: '#FFFFFF', boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)', border: '2px solid #1A2C4E', borderRadius: 10 }} className="custom-date-input" />
                     <Image src="/icons/IconEdit.png" width={20} height={20} alt="Kalender" style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-10px)', pointerEvents: 'none' }} />
                   </div>
                 </div>
@@ -603,7 +603,7 @@ export default function TahunAjaranPage() {
 
 // ── Style constants ───────────────────────────────────────────────────────────
 
-const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 6 }
+const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 6 }
 const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '3px solid #BABFC7', borderRadius: 10, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff', boxShadow: '0 0 12px rgba(31, 86, 167, 0.437)' }
 const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
