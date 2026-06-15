@@ -5,6 +5,7 @@ import {
   Users, Calendar, Download,
   Clock, AlertTriangle, CheckCircle2, ChevronRight,
   Banknote, Gift, BookOpen, TrendingUp, TrendingDown,
+  ClipboardCheck, Search,
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -87,6 +88,24 @@ interface Insight {
   actionHref?:  string
 }
 
+interface SiswaBayarRow {
+  id:                string
+  nis:               string
+  nama:              string
+  kelas:             { nama: string; warna: string } | null
+  tagihan_bulan_ini: number
+  status:            'lunas' | 'sebagian' | 'belum_bayar'
+  has_tunggakan:     boolean
+}
+
+interface TagihanSiswaRaw {
+  id:      string
+  status:  string
+  nominal: number | null
+  tagihan: { bulan: string; tahun: number; nominal: number } | null
+  siswa:   { id: string; nis: string | null; nama: string; kelas: { nama: string; warna: string } | null } | null
+}
+
 interface DashData {
   totalSiswaAktif:   number
   totalKelas:        number
@@ -108,6 +127,7 @@ interface DashData {
   komposisi:         KomposisiItem[]
   perKelas:          KelasItem[]
   insights:          Insight[]
+  siswaBayarList:    SiswaBayarRow[]
 }
 
 // ── SVG: Bar Chart ─────────────────────────────────────────────────────────────
@@ -437,6 +457,65 @@ async function loadDashData(siswaTotal: number): Promise<DashData> {
     }
   }
 
+  // ── Siswa bayar tabel ────────────────────────────────────────────────────────
+
+  const currentTagihanIds = currentRows.map(t => t.id)
+  const prevTagihanIds    = oldUnpaid.map(t => t.id)
+
+  const [{ data: tsRaw }, { data: prevTsRaw }] = await Promise.all([
+    currentTagihanIds.length > 0
+      ? supabase
+          .from('tagihan_siswa')
+          .select('id, status, nominal, tagihan:tagihan_id(bulan, tahun, nominal), siswa:siswa_id(id, nis, nama, kelas:kelas_id(nama, warna))')
+          .in('tagihan_id', currentTagihanIds)
+          .limit(500)
+      : Promise.resolve({ data: [] as TagihanSiswaRaw[], error: null }),
+    prevTagihanIds.length > 0
+      ? supabase
+          .from('tagihan_siswa')
+          .select('siswa_id, status')
+          .in('tagihan_id', prevTagihanIds)
+          .neq('status', 'lunas')
+          .limit(500)
+      : Promise.resolve({ data: [] as { siswa_id: string; status: string }[], error: null }),
+  ])
+
+  const tunggakanSiswaIds = new Set(
+    ((prevTsRaw ?? []) as { siswa_id: string; status: string }[]).map(r => r.siswa_id)
+  )
+
+  const STATUS_PRIORITY: Record<string, number> = { lunas: 0, sebagian: 1, belum_bayar: 2 }
+  const siswaMap = new Map<string, SiswaBayarRow>()
+
+  for (const row of ((tsRaw ?? []) as TagihanSiswaRaw[])) {
+    if (!row.siswa) continue
+    const siswaId  = row.siswa.id
+    const nominal  = row.tagihan?.nominal ?? row.nominal ?? 0
+    const raw      = row.status as SiswaBayarRow['status']
+    const status   = (['lunas', 'sebagian', 'belum_bayar'].includes(raw) ? raw : 'belum_bayar') as SiswaBayarRow['status']
+
+    const existing = siswaMap.get(siswaId)
+    if (!existing) {
+      siswaMap.set(siswaId, {
+        id: siswaId,
+        nis: row.siswa.nis ?? '-',
+        nama: row.siswa.nama,
+        kelas: row.siswa.kelas,
+        tagihan_bulan_ini: nominal,
+        status,
+        has_tunggakan: tunggakanSiswaIds.has(siswaId),
+      })
+    } else {
+      if ((STATUS_PRIORITY[status] ?? 0) > (STATUS_PRIORITY[existing.status] ?? 0)) {
+        existing.status = status
+      }
+      existing.tagihan_bulan_ini += nominal
+    }
+  }
+
+  const siswaBayarList: SiswaBayarRow[] = Array.from(siswaMap.values())
+    .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+
   return {
     totalSiswaAktif: siswaTotal,
     totalKelas: kelasCount ?? 0,
@@ -458,6 +537,7 @@ async function loadDashData(siswaTotal: number): Promise<DashData> {
     komposisi,
     perKelas,
     insights,
+    siswaBayarList,
   }
 }
 
@@ -526,6 +606,41 @@ function InsightCard({ insight }: { insight: Insight }) {
   )
 }
 
+// ── Status Badge Siswa ────────────────────────────────────────────────────────
+
+const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
+  lunas:      { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
+  sebagian:   { bg: '#FEF3C7', color: '#D97706', label: 'Sebagian' },
+  belum_bayar:{ bg: '#FEF9C3', color: '#92400E', label: 'Belum Bayar' },
+  tunggakan:  { bg: '#FEE2E2', color: '#DC2626', label: 'Tunggakan' },
+}
+
+function StatusBadgeSiswa({ status }: { status: string }) {
+  const s = STATUS_BADGE_MAP[status] ?? STATUS_BADGE_MAP.belum_bayar
+  return (
+    <span style={{ background: s.bg, color: s.color, borderRadius: 20, padding: '0.3rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+      {s.label}
+    </span>
+  )
+}
+
+function buildPaginationPages(current: number, total: number): (number | '...')[] {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1)
+  const set = new Set<number>([1, 2])
+  if (current > 1) set.add(current - 1)
+  set.add(current)
+  if (current < total) set.add(current + 1)
+  set.add(total - 1)
+  set.add(total)
+  const sorted = Array.from(set).filter(p => p >= 1 && p <= total).sort((a, b) => a - b)
+  const result: (number | '...')[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push('...')
+    result.push(sorted[i])
+  }
+  return result
+}
+
 // ── Auth helpers (same pattern as layout.tsx) ────────────────────────────────
 
 function getAuthRaw()       { return localStorage.getItem('siku_auth') }
@@ -539,6 +654,9 @@ export default function DashboardPage() {
   const [now,               setNow]               = useState(new Date())
   const [lastUpd,           setLastUpd]           = useState<Date | null>(null)
   const [showSetupBerhasil, setShowSetupBerhasil] = useState(false)
+  const [tabAktif,          setTabAktif]          = useState<'semua' | 'belum_bayar' | 'sebagian' | 'lunas' | 'tunggakan'>('semua')
+  const [searchQuery,       setSearchQuery]       = useState('')
+  const [halamanTabel,      setHalamanTabel]      = useState(1)
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -579,6 +697,7 @@ export default function DashboardPage() {
               terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
               belumBayarLalu: 0, totalBeasiswaNom: 0, penerimaBeasiswa: 0,
               totalTagihanNom: 0, trenData: [], komposisi: [], perKelas: [],
+              siswaBayarList: [],
               insights: [{
                 id: 'load-error', level: 'amber',
                 judul: 'Gagal memuat data', desc: 'Terjadi kesalahan saat mengambil data dashboard.',
@@ -629,6 +748,24 @@ export default function DashboardPage() {
 
   // ── Skeleton value helper ───────────────────────────────────────────────────
   const sk = (val: string) => loading ? '—' : val
+
+  // ── Tabel siswa: filter + pagination ────────────────────────────────────────
+  const siswaBayarList   = d?.siswaBayarList ?? []
+  const filteredSiswa    = siswaBayarList.filter(s => {
+    const eff = s.has_tunggakan ? 'tunggakan' : s.status
+    if (tabAktif !== 'semua') {
+      if (tabAktif === 'tunggakan' && !s.has_tunggakan) return false
+      if (tabAktif !== 'tunggakan' && eff !== tabAktif) return false
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      return s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q) || (s.kelas?.nama.toLowerCase().includes(q) ?? false)
+    }
+    return true
+  })
+  const TABEL_PAGE_SIZE = 10
+  const totalHalaman    = Math.max(1, Math.ceil(filteredSiswa.length / TABEL_PAGE_SIZE))
+  const paginatedSiswa  = filteredSiswa.slice((halamanTabel - 1) * TABEL_PAGE_SIZE, halamanTabel * TABEL_PAGE_SIZE)
 
   return (
     <>
@@ -979,6 +1116,178 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── 7. Tabel Status Pembayaran Siswa ────────────────────────────────── */}
+      <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '2px 2px 8px 8px rgba(45,91,145,0.10)', marginTop: '1.5rem' }}>
+
+        {/* Tab header + Search bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.2rem', marginBlock: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex' }}>
+            {([
+              { key: 'semua',       label: 'Semua' },
+              { key: 'belum_bayar', label: 'Belum Bayar' },
+              { key: 'sebagian',    label: 'Sebagian' },
+              { key: 'lunas',       label: 'Lunas' },
+              { key: 'tunggakan',   label: 'Tunggakan Lama' },
+            ] as const).map(tab => {
+              const active = tabAktif === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => { setTabAktif(tab.key); setHalamanTabel(1) }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '0.5rem 0.9rem',
+                    fontSize: '1rem', fontWeight: active ? 700 : 600,
+                    color: active ? '#1A2C4E' : '#1A2C4E',
+                    fontFamily: 'inherit',
+                    borderBottom: active ? '2.5px solid #1A2C4E' : '2.5px solid transparent',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#ffffff', border: '3px solid #BABFC7', borderRadius: 14, padding: '0.45rem 0.85rem', minWidth: 260, fontWeight: 500, color: '#6F788A' }}>
+            <Search size={18} color="#94A3B8" />
+            <input
+              type="text"
+              placeholder="Cari nama siswa, NIS, atau kelas..."
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setHalamanTabel(1) }}
+              style={{ border: 'none', background: 'none', outline: 'none', fontSize: '0.82rem', color: '#1A2C4E', flex: 1, fontFamily: 'inherit', minWidth: 0 }}
+            />
+          </div>
+        </div>
+
+        {/* Tabel */}
+        <div style={{ overflowX: 'auto', padding: '0 1rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#1A2C4E' }}>
+                {(['No', 'NIS', 'Nama', 'Kelas', 'Tagihan Bulan Ini', 'Status', 'Aksi'] as const).map((col, idx, arr) => (
+                  <th key={col} style={{
+                    padding: '0.6rem 1rem',
+                    textAlign: (col === 'No' || col === 'Aksi') ? 'center' : 'left',
+                    fontSize: '1rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
+                    borderRadius: idx === 0 ? '8px 0 0 8px' : idx === arr.length - 1 ? '0 8px 8px 0' : undefined,
+                  }}>
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94A3B8', fontSize: '0.88rem' }}>
+                    Memuat data...
+                  </td>
+                </tr>
+              ) : paginatedSiswa.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94A3B8', fontSize: '0.88rem' }}>
+                    {searchQuery ? 'Tidak ada siswa yang cocok dengan pencarian.' : 'Belum ada data tagihan siswa bulan ini.'}
+                  </td>
+                </tr>
+              ) : paginatedSiswa.map((siswa, i) => {
+                const effStatus = siswa.has_tunggakan ? 'tunggakan' : siswa.status
+                return (
+                  <tr key={siswa.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', fontSize: '0.85rem', color: '#6B7280' }}>
+                      {(halamanTabel - 1) * TABEL_PAGE_SIZE + i + 1}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.85rem', color: '#374151' }}>
+                      {siswa.nis}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.85rem', fontWeight: 500, color: '#1A2C4E' }}>
+                      {siswa.nama}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem' }}>
+                      {siswa.kelas ? (
+                        <span style={{
+                          background: `${siswa.kelas.warna}22`,
+                          color: siswa.kelas.warna,
+                          border: `1.5px solid ${siswa.kelas.warna}`,
+                          borderRadius: 8,
+                          padding: '0.25rem 0.6rem',
+                          fontSize: '0.78rem', fontWeight: 700,
+                        }}>
+                          {siswa.kelas.nama}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.85rem', color: '#1A2C4E', fontWeight: 500 }}>
+                      {rpFull(siswa.tagihan_bulan_ini)}
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem' }}>
+                      <StatusBadgeSiswa status={effStatus} />
+                    </td>
+                    <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center' }}>
+                      {effStatus === 'lunas' ? (
+                        <ClipboardCheck size={22} color="#16A34A" />
+                      ) : (
+                        <button style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          background: '#22C55E', color: '#fff',
+                          border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
+                          fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}>
+                          <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
+                          Ingatkan
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalHalaman > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '1rem 1.5rem', borderTop: '1px solid #F1F5F9' }}>
+            <button
+              onClick={() => setHalamanTabel(h => Math.max(1, h - 1))}
+              disabled={halamanTabel === 1}
+              style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.35rem 0.7rem', cursor: halamanTabel === 1 ? 'not-allowed' : 'pointer', color: halamanTabel === 1 ? '#CBD5E1' : '#1A2C4E', fontFamily: 'inherit', fontSize: '0.9rem' }}
+            >
+              ←
+            </button>
+            {buildPaginationPages(halamanTabel, totalHalaman).map((p, i) =>
+              p === '...'
+                ? <span key={`dots-${i}`} style={{ color: '#94A3B8', padding: '0 0.2rem', fontSize: '0.85rem' }}>···</span>
+                : (
+                  <button
+                    key={p}
+                    onClick={() => setHalamanTabel(p)}
+                    style={{
+                      background: halamanTabel === p ? '#1A2C4E' : 'none',
+                      color: halamanTabel === p ? '#fff' : '#1A2C4E',
+                      border: `1px solid ${halamanTabel === p ? '#1A2C4E' : '#E2E8F0'}`,
+                      borderRadius: 8, padding: '0.35rem 0.65rem',
+                      fontSize: '0.85rem', fontWeight: halamanTabel === p ? 700 : 500,
+                      cursor: 'pointer', fontFamily: 'inherit', minWidth: 36,
+                    }}
+                  >
+                    {p}
+                  </button>
+                )
+            )}
+            <button
+              onClick={() => setHalamanTabel(h => Math.min(totalHalaman, h + 1))}
+              disabled={halamanTabel === totalHalaman}
+              style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.35rem 0.7rem', cursor: halamanTabel === totalHalaman ? 'not-allowed' : 'pointer', color: halamanTabel === totalHalaman ? '#CBD5E1' : '#1A2C4E', fontFamily: 'inherit', fontSize: '0.9rem' }}
+            >
+              →
+            </button>
+          </div>
+        )}
+
+      </div>
 
     </div>
 
