@@ -21,9 +21,23 @@ const dmSans = DM_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'SiKu - Sistem Keuangan Sekolah Swasta Modern',
-  description: 'Kelola SPP, tagihan, dan laporan keuangan sekolah swasta Indonesia dalam satu platform digital. Notifikasi otomatis ke orang tua via WhatsApp.',
-  keywords: 'sistem keuangan sekolah, aplikasi SPP, bendahara sekolah, yayasan pendidikan Indonesia',
+  metadataBase: new URL('https://app.pakaisiku.id'),
+  title: 'Login',
+  description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari platform PakaiSiku.',
+  keywords: 'login siku, masuk akun pakaisiku, sistem keuangan sekolah, aplikasi SPP',
+  alternates: {
+    canonical: 'https://app.pakaisiku.id',
+  },
+  openGraph: {
+    title: 'Login | SiKu',
+    description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari platform PakaiSiku.',
+    siteName: 'PakaiSiku',
+    url: 'https://app.pakaisiku.id',
+    locale: 'id_ID',
+  },
+  verification: {
+    google: 'AYljetFck46XJADB0wAOb8HTXVECATUkGrmylA51ncM',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
