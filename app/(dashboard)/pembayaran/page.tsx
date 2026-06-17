@@ -1,23 +1,11 @@
 'use client'
 
-import { CreditCard, Wrench, Wallet, Receipt, CheckCircle2, History } from 'lucide-react'
+import Image from 'next/image'
 
-const FITUR = [
-  { icon: Wallet,        label: 'Catat pembayaran tunai & transfer'  },
-  { icon: Receipt,       label: 'Generate kwitansi otomatis'         },
-  { icon: CheckCircle2,  label: 'Konfirmasi pembayaran digital'      },
-  { icon: History,       label: 'Riwayat & histori transaksi'        },
-]
 
 export default function PembayaranPage() {
   return (
     <div className="dashboard-content">
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Pembayaran</h1>
-          <p className="dashboard-subtitle">Manajemen pembayaran siswa</p>
-        </div>
-      </div>
 
       <div style={{
         display: 'flex',
@@ -25,23 +13,9 @@ export default function PembayaranPage() {
         justifyContent: 'center',
         minHeight: '60vh',
       }}>
-        <div style={{ textAlign: 'center', maxWidth: 500 }}>
+        <div style={{ textAlign: 'center', maxWidth: 1000 }}>
 
-          {/* Ikon utama */}
-          <div style={{
-            width: 92,
-            height: 92,
-            borderRadius: 24,
-            background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
-            border: '1.5px solid #BFDBFE',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 1.75rem',
-            boxShadow: '0 4px 20px rgba(59,130,246,0.12)',
-          }}>
-            <CreditCard size={44} color="#1D4ED8" strokeWidth={1.5} />
-          </div>
+          <Image src='/gif/programmer.gif' width={150} height={150} alt='develop' style={{ marginLeft: '18rem' }} />
 
           {/* Badge status */}
           <div style={{
@@ -58,61 +32,12 @@ export default function PembayaranPage() {
             border: '1px solid #FDE68A',
             letterSpacing: '0.04em',
           }}>
-            <Wrench size={12} strokeWidth={2.5} />
             SEDANG DALAM PENGEMBANGAN
           </div>
 
-          <h2 style={{
-            fontSize: '1.45rem',
-            fontWeight: 700,
-            color: 'var(--navy-dark)',
-            marginBottom: '0.75rem',
-            lineHeight: 1.3,
-          }}>
-            Modul Pembayaran
-          </h2>
-
-          <p style={{
-            fontSize: '0.88rem',
-            color: 'var(--text-muted)',
-            lineHeight: 1.75,
-            marginBottom: '2rem',
-            maxWidth: 400,
-            margin: '0 auto 2rem',
-          }}>
-            Halaman ini sedang dalam pengembangan. Fitur pencatatan pembayaran,
-            konfirmasi otomatis, dan integrasi dengan tagihan akan segera tersedia.
+          <p style={{ fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1.75, marginTop: 0, marginRight: 'auto', marginBottom: '2rem', marginLeft: 'auto', fontWeight: 600 }}>
+            Halaman ini sedang dalam pengembangan. Mohon untuk melihat fitur lainnya terlebih dahulu
           </p>
-
-          {/* Daftar fitur yang akan datang */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '0.65rem',
-            textAlign: 'left',
-            maxWidth: 440,
-            margin: '0 auto',
-          }}>
-            {FITUR.map(({ icon: Icon, label }) => (
-              <div
-                key={label}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  background: '#F8FAFC',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '0.7rem 0.9rem',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                <Icon size={15} color="#3B82F6" strokeWidth={2} style={{ flexShrink: 0 }} />
-                {label}
-              </div>
-            ))}
-          </div>
 
         </div>
       </div>

@@ -1058,8 +1058,8 @@ export default function KomponenTagihanPage() {
             </div>
           ) : (
             filteredKomponen.map((k, i) => (
-              <div key={k.id}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 1.5rem' }}>
+              <div key={k.id} style={{ paddingLeft: '1.5rem', paddingRight: '2.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 0' }}>
                 {/* Avatar */}
                 <div style={{ width: 48, height: 48, borderRadius: 10, background: k.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>
@@ -1101,7 +1101,7 @@ export default function KomponenTagihanPage() {
                 </div>
               </div>
               {i < filteredKomponen.length - 1 && (
-                <div style={{ height: 1.2, background: '#C1C6CF', margin: '0 2.5rem 0 1.5rem' }} />
+                <div style={{ height: 1, background: '#C1C6CF' }} />
               )}
               </div>
             ))
