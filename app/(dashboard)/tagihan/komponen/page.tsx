@@ -889,7 +889,7 @@ export default function KomponenTagihanPage() {
                   <span>ⓘ</span> Bisa berbeda per kelas saat assign ke paket
                 </p>
 
-                <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
+                <div style={{ height: 1.5, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
                 {/* Pilih warna */}
                 <div style={{ marginBottom: '1.25rem' }}>
@@ -912,7 +912,7 @@ export default function KomponenTagihanPage() {
                   </div>
                 </div>
 
-                <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
+                <div style={{ height: 1.5, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
                 {/* Review tampilan */}
                 <div style={{ marginBottom: '1.25rem' }}>
@@ -1028,7 +1028,7 @@ export default function KomponenTagihanPage() {
 
         {/* Short separator */}
         <div style={{ padding: '0 1.5rem' }}>
-          <div style={{ height: 2, background: '#C1C6CF', width: '100%', marginBottom: '2rem' }} />
+          <div style={{ height: 1, background: '#C1C6CF', width: '100%', marginBottom: '2rem' }} />
         </div>
 
         {/* Tabs + Search */}
@@ -1101,7 +1101,7 @@ export default function KomponenTagihanPage() {
                 </div>
               </div>
               {i < filteredKomponen.length - 1 && (
-                <div style={{ height: 2, background: '#C1C6CF', margin: '0 2.5rem 0 1.5rem' }} />
+                <div style={{ height: 1.2, background: '#C1C6CF', margin: '0 2.5rem 0 1.5rem' }} />
               )}
               </div>
             ))

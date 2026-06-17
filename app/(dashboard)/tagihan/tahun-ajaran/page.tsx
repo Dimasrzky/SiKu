@@ -705,7 +705,7 @@ export default function TahunAjaranPage() {
           </div>
 
           <div style={{ padding: '0 1.5rem' }}>
-            <div style={{ height: 3, background: '#C1C6CF', width: '100%' }} />
+            <div style={{ height: 1.5, background: '#C1C6CF', width: '100%' }} />
           </div>
 
           {/* Pembagian semester */}
@@ -719,7 +719,7 @@ export default function TahunAjaranPage() {
               selesai={taData.semester_ganjil_selesai}
               progress={ganjilProgress}
             />
-            <div style={{ height: 2, background: '#C1C6CF', margin: '1rem 0', marginBottom: '1rem' }} />
+            <div style={{ height: 2, background: '#C1C6CF', margin: '1rem 0', marginBottom: '1rem', marginTop:'2rem' }} />
             <SemesterRow
               nama="Semester genap"
               mulai={taData.semester_genap_mulai}
