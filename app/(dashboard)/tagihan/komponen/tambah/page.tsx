@@ -17,6 +17,12 @@ const TIPE_OPTIONS = [
   { value: 'per_semester',  label: 'Per Semester'  },
 ]
 
+const TIPE_WARNA: Record<string, string> = {
+  rutin_bulanan: '#69C183',
+  sekali_bayar:  '#3C75B7',
+  per_semester:  '#7D7ADC',
+}
+
 export default function TambahKomponenPage() {
   const router = useRouter()
 
@@ -212,7 +218,7 @@ export default function TambahKomponenPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>{nama}</span>
                   {tipe && (
-                    <span style={{ background: warna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
+                    <span style={{ background: TIPE_WARNA[tipe] ?? warna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
                       {TIPE_OPTIONS.find(t => t.value === tipe)?.label}
                     </span>
                   )}

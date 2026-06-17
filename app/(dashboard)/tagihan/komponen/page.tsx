@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Pencil, CheckCircle2, XCircle, ChevronDown, Search, Trash2 } from 'lucide-react'
+import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -21,6 +21,12 @@ const TIPE_OPTIONS = [
   { value: 'sekali_bayar',  label: 'Sekali Bayar'  },
   { value: 'per_semester',  label: 'Per Semester'  },
 ]
+
+const TIPE_WARNA: Record<string, string> = {
+  rutin_bulanan: '#69C183',
+  sekali_bayar:  '#3C75B7',
+  per_semester:  '#7D7ADC',
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,6 +71,8 @@ export default function KomponenTagihanPage() {
   const [dataLoading,    setDataLoading]    = useState(true)
   const [tahunAjaran,    setTahunAjaran]    = useState('')
   const [autoSemester,   setAutoSemester]   = useState('')
+  const [taMulai,        setTaMulai]        = useState('')
+  const [taSelesai,      setTaSelesai]      = useState('')
 
   // View mode — list + filter
   const [allKomponen,  setAllKomponen]  = useState<KomponenItem[]>([])
@@ -84,6 +92,17 @@ export default function KomponenTagihanPage() {
   // Delete modal
   const [deleteTarget,  setDeleteTarget]  = useState<KomponenItem | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // View mode inline add form
+  const [showViewForm,       setShowViewForm]       = useState(false)
+  const [viewFormClosing,    setViewFormClosing]    = useState(false)
+  const [viewFormNama,       setViewFormNama]       = useState('')
+  const [viewFormTipe,       setViewFormTipe]       = useState('')
+  const [viewFormNominal,    setViewFormNominal]    = useState('')
+  const [viewFormKeterangan, setViewFormKeterangan] = useState('')
+  const [viewFormWarna,      setViewFormWarna]      = useState(WARNA_OPTIONS[0])
+  const [viewFormSaving,     setViewFormSaving]     = useState(false)
+  const [viewFormError,      setViewFormError]      = useState('')
 
   // Setup mode form state
   const [showForm,       setShowForm]       = useState(false)
@@ -108,7 +127,7 @@ export default function KomponenTagihanPage() {
       const [{ data: pData }, { data: taData }] = await Promise.all([
         supabase.from('pengaturan').select('setup_steps').maybeSingle(),
         supabase.from('tahun_ajaran')
-          .select('nama, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai')
+          .select('nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai')
           .eq('is_aktif', true)
           .maybeSingle(),
       ])
@@ -123,11 +142,14 @@ export default function KomponenTagihanPage() {
 
       type TaRow = {
         nama: string
+        tanggal_mulai: string; tanggal_selesai: string
         semester_ganjil_mulai:  string; semester_ganjil_selesai:  string
         semester_genap_mulai:   string; semester_genap_selesai:   string
       }
       const ta = taData as TaRow | null
       if (ta?.nama) setTahunAjaran(ta.nama)
+      if (ta?.tanggal_mulai)  setTaMulai(ta.tanggal_mulai)
+      if (ta?.tanggal_selesai) setTaSelesai(ta.tanggal_selesai)
       setAutoSemester(detectSemester(
         ta?.semester_ganjil_mulai, ta?.semester_ganjil_selesai,
         ta?.semester_genap_mulai,  ta?.semester_genap_selesai,
@@ -283,6 +305,53 @@ export default function KomponenTagihanPage() {
     if (!error) setAllKomponen(prev => prev.filter(k => k.id !== deleteTarget.id))
     setDeleteTarget(null)
     setDeleteLoading(false)
+  }
+
+  // ── View mode inline form handlers ────────────────────────────────────────────
+
+  const resetViewForm = () => {
+    setShowViewForm(false)
+    setViewFormClosing(false)
+    setViewFormNama('')
+    setViewFormTipe('')
+    setViewFormNominal('')
+    setViewFormKeterangan('')
+    setViewFormWarna(WARNA_OPTIONS[0])
+    setViewFormError('')
+  }
+
+  const startCloseViewForm = () => {
+    setViewFormClosing(true)
+    setTimeout(resetViewForm, 400)
+  }
+
+  const handleSimpanViewForm = async () => {
+    setViewFormError('')
+    if (!viewFormNama.trim()) { setViewFormError('Nama komponen harus diisi.'); return }
+    if (!viewFormTipe)        { setViewFormError('Tipe pembayaran harus dipilih.'); return }
+    setViewFormSaving(true)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setViewFormError('Sesi tidak ditemukan.'); setViewFormSaving(false); return }
+
+    const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
+    if (!profile?.sekolah_id) { setViewFormError('Data sekolah tidak ditemukan.'); setViewFormSaving(false); return }
+
+    const nominalNum = parseInt(viewFormNominal.replace(/\./g, ''), 10) || null
+
+    const { error } = await supabase.from('komponen_tagihan').insert({
+      sekolah_id:      profile.sekolah_id,
+      jenis:           viewFormTipe,
+      nama:            viewFormNama.trim(),
+      kelas_warna:     viewFormWarna,
+      keterangan:      viewFormKeterangan.trim() || null,
+      nominal_default: nominalNum,
+      tahun_ajaran:    tahunAjaran,
+      semester:        autoSemester,
+    })
+
+    if (error) { setViewFormError(error.message); setViewFormSaving(false); return }
+    window.location.reload()
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────────
@@ -454,7 +523,7 @@ export default function KomponenTagihanPage() {
                       const num = parseInt(raw, 10)
                       setFormNominal(raw ? num.toLocaleString('id-ID') : '')
                     }}
-                    style={{ ...sInput, paddingLeft: '2.5rem' }}
+                    style={{ ...sInput, padding: '0.65rem 0.85rem 0.65rem 2.5rem' }}
                   />
                 </div>
               </div>
@@ -572,7 +641,7 @@ export default function KomponenTagihanPage() {
                       </span>
                       {formTipe && (
                         <span style={{
-                          background: formWarna, color: '#fff',
+                          background: TIPE_WARNA[formTipe] ?? formWarna, color: '#fff',
                           fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px',
                           borderRadius: 20, flexShrink: 0,
                         }}>
@@ -715,136 +784,330 @@ export default function KomponenTagihanPage() {
     .filter(k => filterTipe === 'semua' || k.jenis === filterTipe)
     .filter(k => k.nama.toLowerCase().includes(searchQuery.toLowerCase()))
 
-  const STAT_CARDS = [
-    { label: 'Total komponen', count: allKomponen.length,  valueColor: '#fff'     },
-    { label: 'Rutin Bulanan',  count: countRutin,          valueColor: '#6EE7B7'  },
-    { label: 'Sekali Bayar',   count: countSekali,         valueColor: '#93C5FD'  },
-    { label: 'Per Semester',   count: countSemester,       valueColor: '#FCD34D'  },
+  const FORM_WARNA_EDIT   = WARNA_OPTIONS.slice(0, 7)
+  const isCustomWarnaEdit = !FORM_WARNA_EDIT.includes(editWarna)
+  const isCustomViewWarna = !WARNA_OPTIONS.includes(viewFormWarna)
+  const viewFormInisial   = viewFormNama.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+
+  const TABS = [
+    { value: 'semua',         label: 'Semua'        },
+    { value: 'rutin_bulanan', label: 'Rutin Bulanan' },
+    { value: 'sekali_bayar',  label: 'Sekali Bayar'  },
+    { value: 'per_semester',  label: 'Per Semester'  },
   ]
 
-  const FORM_WARNA_EDIT  = WARNA_OPTIONS.slice(0, 7)
-  const isCustomWarnaEdit = !FORM_WARNA_EDIT.includes(editWarna)
-
   return (
+    <>
+    <style>{`
+      @keyframes modalBackdrop { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes modalCard     { from { opacity: 0; transform: scale(0.92) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      @keyframes formSlideDown { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+      @keyframes formSlideUp   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
+    `}</style>
     <div className="dashboard-content">
-      <style>{`
-        @keyframes modalBackdrop { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes modalCard { from { opacity: 0; transform: scale(0.92) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-      `}</style>
 
-      {/* Header */}
-      <div className="dashboard-header" style={{ marginBottom: '1.25rem' }}>
-        <div>
-          <h1 className="dashboard-title">Komponen tagihan</h1>
-          <p className="dashboard-subtitle">Buat &amp; kelola item pembayaran sekolah</p>
-        </div>
-        <button
-          onClick={() => router.push('/tagihan/komponen/tambah')}
-          style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 8, padding: '0.6rem 1.1rem', background: '#1A2C4E' }}
-        >
-          + Tambah komponen
-        </button>
-      </div>
-
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.875rem', marginBottom: '1.25rem' }}>
-        {STAT_CARDS.map(s => (
-          <div key={s.label} style={{ background: '#1A2C4E', borderRadius: 12, padding: '1rem 1.25rem' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 500, color: 'rgba(255,255,255,0.6)', marginBottom: '0.4rem' }}>{s.label}</div>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color: s.valueColor, lineHeight: 1 }}>{s.count}</div>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 56, height: 56, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 8px 16px rgba(26,44,78,0.3)' }}>
+            <Image src="/icons/IconKomponen.png" width={30} height={30} alt="Komponen" />
           </div>
-        ))}
-      </div>
-
-      {/* Search + filter */}
-      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input
-            placeholder="Cari komponen..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ ...sInput, paddingLeft: '2.25rem', border: '1.5px solid #E2E8F0', boxShadow: 'none' }}
-          />
+          <div>
+            <h1 style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0, lineHeight: 1.1, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Komponen Tagihan
+            </h1>
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.15rem 0 0' }}>
+              Kelola item pembayaran
+            </p>
+          </div>
         </div>
-        <div style={{ position: 'relative' }}>
-          <select
-            value={filterTipe}
-            onChange={e => setFilterTipe(e.target.value)}
-            style={{ ...sInput, width: 'auto', minWidth: 180, appearance: 'none', WebkitAppearance: 'none', paddingRight: '2.25rem', border: '1.5px solid #E2E8F0', boxShadow: 'none' }}
+        {!showViewForm && (
+          <button
+            onClick={() => { setShowViewForm(true); setViewFormClosing(false) }}
+            style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.875rem', padding: '0.6rem 1.25rem', background: '#1A2C4E' }}
           >
-            <option value="semua">Semua tipe</option>
-            {TIPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-          <ChevronDown size={15} color="#6F788A" style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-        </div>
+            <Plus size={15} /> Komponen Baru
+          </button>
+        )}
       </div>
 
-      {/* List */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-        {filteredKomponen.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-            {allKomponen.length === 0 ? 'Belum ada komponen tagihan.' : 'Tidak ada komponen yang sesuai filter.'}
-          </div>
-        ) : (
-          filteredKomponen.map((k, i) => (
-            <div key={k.id} style={{
-              display: 'flex', alignItems: 'center', gap: '1rem',
-              padding: '0.875rem 1.25rem',
-              borderBottom: i < filteredKomponen.length - 1 ? '1px solid var(--border)' : 'none',
-            }}>
-              {/* Avatar */}
-              <div style={{
-                width: 42, height: 42, borderRadius: 10, background: k.warna, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '0.02em' }}>
-                  {k.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
-                </span>
-              </div>
+      {/* ── Inline Form Tambah Komponen ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: showViewForm && !viewFormClosing ? '1fr' : '0fr',
+        transition: 'grid-template-rows 0.38s cubic-bezier(0.4,0,0.2,1)',
+      }}>
+        <div style={{ overflow: 'hidden', paddingBottom: showViewForm && !viewFormClosing ? '1.5rem' : 0, transition: 'padding-bottom 0.38s cubic-bezier(0.4,0,0.2,1)' }}>
+          {showViewForm && (
+            <div style={{ animation: viewFormClosing ? 'formSlideUp 0.26s cubic-bezier(0.22,1,0.36,1) forwards' : 'formSlideDown 0.3s cubic-bezier(0.22,1,0.36,1)' }}>
+              <div style={{ ...sCard, borderLeft: '30px solid #1A2C4E', borderRadius: 15, boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
 
-              {/* Content */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)' }}>{k.nama}</span>
-                  <span style={{
-                    background: k.warna, color: '#fff',
-                    fontSize: '0.7rem', fontWeight: 700, padding: '2px 9px',
-                    borderRadius: 20, flexShrink: 0,
-                  }}>
-                    {TIPE_OPTIONS.find(t => t.value === k.jenis)?.label ?? k.jenis}
-                  </span>
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {k.keterangan && <span>{k.keterangan}</span>}
-                  {k.keterangan && k.nominal_default != null && <span> · </span>}
-                  {k.nominal_default != null && (
-                    <span>Nominal default: Rp {k.nominal_default.toLocaleString('id-ID')}</span>
-                  )}
-                  {!k.keterangan && k.nominal_default == null && (
-                    <span style={{ color: '#CBD5E1' }}>Belum ada keterangan</span>
-                  )}
-                </div>
-              </div>
+                {viewFormError && <div className="login-error" style={{ marginBottom: '1rem' }}>{viewFormError}</div>}
 
-              {/* Actions */}
-              <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                <button
-                  onClick={() => openEdit(k)}
-                  style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
-                >
-                  <Pencil size={13} /> Edit
-                </button>
-                <button
-                  onClick={() => setDeleteTarget(k)}
-                  style={{ background: 'transparent', color: '#EF4444', border: '1.5px solid #EF4444', padding: '0.45rem 0.65rem', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', fontFamily: 'inherit' }}
-                >
-                  <Trash2 size={14} />
-                </button>
+                {/* Baris 1: Nama + Tipe */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={sLabel}>Nama komponen</label>
+                    <input type="text" placeholder="Contoh: SPP, Uang Gedung"
+                      value={viewFormNama} onChange={e => setViewFormNama(e.target.value)}
+                      style={sInput} autoFocus />
+                  </div>
+                  <div>
+                    <label style={sLabel}>Tipe pembayaran</label>
+                    <div style={{ position: 'relative' }}>
+                      <select value={viewFormTipe} onChange={e => setViewFormTipe(e.target.value)}
+                        style={{ ...sInput, appearance: 'none', WebkitAppearance: 'none', padding: '0.65rem 2.5rem 0.65rem 0.85rem', color: viewFormTipe ? 'var(--text-dark)' : '#1A2C4E' }}>
+                        <option value="" disabled hidden>Pilih tipe</option>
+                        {TIPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                      <ChevronDown size={16} color="#6F788A" style={{ position: 'absolute', right: '0.85rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Baris 2: Nominal + Keterangan */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.4rem' }}>
+                  <div>
+                    <label style={sLabel}>Nominal default <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span></label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.875rem', color: 'var(--text-muted)', pointerEvents: 'none', userSelect: 'none' }}>Rp</span>
+                      <input type="text" inputMode="numeric" placeholder="0"
+                        value={viewFormNominal}
+                        onChange={e => { const raw = e.target.value.replace(/[^0-9]/g, ''); const num = parseInt(raw, 10); setViewFormNominal(raw ? num.toLocaleString('id-ID') : '') }}
+                        style={{ ...sInput, padding: '0.65rem 0.85rem 0.65rem 2.5rem' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={sLabel}>Keterangan <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span></label>
+                    <input type="text" placeholder="Contoh: Dibayar tiap awal bulan"
+                      value={viewFormKeterangan} onChange={e => setViewFormKeterangan(e.target.value)}
+                      style={sInput} />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', margin: '0 0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span>ⓘ</span> Bisa berbeda per kelas saat assign ke paket
+                </p>
+
+                <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
+
+                {/* Pilih warna */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.2rem' }}>Pilih warna komponen</div>
+                  <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.875rem' }}>
+                    Membedakan komponen secara visual di grafik &amp; laporan dashboard
+                  </div>
+                  <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', background: '#FFFFFF', border: '3px solid #BABFC7', borderRadius: 13, padding: '0.5rem 0.75rem', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
+                    {WARNA_OPTIONS.map(w => (
+                      <button key={w} onClick={() => setViewFormWarna(w)}
+                        style={{ width: 30, height: 30, borderRadius: 8, background: w, border: 'none', cursor: 'pointer', flexShrink: 0, boxShadow: viewFormWarna === w ? `0 0 0 2px #fff, 0 0 0 4px ${w}` : 'none', transition: 'all 0.15s' }} />
+                    ))}
+                    <label style={{ position: 'relative', width: 32, height: 32, flexShrink: 0, cursor: 'pointer' }}>
+                      <input type="color" value={viewFormWarna} onChange={e => setViewFormWarna(e.target.value)}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }} />
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: isCustomViewWarna ? viewFormWarna : 'transparent', boxShadow: isCustomViewWarna ? `0 0 0 2px #fff, 0 0 0 4px ${viewFormWarna}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+                        {!isCustomViewWarna && <Image src="/icons/IconPipet.png" width={18} height={18} alt="Pipet" />}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
+
+                {/* Review tampilan */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.8rem' }}>Review tampilan</div>
+                  {!viewFormNama.trim() ? (
+                    <div style={{ border: '2.5px solid #BABFC7', borderRadius: 12, padding: '1.1rem 1.4rem', background: '#E7E9EC' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#64748B', marginBottom: '0.25rem' }}>Komponen tagihan yang akan dibuat</div>
+                      <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: 500 }}>Isi nama &amp; tipe pembayaran untuk melihat tampilan</div>
+                    </div>
+                  ) : (
+                    <div style={{ border: '2px solid #BABFC7', borderRadius: 12, padding: '1rem 1.25rem', background: '#E7E9EC', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
+                      <div style={{ width: 48, height: 48, borderRadius: 10, background: viewFormWarna, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>{viewFormInisial}</span>
+                      </div>
+                      <div style={{ flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>{viewFormNama}</span>
+                          {viewFormTipe && (
+                            <span style={{ background: TIPE_WARNA[viewFormTipe] ?? viewFormWarna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
+                              {TIPE_OPTIONS.find(t => t.value === viewFormTipe)?.label}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                          {viewFormKeterangan.trim() || <span style={{ color: '#8a8e94' }}>Belum ada keterangan</span>}
+                        </div>
+                      </div>
+                      <div style={{ width: 1.5, height: 40, background: '#CBD5E1', flexShrink: 0, marginLeft: '1%' }} />
+                      <div style={{ flexShrink: 0 }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>Nominal default</div>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>
+                          {viewFormNominal ? `Rp ${viewFormNominal}` : <span style={{ color: '#878c92' }}>—</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <button onClick={startCloseViewForm}
+                    style={{ background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.6rem 1.1rem', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 5px 2px rgba(18, 47, 102, 0.31)' }}>
+                    Batalkan Pembuatan <Image src="/icons/IconsXCircle.png" width={16} height={16} alt="Batal" />
+                  </button>
+                  <button onClick={handleSimpanViewForm} disabled={viewFormSaving}
+                    style={{ background: viewFormSaving ? '#D1D5DB' : '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.7rem 1.5rem', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: viewFormSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.15s', boxShadow: viewFormSaving ? 'none' : '0 5px 2px rgba(18, 47, 102, 0.31)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {viewFormSaving ? 'Menyimpan...' : 'Simpan & Lanjutkan'}{!viewFormSaving && <Image src="/icons/IconArrowKanan.png" width={12} height={12} alt="Simpan" />}
+                  </button>
+                </div>
+
               </div>
             </div>
-          ))
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* ── Main Card ── */}
+      <div style={{ background: '#fff', borderLeft: '25px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow: '0 0 20px rgba(26, 44, 78, 0.77)' }}>
+
+        {/* Card header */}
+        <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem'}}>
+          <div style={{ width: 70, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Image src="/icons/IconWaktu.png" width={26} height={26} alt="Komponen" />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.2 }}>
+                {tahunAjaran.replace('/', ' / ')}
+              </div>
+              <span style={{ background: '#69C183', border: '2.5px solid #C1E6CC', color: '#ffffff', fontSize: '0.75rem', fontWeight: 700, padding: '1px 14px', borderRadius: 20 }}>
+                Aktif
+              </span>
+            </div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>
+              {taMulai && taSelesai
+                ? `${new Date(taMulai).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(taSelesai).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : `Semester ${autoSemester}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{ padding: '0 1.5rem 1.25rem', display: 'flex', gap: '0.875rem', marginBottom: '1.2rem', flexWrap: 'wrap' }}>
+          <div style={sStatCard}>
+            <div>
+              <div style={sStatLabel}>Total komponen</div>
+              <div style={sStatValue}>{allKomponen.length}</div>
+            </div>
+            <LayoutGrid size={22} color="#1A2C4E" />
+          </div>
+          <div style={sStatCard}>
+            <div>
+              <div style={sStatLabel}>Rutin bulanan</div>
+              <div style={sStatValue}>{countRutin}</div>
+            </div>
+            <RefreshCw size={22} color="#1A2C4E" />
+          </div>
+          <div style={sStatCard}>
+            <div>
+              <div style={sStatLabel}>Sekali bayar</div>
+              <div style={sStatValue}>{countSekali}</div>
+            </div>
+            <Banknote size={22} color="#1A2C4E" />
+          </div>
+          <div style={sStatCard}>
+            <div>
+              <div style={sStatLabel}>Per semester</div>
+              <div style={sStatValue}>{countSemester}</div>
+            </div>
+            <CalendarDays size={22} color="#1A2C4E" />
+          </div>
+        </div>
+
+        {/* Short separator */}
+        <div style={{ padding: '0 1.5rem' }}>
+          <div style={{ height: 2, background: '#C1C6CF', width: '100%', marginBottom: '2rem' }} />
+        </div>
+
+        {/* Tabs + Search */}
+        <div style={{ padding: '0 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.6rem' }}>
+          <div style={{ display: 'flex', marginLeft: '-0.75rem' }}>
+            {TABS.map(tab => (
+              <button key={tab.value} onClick={() => setFilterTipe(tab.value)}
+                style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', fontWeight: filterTipe === tab.value ? 700 : 500, color: '#1A2C4E', padding: '0.3rem 0.75rem', transition: 'all 0.15s' }}>
+                <span style={{ display: 'inline-block', borderBottom: filterTipe === tab.value ? '4px solid #1A2C4E' : '3px solid transparent', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
+                  {tab.label}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div style={{ position: 'relative' }}>
+            <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <input placeholder="Cari nama komponen" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 400, border: '3px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }} />
+          </div>
+        </div>
+
+        {/* Scrollable list */}
+        <div style={{ maxHeight: '480px', overflowY: 'auto', marginRight: '1.5rem' }}>
+          {filteredKomponen.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              {allKomponen.length === 0 ? 'Belum ada komponen tagihan.' : 'Tidak ada komponen yang sesuai filter.'}
+            </div>
+          ) : (
+            filteredKomponen.map((k, i) => (
+              <div key={k.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 1.5rem' }}>
+                {/* Avatar */}
+                <div style={{ width: 48, height: 48, borderRadius: 10, background: k.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>
+                    {k.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
+                  </span>
+                </div>
+                {/* Nama + badge / keterangan */}
+                <div style={{ width: 240, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{k.nama}</span>
+                    <span style={{ background: TIPE_WARNA[k.jenis] ?? k.warna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
+                      {TIPE_OPTIONS.find(t => t.value === k.jenis)?.label ?? k.jenis}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {k.keterangan.trim() || <span style={{ color: '#8a8e94' }}>Belum ada keterangan</span>}
+                  </div>
+                </div>
+                {/* Separator tegak */}
+                <div style={{ width: 1.5, height: 40, background: '#CBD5E1', flexShrink: 0, marginLeft: '1%' }} />
+                {/* Nominal default */}
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>Nominal default</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)' }}>
+                    {k.nominal_default != null ? `Rp ${k.nominal_default.toLocaleString('id-ID')}` : <span style={{ color: '#878c92' }}>—</span>}
+                  </div>
+                </div>
+                <div style={{ flex: 1 }} />
+                {/* Edit / Delete */}
+                <div style={{ display: 'flex', gap: '1.5rem', flexShrink: 0, position:'relative', right: 20 }}>
+                  <button onClick={() => openEdit(k)}
+                    style={{ background: 'transparent', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                    <Image src="/icons/IconEdit2.png" width={16} height={16} alt="Edit" />
+                  </button>
+                  <button onClick={() => setDeleteTarget(k)}
+                    style={{ background: '#DA8181', borderRadius: '4px', cursor: 'pointer', color: '#ffffff', padding: '0.45rem', display: 'flex', alignItems: 'center', boxShadow: '2px 4px 4px #a8a8a88c' }}>
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              </div>
+              {i < filteredKomponen.length - 1 && (
+                <div style={{ height: 2, background: '#C1C6CF', margin: '0 2.5rem 0 1.5rem' }} />
+              )}
+              </div>
+            ))
+          )}
+        </div>
+
       </div>
 
       {/* ── Edit Modal ── */}
@@ -877,15 +1140,14 @@ export default function KomponenTagihanPage() {
                 <label style={sLabel}>Nominal default <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span></label>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.875rem', color: 'var(--text-muted)', pointerEvents: 'none' }}>Rp</span>
-                  <input
-                    type="text" inputMode="numeric" placeholder="0"
+                  <input type="text" inputMode="numeric" placeholder="0"
                     value={editNominal}
                     onChange={e => {
                       const raw = e.target.value.replace(/[^0-9]/g, '')
                       const num = parseInt(raw, 10)
                       setEditNominal(raw ? num.toLocaleString('id-ID') : '')
                     }}
-                    style={{ ...sInput, paddingLeft: '2.5rem' }}
+                    style={{ ...sInput, padding: '0.65rem 0.85rem 0.65rem 2.5rem' }}
                   />
                 </div>
               </div>
@@ -895,7 +1157,6 @@ export default function KomponenTagihanPage() {
               </div>
             </div>
 
-            {/* Warna */}
             <div style={{ marginBottom: '1.25rem' }}>
               <label style={{ ...sLabel, marginBottom: 8 }}>Warna komponen</label>
               <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', background: '#fff', border: '2.5px solid #BABFC7', borderRadius: 13, padding: '0.5rem 0.75rem' }}>
@@ -936,11 +1197,8 @@ export default function KomponenTagihanPage() {
             </p>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button onClick={() => setDeleteTarget(null)} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
-              <button
-                onClick={handleDelete}
-                disabled={deleteLoading}
-                style={{ flex: 1, background: deleteLoading ? '#D1D5DB' : '#EF4444', color: '#fff', border: 'none', padding: '0.65rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: deleteLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-              >
+              <button onClick={handleDelete} disabled={deleteLoading}
+                style={{ flex: 1, background: deleteLoading ? '#D1D5DB' : '#EF4444', color: '#fff', border: 'none', padding: '0.65rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: deleteLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
               </button>
             </div>
@@ -949,6 +1207,7 @@ export default function KomponenTagihanPage() {
       )}
 
     </div>
+    </>
   )
 }
 
@@ -957,5 +1216,8 @@ export default function KomponenTagihanPage() {
 const sLabel:        React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 4 }
 const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.19)',borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-dark)', outline: 'none', background: '#fff', boxSizing: 'border-box' }
 const sCard:         React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
-const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
+const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.3rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
+const sStatCard:     React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow: '0 0 20px rgba(31, 85, 167, 0.52)', flex: 1, minWidth: 0 }
+const sStatLabel:    React.CSSProperties = { fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: 18 }
+const sStatValue:    React.CSSProperties = { fontSize: '1.75rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }
