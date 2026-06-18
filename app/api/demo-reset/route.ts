@@ -78,16 +78,15 @@ export async function POST(req: NextRequest) {
     avatar:  'T',
   }).eq('id', user.id)
 
-  // Reset nama sekolah
+  // Reset sekolah ke state awal
   await supabaseAdmin.from('sekolah')
-    .update({ nama: 'Demo SiKu' })
+    .update({ nama: 'Demo SiKu', no_wa: '', alamat: null })
     .eq('id', DEMO_SEKOLAH_ID)
 
   // Reset pengaturan + setup_steps agar semua modul kembali ke state awal
   await supabaseAdmin.from('pengaturan').upsert({
-    sekolah_id:   DEMO_SEKOLAH_ID,
-    nama_sekolah: 'Demo SiKu',
-    telepon:      '',
+    sekolah_id:      DEMO_SEKOLAH_ID,
+    jenjang_sekolah: 'SMP/MTs',
     setup_steps: {
       profil_sekolah:   true,
       tahun_ajaran:     false,

@@ -33,7 +33,7 @@ export default function DaftarPage() {
   const [noWaSekolah,    setNoWaSekolah]    = useState('')
   const [noWaError,      setNoWaError]      = useState('')
   const [emailError,     setEmailError]     = useState('')
-  const [jenjangSekolah, setJenjangSekolah] = useState('SMP')
+  const [jenjangSekolah, setJenjangSekolah] = useState('SMP/MTs')
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
   const [isDemo, setIsDemo] = useState(false)
@@ -353,10 +353,10 @@ export default function DaftarPage() {
                 value={jenjangSekolah} onChange={(e) => setJenjangSekolah(e.target.value)}
                 style={{ appearance: 'auto' }}
               >
-                <option value="TK">TK/PAUD</option>
-                <option value="SD">SD/MI</option>
-                <option value="SMP">SMP/MTs</option>
-                <option value="SMA">SMA/MA</option>
+                <option value="TK/PAUD">TK/PAUD</option>
+                <option value="SD/MI">SD/MI</option>
+                <option value="SMP/MTs">SMP/MTs</option>
+                <option value="SMA/MA">SMA/MA</option>
                 <option value="SMK">SMK</option>
               </select>
             </div>

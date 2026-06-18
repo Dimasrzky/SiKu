@@ -641,6 +641,128 @@ function buildPaginationPages(current: number, total: number): (number | '...')[
   return result
 }
 
+// ── Setup Berhasil Popup ──────────────────────────────────────────────────────
+
+const SETUP_CSS = `
+@keyframes sb-backdrop { from{opacity:0} to{opacity:1} }
+@keyframes sb-card {
+  0%   { opacity:0; transform:scale(0.78) translateY(40px) }
+  65%  { opacity:1; transform:scale(1.03) translateY(-4px) }
+  100% { opacity:1; transform:scale(1)    translateY(0)    }
+}
+@keyframes sb-circle {
+  from { stroke-dashoffset:283 }
+  to   { stroke-dashoffset:0   }
+}
+@keyframes sb-check {
+  from { stroke-dashoffset:70 }
+  to   { stroke-dashoffset:0  }
+}
+@keyframes sb-text {
+  from { opacity:0; transform:translateY(12px) }
+  to   { opacity:1; transform:translateY(0)    }
+}
+@keyframes sb-progress {
+  from { width:100% }
+  to   { width:0%   }
+}
+`
+
+function SetupBerhasilPopup({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 5000)
+    return () => clearTimeout(t)
+  }, [onClose])
+
+  return (
+    <>
+      <style>{SETUP_CSS}</style>
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(8,16,34,0.65)',
+        backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '1rem',
+        animation: 'sb-backdrop 0.3s ease forwards',
+      }} onClick={onClose}>
+        <div style={{
+          background: '#fff', borderRadius: 20,
+          padding: '2.25rem 2rem 1.75rem',
+          width: '100%', maxWidth: 400,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.28)',
+          textAlign: 'center', position: 'relative', overflow: 'hidden',
+          animation: 'sb-card 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        }} onClick={e => e.stopPropagation()}>
+
+          {/* Progress bar auto-dismiss */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, background: '#F1F5F9' }}>
+            <div style={{
+              height: '100%',
+              background: 'linear-gradient(90deg,#059669,#34D399)',
+              animation: 'sb-progress 5s linear forwards',
+            }} />
+          </div>
+
+          {/* Animated checkmark */}
+          <div style={{ margin: '0 auto 1.25rem', width: 88, height: 88 }}>
+            <svg viewBox="0 0 100 100" width={88} height={88}>
+              <circle cx="50" cy="50" r="45" fill="none" stroke="#E2E8F0" strokeWidth="5" />
+              <circle
+                cx="50" cy="50" r="45"
+                fill="none" stroke="#059669" strokeWidth="5.5" strokeLinecap="round"
+                strokeDasharray="283" strokeDashoffset="283"
+                transform="rotate(-90 50 50)"
+                style={{ animation: 'sb-circle 0.65s cubic-bezier(0.4,0,0.2,1) 0.15s forwards' }}
+              />
+              <polyline
+                points="27,51 42,66 74,34"
+                fill="none" stroke="#059669" strokeWidth="5.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                strokeDasharray="70" strokeDashoffset="70"
+                style={{ animation: 'sb-check 0.35s cubic-bezier(0.4,0,0.2,1) 0.68s forwards' }}
+              />
+            </svg>
+          </div>
+
+          <h2 style={{
+            fontSize: '1.4rem', fontWeight: 800, color: 'var(--navy-dark)',
+            margin: '0 0 0.5rem', fontFamily: 'var(--font-dm-sans), sans-serif',
+            animation: 'sb-text 0.4s ease 0.85s backwards',
+          }}>
+            Setup Berhasil!
+          </h2>
+          <p style={{
+            fontSize: '0.875rem', color: 'var(--text-muted)',
+            margin: '0 0 0.35rem', lineHeight: 1.6,
+            animation: 'sb-text 0.4s ease 0.95s backwards',
+          }}>
+            SiKu sudah siap digunakan. Semua langkah setup telah selesai.
+          </p>
+          <p style={{
+            fontSize: '0.8rem', color: 'var(--text-muted)',
+            margin: '0 0 1.5rem', lineHeight: 1.5,
+            animation: 'sb-text 0.4s ease 1.05s backwards',
+          }}>
+            Kamu bisa mulai membuat tagihan, mengelola siswa, dan memantau pembayaran dari dashboard ini.
+          </p>
+          <button
+            onClick={onClose}
+            style={{
+              background: '#1A2C4E', color: '#fff', border: 'none',
+              padding: '0.75rem 2rem', borderRadius: 10,
+              fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer',
+              fontFamily: 'inherit', width: '100%',
+              animation: 'sb-text 0.4s ease 1.12s backwards',
+            }}
+          >
+            Mulai Gunakan SiKu →
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Auth helpers (same pattern as layout.tsx) ────────────────────────────────
 
 function getAuthRaw()       { return localStorage.getItem('siku_auth') }
@@ -1292,28 +1414,7 @@ export default function DashboardPage() {
     </div>
 
     {showSetupBerhasil && (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-        <div style={{ background: '#fff', borderRadius: 20, padding: '2rem 1.75rem', width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,0.25)', textAlign: 'center' }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
-            <CheckCircle2 size={38} color="#059669" />
-          </div>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--navy-dark)', margin: '0 0 0.5rem', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
-            Setup Berhasil! 🎉
-          </h2>
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0 0 0.35rem', lineHeight: 1.6 }}>
-            SiKu sudah siap digunakan. Semua langkah setup telah selesai.
-          </p>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 1.75rem', lineHeight: 1.5 }}>
-            Kamu bisa mulai membuat tagihan, mengelola siswa, dan memantau pembayaran dari dashboard ini.
-          </p>
-          <button
-            onClick={() => setShowSetupBerhasil(false)}
-            style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.75rem 2rem', borderRadius: 10, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}
-          >
-            Mulai Gunakan SiKu →
-          </button>
-        </div>
-      </div>
+      <SetupBerhasilPopup onClose={() => setShowSetupBerhasil(false)} />
     )}
     </>
   )

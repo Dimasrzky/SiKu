@@ -485,10 +485,9 @@ export default function PengaturanPage() {
             <div style={{
               padding:'0.65rem 0.9rem',
               border:'1.5px solid var(--border)', borderRadius:8,
-              fontSize:'0.875rem', color:'#9CA3AF',
-              background:'#F9FAFB', fontFamily:'monospace',
-              letterSpacing:'0.03em',
-              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+              fontSize:'0.875rem', fontWeight:500,
+              color: profilForm.jenjang ? 'var(--text-dark)' : '#9CA3AF',
+              background:'#F9FAFB',
             }}>
               {profilForm.jenjang || '—'}
             </div>

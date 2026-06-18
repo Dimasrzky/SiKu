@@ -14,11 +14,11 @@ const WARNA_OPTIONS = [
 ]
 
 const JENJANG_MAP: Record<string, string[]> = {
-  TK:  ['A', 'B', 'C'],
-  SD:  ['1', '2', '3', '4', '5', '6'],
-  SMP: ['7', '8', '9'],
-  SMA: ['10', '11', '12'],
-  SMK: ['10', '11', '12'],
+  'TK/PAUD': ['A', 'B', 'C'],
+  'SD/MI':   ['1', '2', '3', '4', '5', '6'],
+  'SMP/MTs': ['7', '8', '9'],
+  'SMA/MA':  ['10', '11', '12'],
+  'SMK':     ['10', '11', '12'],
 }
 
 const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
@@ -51,7 +51,7 @@ export default function KelasPage() {
   const [setupDone,      setSetupDone]      = useState(false)
   const [dataLoading,    setDataLoading]    = useState(true)
   const [setupSteps,     setSetupSteps]     = useState<Record<string, boolean>>({})
-  const [jenjangOptions, setJenjangOptions] = useState<string[]>(JENJANG_MAP['SMP'])
+  const [jenjangOptions, setJenjangOptions] = useState<string[]>(JENJANG_MAP['SMP/MTs'])
 
   // View mode state
   const [filterJenjang,        setFilterJenjang]        = useState('')
@@ -111,7 +111,7 @@ export default function KelasPage() {
       const steps = (peng?.setup_steps ?? {}) as Record<string, boolean>
       setSetupSteps(steps)
 
-      const opts = JENJANG_MAP[peng?.jenjang_sekolah ?? 'SMP'] ?? JENJANG_MAP['SMP']
+      const opts = JENJANG_MAP[peng?.jenjang_sekolah ?? 'SMP/MTs'] ?? JENJANG_MAP['SMP/MTs']
       setJenjangOptions(opts)
 
       if (steps['buat_kelas'] === true) setSetupDone(true)

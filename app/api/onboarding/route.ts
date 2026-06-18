@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     nama: string; jabatan: string; namaSekolah: string; noWaSekolah: string; jenjangSekolah?: string
   }
-  const { nama, jabatan, namaSekolah, noWaSekolah, jenjangSekolah = 'SMP' } = body
+  const { nama, jabatan, namaSekolah, noWaSekolah, jenjangSekolah = 'SMP/MTs' } = body
 
   if (!nama?.trim() || !jabatan?.trim() || !namaSekolah?.trim() || !noWaSekolah?.trim()) {
     return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
@@ -89,8 +89,6 @@ export async function POST(req: NextRequest) {
     // Upsert pengaturan demo — termasuk jenjang_sekolah dan reset setup_steps
     await supabaseAdmin.from('pengaturan').upsert({
       sekolah_id:      DEMO_SEKOLAH_ID,
-      nama_sekolah:    namaSekolah,
-      telepon:         noWaSekolah,
       jenjang_sekolah: jenjangSekolah,
       setup_steps: {
         profil_sekolah:   true,
@@ -135,9 +133,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: pengaturanError } = await supabaseAdmin.from('pengaturan').insert({
-    sekolah_id:     sekolah.id,
-    nama_sekolah:   namaSekolah,
-    telepon:        noWaSekolah,
+    sekolah_id:      sekolah.id,
     jenjang_sekolah: jenjangSekolah,
     setup_steps: {
       profil_sekolah:   true,
