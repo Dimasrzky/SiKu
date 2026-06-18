@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+@keyframes toastEnter {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.92); }
+  60%  { opacity: 1; transform: translateX(-50%) translateY(4px)   scale(1.02); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0)     scale(1);    }
+}
+
+@keyframes toastLeave {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0)     scale(1);    }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(0.94); }
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;

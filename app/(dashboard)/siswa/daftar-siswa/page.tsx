@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   GraduationCap, Upload,
-  Plus, Download, MessageCircle, X,
+  Plus, Download, X,
   AlertCircle, CheckCircle2, Users,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
@@ -558,7 +558,7 @@ export default function DaftarSiswaPage() {
                     {s.no_wa ? (
                       <a href={`https://wa.me/${s.no_wa.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#DCFCE7', color: '#15803D', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-                        <MessageCircle size={13} /> WhatsApp
+                        <Image src='/icons/IconWA.png' height={30} width={30} alt='WA' /> WhatsApp
                       </a>
                     ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
                   </td>

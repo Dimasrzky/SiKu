@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useSyncExternalStore, useState } from 'react'
+import { useEffect, useRef, useSyncExternalStore, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -246,7 +246,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [tagihanOpen, setTagihanOpen] = useState(() => pathname.startsWith('/tagihan'))
   const [siswaOpen,   setSiswaOpen]   = useState(() => pathname.startsWith('/siswa'))
   const [prevPath,    setPrevPath]    = useState(pathname)
-  const [setupSteps,  setSetupSteps]  = useState<Record<string, boolean>>({})
+  const [setupSteps,    setSetupSteps]    = useState<Record<string, boolean>>({})
+  const [avatarHover,   setAvatarHover]   = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const img = new window.Image()
+    const url = URL.createObjectURL(file)
+    img.onload = async () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 80; canvas.height = 80
+      const ctx = canvas.getContext('2d')!
+      const size = Math.min(img.width, img.height)
+      ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 80, 80)
+      URL.revokeObjectURL(url)
+      const base64 = canvas.toDataURL('image/jpeg', 0.85)
+
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) return
+      await supabase.from('profiles').update({ avatar: base64 }).eq('id', authUser.id)
+
+      const authRaw = localStorage.getItem('siku_auth')
+      if (authRaw) {
+        const newValue = JSON.stringify({ ...JSON.parse(authRaw), avatar: base64 })
+        localStorage.setItem('siku_auth', newValue)
+        window.dispatchEvent(new StorageEvent('storage', { key: 'siku_auth', newValue }))
+      }
+    }
+    img.src = url
+  }
 
   // Bail-out pattern: auto-open saat masuk section, auto-close saat keluar
   if (prevPath !== pathname) {
@@ -321,7 +353,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* ── Header ── */}
         <div className="sidebar-header">
-          <div className="sidebar-school-avatar">{schoolInitial}</div>
+          <div
+            className="sidebar-school-avatar"
+            style={{ position:'relative', cursor:'pointer', overflow:'hidden' }}
+            onMouseEnter={() => setAvatarHover(true)}
+            onMouseLeave={() => setAvatarHover(false)}
+            onClick={() => avatarInputRef.current?.click()}
+          >
+            {user?.avatar?.startsWith('data:') || user?.avatar?.startsWith('http') ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.avatar} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+            ) : schoolInitial}
+            {avatarHover && (
+              <div style={{
+                position:'absolute', inset:0, borderRadius:10,
+                background:'rgba(0, 0, 0, 0.25)',
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+              </div>
+            )}
+          </div>
+          <input ref={avatarInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarChange} />
           <div className="sidebar-brand">
             <Image
               src="/image/LogoSiKuBaru.png"
