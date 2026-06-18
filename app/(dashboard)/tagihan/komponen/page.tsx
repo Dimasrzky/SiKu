@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays } from 'lucide-react'
+import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays, Eye, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -92,6 +92,10 @@ export default function KomponenTagihanPage() {
   // Delete modal
   const [deleteTarget,  setDeleteTarget]  = useState<KomponenItem | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Detail slide panel
+  const [detailTarget,  setDetailTarget]  = useState<KomponenItem | null>(null)
+  const [detailClosing, setDetailClosing] = useState(false)
 
   // View mode inline add form
   const [showViewForm,       setShowViewForm]       = useState(false)
@@ -255,6 +259,18 @@ export default function KomponenTagihanPage() {
     if (!res.ok) { setApiError(json.error ?? 'Gagal menyimpan.'); setShowErrorPopup(true); setSaving(false); return }
     setSaving(false)
     setShowSuccessPopup(true)
+  }
+
+  // ── Detail panel handlers ─────────────────────────────────────────────────────
+
+  const openDetail = (k: KomponenItem) => {
+    setDetailClosing(false)
+    setDetailTarget(k)
+  }
+
+  const closeDetail = () => {
+    setDetailClosing(true)
+    setTimeout(() => { setDetailTarget(null); setDetailClosing(false) }, 350)
   }
 
   // ── Edit / Delete handlers ────────────────────────────────────────────────────
@@ -799,10 +815,14 @@ export default function KomponenTagihanPage() {
   return (
     <>
     <style>{`
-      @keyframes modalBackdrop { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes modalCard     { from { opacity: 0; transform: scale(0.92) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-      @keyframes formSlideDown { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-      @keyframes formSlideUp   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
+      @keyframes modalBackdrop    { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes modalCard        { from { opacity: 0; transform: scale(0.92) translateY(16px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      @keyframes formSlideDown    { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+      @keyframes formSlideUp      { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
+      @keyframes panelSlideIn     { from { transform: translateX(100%); } to { transform: translateX(0); } }
+      @keyframes panelSlideOut    { from { transform: translateX(0); } to { transform: translateX(100%); } }
+      @keyframes panelFadeIn      { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes panelFadeOut     { from { opacity: 1; } to { opacity: 0; } }
     `}</style>
     <div className="dashboard-content">
 
@@ -1088,8 +1108,12 @@ export default function KomponenTagihanPage() {
                   </div>
                 </div>
                 <div style={{ flex: 1 }} />
-                {/* Edit / Delete */}
+                {/* Eye / Edit / Delete */}
                 <div style={{ display: 'flex', gap: '1.5rem', flexShrink: 0, position:'relative', right: 20 }}>
+                  <button onClick={() => openDetail(k)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                    <Eye size={18} />
+                  </button>
                   <button onClick={() => openEdit(k)}
                     style={{ background: 'transparent', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
                     <Image src="/icons/IconEdit2.png" width={16} height={16} alt="Edit" />
@@ -1207,6 +1231,86 @@ export default function KomponenTagihanPage() {
       )}
 
     </div>
+
+      {/* ── Detail Slide Panel ── */}
+      {detailTarget && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={closeDetail}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 9998,
+              animation: detailClosing ? 'panelFadeOut 0.35s ease forwards' : 'panelFadeIn 0.25s ease',
+            }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: 'fixed', top: 0, right: 0, bottom: 0, width: 380,
+            background: '#fff', zIndex: 9999,
+            boxShadow: '-8px 0 32px rgba(26,44,78,0.22)',
+            display: 'flex', flexDirection: 'column',
+            animation: detailClosing ? 'panelSlideOut 0.35s cubic-bezier(0.4,0,0.2,1) forwards' : 'panelSlideIn 0.35s cubic-bezier(0.22,1,0.36,1)',
+          }}>
+            {/* Panel header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1.5px solid #E2E8F0' }}>
+              <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--navy-dark)' }}>Detail Komponen</span>
+              <button onClick={closeDetail} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6F788A', display: 'flex', alignItems: 'center', padding: '0.25rem' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Panel body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem 1.5rem' }}>
+
+              {/* Avatar + badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.75rem' }}>
+                <div style={{ width: 60, height: 60, borderRadius: 14, background: detailTarget.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '0.02em' }}>
+                    {detailTarget.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ background: TIPE_WARNA[detailTarget.jenis] ?? detailTarget.warna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '3px 12px', borderRadius: 20 }}>
+                    {TIPE_OPTIONS.find(t => t.value === detailTarget.jenis)?.label ?? detailTarget.jenis}
+                  </span>
+                </div>
+              </div>
+
+              {/* Nama lengkap */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Nama Komponen</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                  {detailTarget.nama}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+              {/* Keterangan lengkap */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Keterangan</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 500, color: detailTarget.keterangan.trim() ? 'var(--navy-dark)' : '#94A3B8', lineHeight: 1.65, wordBreak: 'break-word' }}>
+                  {detailTarget.keterangan.trim() || 'Belum ada keterangan'}
+                </div>
+              </div>
+
+              <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+              {/* Nominal default */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Nominal Default</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)' }}>
+                  {detailTarget.nominal_default != null
+                    ? `Rp ${detailTarget.nominal_default.toLocaleString('id-ID')}`
+                    : <span style={{ color: '#94A3B8', fontWeight: 500, fontSize: '0.95rem' }}>Tidak ada nominal default</span>}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </>
+      )}
+
     </>
   )
 }
