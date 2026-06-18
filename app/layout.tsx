@@ -22,7 +22,7 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://app.pakaisiku.id'),
-  title: 'Login',
+  title: 'Login | SiKu',
   description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari platform PakaiSiku.',
   keywords: 'login siku, masuk akun pakaisiku, sistem keuangan sekolah, aplikasi SPP',
   alternates: {
