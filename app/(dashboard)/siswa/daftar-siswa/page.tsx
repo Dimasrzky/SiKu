@@ -6,6 +6,7 @@ import {
   GraduationCap, Upload,
   Plus, Download, X,
   AlertCircle, CheckCircle2, Users,
+  Search, ChevronDown, Pencil,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import Image from 'next/image'
@@ -43,7 +44,7 @@ interface SiswaRow {
   id:        string
   nama:      string
   nis:       string | null
-  kelas:     { id: string; nama: string; warna: string } | null
+  kelas:     { id: string; nama: string; warna: string; jenjang: string } | null
   nama_wali: string | null
   no_wa:     string | null
   status:    string
@@ -62,6 +63,23 @@ export default function DaftarSiswaPage() {
   // Data
   const [kelasList, setKelasList] = useState<KelasOption[]>([])
   const [siswaList, setSiswaList] = useState<SiswaRow[]>([])
+
+  // Filter & search (View Mode)
+  const [filterJenjang,       setFilterJenjang]       = useState('')
+  const [searchQuery,         setSearchQuery]         = useState('')
+  const [showJenjangDropdown, setShowJenjangDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Edit siswa
+  const [editSiswa,     setEditSiswa]     = useState<SiswaRow | null>(null)
+  const [editNama,      setEditNama]      = useState('')
+  const [editNis,       setEditNis]       = useState('')
+  const [editKelasId,   setEditKelasId]   = useState('')
+  const [editNamaWali,  setEditNamaWali]  = useState('')
+  const [editNoWa,      setEditNoWa]      = useState('')
+  const [editNoWaError, setEditNoWaError] = useState('')
+  const [editSaving,    setEditSaving]    = useState(false)
+  const [editError,     setEditError]     = useState('')
 
   // Import Excel flow
   const [previewRows,       setPreviewRows]       = useState<ParsedRow[] | null>(null)
@@ -88,7 +106,7 @@ export default function DaftarSiswaPage() {
   const loadSiswa = async () => {
     const { data } = await supabase
       .from('siswa')
-      .select('id, nama, nis, kelas:kelas_id(id, nama, warna), nama_wali, no_wa, status')
+      .select('id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang), nama_wali, no_wa, status')
       .order('nama')
       .limit(500)
     setSiswaList((data ?? []) as unknown as SiswaRow[])
@@ -117,6 +135,18 @@ export default function DaftarSiswaPage() {
       setLoading(false)
     })()
   }, [router])
+
+  // ── Dropdown click-outside ────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowJenjangDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   // ── Excel template ────────────────────────────────────────────────────────
 
@@ -257,6 +287,58 @@ export default function DaftarSiswaPage() {
     setSavedInSetupMode(wasSetupMode)
     setShowSuccessModal(true)
   }
+
+  // ── Edit siswa ────────────────────────────────────────────────────────────
+
+  const openEdit = (s: SiswaRow) => {
+    setEditSiswa(s)
+    setEditNama(s.nama)
+    setEditNis(s.nis ?? '')
+    setEditKelasId(s.kelas?.id ?? '')
+    setEditNamaWali(s.nama_wali ?? '')
+    setEditNoWa(s.no_wa ?? '')
+    setEditNoWaError('')
+    setEditError('')
+    setEditSaving(false)
+  }
+
+  const handleEditSave = async () => {
+    if (!editSiswa) return
+    if (!editNama.trim() || !editNis.trim() || !editKelasId) {
+      setEditError('Nama, NIS, dan Kelas wajib diisi.'); return
+    }
+    if (editNoWa.trim() && !/^\d+$/.test(editNoWa.trim())) {
+      setEditNoWaError('Nomor WhatsApp hanya boleh berisi angka.'); return
+    }
+    setEditNoWaError(''); setEditSaving(true); setEditError('')
+
+    const { error } = await supabase
+      .from('siswa')
+      .update({
+        nama:      editNama.trim(),
+        nis:       editNis.trim(),
+        kelas_id:  editKelasId,
+        nama_wali: editNamaWali.trim() || null,
+        no_wa:     editNoWa.trim() || null,
+      })
+      .eq('id', editSiswa.id)
+
+    if (error) { setEditError(error.message); setEditSaving(false); return }
+
+    await loadSiswa()
+    setEditSiswa(null)
+    setEditSaving(false)
+  }
+
+  // ── View Mode computed ───────────────────────────────────────────────────
+
+  const uniqueJenjang = [...new Set(siswaList.map(s => s.kelas?.jenjang).filter((j): j is string => !!j))]
+  const filteredList = siswaList.filter(s => {
+    const matchJenjang = !filterJenjang || s.kelas?.jenjang === filterJenjang
+    const q = searchQuery.toLowerCase()
+    const matchSearch = !q || s.nama.toLowerCase().includes(q) || (s.nama_wali ?? '').toLowerCase().includes(q)
+    return matchJenjang && matchSearch
+  })
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
@@ -502,10 +584,20 @@ export default function DaftarSiswaPage() {
   return (
     <>
     <div className="dashboard-content">
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Daftar Siswa</h1>
-          <p className="dashboard-subtitle">{siswaList.length} siswa terdaftar</p>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '10px 16px 14px rgba(18,47,102,0.31)' }}>
+            <GraduationCap size={30} color="#fff" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>
+              Daftar Siswa
+            </h1>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
+              {siswaList.length} siswa terdaftar
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '0.6rem' }}>
           <button onClick={() => setShowImportConfirm(true)} style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}>
@@ -526,47 +618,105 @@ export default function DaftarSiswaPage() {
           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tambah siswa menggunakan tombol di atas.</div>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>NO</th>
-                <th>NAMA</th>
-                <th>NIS</th>
-                <th>KELAS</th>
-                <th>NAMA WALI</th>
-                <th>NO WA</th>
-                <th>AKSI</th>
-              </tr>
-            </thead>
-            <tbody>
-              {siswaList.map((s, idx) => (
-                <tr key={s.id}>
-                  <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem', width: 40 }}>{idx + 1}</td>
-                  <td style={{ fontWeight: 600, color: 'var(--navy-dark)' }}>{s.nama}</td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-mid)' }}>{s.nis ?? '—'}</td>
-                  <td>
-                    {s.kelas ? (
-                      <span style={{ background: s.kelas.warna + '18', color: s.kelas.warna, border: `1px solid ${s.kelas.warna}40`, padding: '0.2rem 0.65rem', borderRadius: 20, fontSize: '0.78rem', fontWeight: 600 }}>
-                        {s.kelas.nama}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td style={{ fontSize: '0.85rem', color: 'var(--text-mid)' }}>{s.nama_wali ?? '—'}</td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-mid)' }}>{s.no_wa ?? '—'}</td>
-                  <td>
-                    {s.no_wa ? (
-                      <a href={`https://wa.me/${s.no_wa.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#DCFCE7', color: '#15803D', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-                        <Image src='/icons/IconWA.png' height={30} width={30} alt='WA' /> WhatsApp
-                      </a>
-                    ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
-                  </td>
+        <>
+          {/* Filter + Search */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', position: 'relative' }} ref={dropdownRef}>
+              <button
+                onClick={() => { setFilterJenjang(''); setShowJenjangDropdown(false) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', fontWeight: 700, color: '#1A2C4E', padding: '0.3rem 0.75rem' }}
+              >
+                <span style={{ display: 'inline-block', borderBottom: !filterJenjang ? '4px solid #1A2C4E' : '3px solid transparent', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
+                  Semua
+                </span>
+              </button>
+              <button
+                onClick={() => setShowJenjangDropdown(prev => !prev)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', fontWeight: 700, color: '#1A2C4E', padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              >
+                <span style={{ display: 'inline-block', borderBottom: filterJenjang ? '4px solid #1A2C4E' : '3px solid transparent', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
+                  {filterJenjang ? `Jenjang ${filterJenjang}` : 'Tingkat Jenjang'}
+                </span>
+                <ChevronDown size={14} color="#1A2C4E" style={{ transform: showJenjangDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+              </button>
+              {showJenjangDropdown && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: '5.5rem', background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', border: '1.5px solid #E2E8F0', overflow: 'hidden', zIndex: 100, minWidth: 160 }}>
+                  {uniqueJenjang.map(j => (
+                    <button key={j} onClick={() => { setFilterJenjang(j); setShowJenjangDropdown(false) }}
+                      style={{ display: 'block', width: '100%', padding: '0.65rem 1rem', background: filterJenjang === j ? '#A3CDFE' : '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: filterJenjang === j ? 700 : 500, fontSize: '0.9rem', color: '#1A2C4E', textAlign: 'left', transition: 'background 0.12s' }}>
+                      Jenjang {j}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <input
+                placeholder="Cari nama siswa / nama wali"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 280, border: '3px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }}
+              />
+            </div>
+          </div>
+
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>NO</th>
+                  <th>NAMA</th>
+                  <th>NIS</th>
+                  <th>KELAS</th>
+                  <th>NAMA WALI</th>
+                  <th>NO WA</th>
+                  <th>AKSI</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                      Tidak ada siswa yang sesuai filter.
+                    </td>
+                  </tr>
+                ) : filteredList.map((s, idx) => (
+                  <tr key={s.id}>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem', width: 40 }}>{idx + 1}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--navy-dark)' }}>{s.nama}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-mid)' }}>{s.nis ?? '—'}</td>
+                    <td>
+                      {s.kelas ? (
+                        <span style={{ background: s.kelas.warna + '18', color: s.kelas.warna, border: `1px solid ${s.kelas.warna}40`, padding: '0.2rem 0.65rem', borderRadius: 20, fontSize: '0.78rem', fontWeight: 600 }}>
+                          {s.kelas.nama}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td style={{ fontSize: '0.85rem', color: 'var(--text-mid)' }}>{s.nama_wali ?? '—'}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-mid)' }}>{s.no_wa ?? '—'}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        {s.no_wa ? (
+                          <a href={`https://wa.me/${s.no_wa.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#DCFCE7', color: '#15803D', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
+                            <Image src='/icons/IconWA.png' height={30} width={30} alt='WA' /> WhatsApp
+                          </a>
+                        ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
+                        <button
+                          onClick={() => openEdit(s)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#EFF6FF', color: '#1D4ED8', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
 
@@ -594,6 +744,20 @@ export default function DaftarSiswaPage() {
           setShowSuccessModal(false)
         }
       }}
+    />}
+
+    {editSiswa && <EditSiswaModal
+      siswa={editSiswa}
+      kelasList={kelasList}
+      editNama={editNama} setEditNama={setEditNama}
+      editNis={editNis} setEditNis={setEditNis}
+      editKelasId={editKelasId} setEditKelasId={setEditKelasId}
+      editNamaWali={editNamaWali} setEditNamaWali={setEditNamaWali}
+      editNoWa={editNoWa} setEditNoWa={setEditNoWa}
+      editNoWaError={editNoWaError} setEditNoWaError={setEditNoWaError}
+      editSaving={editSaving} editError={editError}
+      onSave={handleEditSave}
+      onClose={() => setEditSiswa(null)}
     />}
 
     {/* Popup konfirmasi template */}
@@ -856,6 +1020,138 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
                       transform:  active ? 'scale(1.07)' : 'scale(1)',
                     }}
                   >
+                    {k.nama}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+    </div>
+    </>
+  )
+}
+
+// ── EditSiswaModal ────────────────────────────────────────────────────────────
+
+interface EditSiswaModalProps {
+  siswa:          SiswaRow
+  kelasList:      KelasOption[]
+  editNama:       string; setEditNama:      (v: string) => void
+  editNis:        string; setEditNis:       (v: string) => void
+  editKelasId:    string; setEditKelasId:   (v: string) => void
+  editNamaWali:   string; setEditNamaWali:  (v: string) => void
+  editNoWa:       string; setEditNoWa:      (v: string) => void
+  editNoWaError:  string; setEditNoWaError: (v: string) => void
+  editSaving:     boolean
+  editError:      string
+  onSave:         () => void
+  onClose:        () => void
+}
+
+function EditSiswaModal({ siswa, kelasList, editNama, setEditNama, editNis, setEditNis, editKelasId, setEditKelasId, editNamaWali, setEditNamaWali, editNoWa, setEditNoWa, editNoWaError, setEditNoWaError, editSaving, editError, onSave, onClose }: EditSiswaModalProps) {
+  const [kelasOpen, setKelasOpen] = useState(false)
+  const selectedKelas = kelasList.find(k => k.id === editKelasId)
+
+  return (
+    <>
+    <style>{`.edit-modal::-webkit-scrollbar { display: none; }`}</style>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+      onClick={() => !editSaving && onClose()}>
+      <div className="edit-modal" style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 450, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+        onClick={e => e.stopPropagation()}>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <h3 style={{ fontFamily: 'var(--sans-serif)', fontSize: '1.4rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0 }}>
+            Edit: {siswa.nama}
+          </h3>
+          <button onClick={onClose} disabled={editSaving} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: 4 }}>
+            <X size={22} />
+          </button>
+        </div>
+
+        <div style={{ marginBottom: '0.875rem' }}>
+          <label style={sLabel}>Nama Lengkap <span style={{ color: '#DC2626' }}>*</span></label>
+          <input type="text" style={sInput} placeholder="Nama lengkap siswa" value={editNama} onChange={e => setEditNama(e.target.value)} />
+        </div>
+
+        <div style={{ marginBottom: '0.875rem' }}>
+          <label style={sLabel}>NIS <span style={{ color: '#DC2626' }}>*</span></label>
+          <input type="text" style={sInput} placeholder="Nomor Induk Siswa" value={editNis} onChange={e => setEditNis(e.target.value)} />
+        </div>
+
+        <div style={{ marginBottom: '1.1rem' }}>
+          <label style={sLabel}>Kelas <span style={{ color: '#DC2626' }}>*</span></label>
+          <button type="button" onClick={() => setKelasOpen(true)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 0.875rem', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.875rem', background: '#fff', border: selectedKelas ? `1.5px solid ${selectedKelas.warna}` : '2.5px solid #BABFC7', color: '#6F788A', transition: 'border-color 0.15s', boxShadow: '0 2px 4px #BABFC7' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              {selectedKelas ? (
+                <>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: selectedKelas.warna, flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700 }}>{selectedKelas.nama}</span>
+                </>
+              ) : 'Pilih kelas'}
+            </span>
+          </button>
+        </div>
+
+        <div style={{ borderTop: '3.5px solid var(--border)', paddingTop: '0.875rem', marginBottom: '0.875rem' }}>
+          <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1A2C4E', letterSpacing: '0.06em', marginBottom: '0.875rem' }}>
+            Informasi Orang Tua
+          </div>
+          <div style={{ marginBottom: '0.875rem' }}>
+            <label style={sLabel}>Nama Orang Tua</label>
+            <input type="text" style={sInput} placeholder="Nama orang tua / wali" value={editNamaWali} onChange={e => setEditNamaWali(e.target.value)} />
+          </div>
+          <div>
+            <label style={sLabel}>Nomor WhatsApp</label>
+            <input type="tel" style={{ ...sInput, ...(editNoWaError ? { border: '1.5px solid #EF4444' } : {}) }} placeholder="62812xxxx" value={editNoWa}
+              onChange={e => { setEditNoWa(e.target.value); if (editNoWaError) setEditNoWaError('') }} />
+            {editNoWaError && <p style={{ fontSize: '0.73rem', color: '#EF4444', margin: '0.3rem 0 0' }}>{editNoWaError}</p>}
+          </div>
+        </div>
+
+        {editError && (
+          <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '0.65rem 0.875rem', marginBottom: '0.875rem', fontSize: '0.82rem', color: '#DC2626', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertCircle size={13} /> {editError}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.8rem' }}>
+          <button onClick={onClose} disabled={editSaving} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
+          <button onClick={onSave} disabled={editSaving} style={{ ...sBtnPrimary, flex: 2, opacity: editSaving ? 0.6 : 1 }}>
+            {editSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+          </button>
+        </div>
+      </div>
+
+      {kelasOpen && (
+        <>
+        <style>{`
+          @keyframes kelas-edit-in {
+            from { opacity: 0; transform: scale(0.92) translateY(12px); }
+            to   { opacity: 1; transform: scale(1)    translateY(0);    }
+          }
+        `}</style>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setKelasOpen(false)}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, boxShadow: '0 24px 64px rgba(64,132,234,0.28)', animation: 'kelas-edit-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Pilih Kelas</span>
+              <button onClick={() => setKelasOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: 4 }}>
+                <X size={28} />
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+              {kelasList.map(k => {
+                const active = editKelasId === k.id
+                return (
+                  <button key={k.id} type="button"
+                    onClick={() => { setEditKelasId(k.id); setKelasOpen(false) }}
+                    style={{ padding: '0.65rem 0.4rem', borderRadius: 8, fontSize: '0.83rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', background: k.warna, color: '#fff', border: active ? '3px solid #fff' : '2px solid transparent', outline: active ? `3px solid ${k.warna}` : 'none', boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`, transform: active ? 'scale(1.07)' : 'scale(1)' }}>
                     {k.nama}
                   </button>
                 )

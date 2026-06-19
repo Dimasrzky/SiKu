@@ -8,6 +8,7 @@ const supabaseAdmin = createClient(
 
 const DEMO_SEKOLAH_ID = process.env.DEMO_SEKOLAH_ID!
 
+// Tabel dengan sekolah_id — urutan hapus dari child ke parent
 const DEMO_TABLES = [
   'tagihan_siswa',
   'pembayaran',
@@ -18,16 +19,43 @@ const DEMO_TABLES = [
   'tahun_ajaran',
 ] as const
 
-// Tabel komponen_tagihan child-nya tidak punya sekolah_id,
-// sehingga perlu dihapus lewat komponen_id dari parent.
+// paket_kelas & paket_komponen tidak punya sekolah_id — hapus via paket_id
+async function deletePaketDemo() {
+  const { data: pakets } = await supabaseAdmin
+    .from('paket')
+    .select('id')
+    .eq('sekolah_id', DEMO_SEKOLAH_ID)
+
+  if (pakets && pakets.length > 0) {
+    const ids = pakets.map((p: { id: string }) => p.id)
+    await supabaseAdmin.from('paket_kelas').delete().in('paket_id', ids)
+    await supabaseAdmin.from('paket_komponen').delete().in('paket_id', ids)
+  }
+  await supabaseAdmin.from('paket').delete().eq('sekolah_id', DEMO_SEKOLAH_ID)
+}
+
+// tagihan_item tidak punya sekolah_id — hapus via tagihan_id
+async function deleteTagihanItemDemo() {
+  const { data: tagihans } = await supabaseAdmin
+    .from('tagihan')
+    .select('id')
+    .eq('sekolah_id', DEMO_SEKOLAH_ID)
+
+  if (tagihans && tagihans.length > 0) {
+    const ids = tagihans.map((t: { id: string }) => t.id)
+    await supabaseAdmin.from('tagihan_item').delete().in('tagihan_id', ids)
+  }
+}
+
+// komponen_tagihan_potongan & komponen_tagihan_item tidak punya sekolah_id
 async function deleteKomponenTagihanDemo() {
-  const { data: komponenIds } = await supabaseAdmin
+  const { data: komponens } = await supabaseAdmin
     .from('komponen_tagihan')
     .select('id')
     .eq('sekolah_id', DEMO_SEKOLAH_ID)
 
-  if (komponenIds && komponenIds.length > 0) {
-    const ids = komponenIds.map((k: { id: string }) => k.id)
+  if (komponens && komponens.length > 0) {
+    const ids = komponens.map((k: { id: string }) => k.id)
     await supabaseAdmin.from('komponen_tagihan_potongan').delete().in('komponen_id', ids)
     await supabaseAdmin.from('komponen_tagihan_item').delete().in('komponen_id', ids)
   }
@@ -64,11 +92,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Sekolah demo tidak valid.' }, { status: 403 })
   }
 
-  // Reset semua data demo
+  // Hapus child tables yang tidak punya sekolah_id lebih dulu
+  await deleteTagihanItemDemo()
+  await deletePaketDemo()
+  await deleteKomponenTagihanDemo()
+
+  // Hapus tabel dengan sekolah_id
   for (const table of DEMO_TABLES) {
     await supabaseAdmin.from(table).delete().eq('sekolah_id', DEMO_SEKOLAH_ID)
   }
-  await deleteKomponenTagihanDemo()
 
   // Reset profiles ke template default
   await supabaseAdmin.from('profiles').update({
