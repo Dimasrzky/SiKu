@@ -94,6 +94,7 @@ export default function BeasiswaPage() {
   const [ptKomponen,   setPtKomponen]   = useState<Set<string>>(new Set())
   const [ptJenis,      setPtJenis]      = useState<'persen' | 'nominal'>('persen')
   const [ptBesaran,    setPtBesaran]    = useState('')
+  const [ptGlobal,     setPtGlobal]     = useState('')
   const [ptFilter,     setPtFilter]     = useState('Semua')
   const [ptSearchQ,    setPtSearchQ]    = useState('')
 
@@ -271,7 +272,7 @@ export default function BeasiswaPage() {
     setTimeout(() => {
       setPtShowForm(false); setPtClosing(false)
       setPtJenjang(''); setPtSearch(''); setPtResults([]); setPtRows([])
-      setPtAlasan(''); setPtJenis('persen'); setPtBesaran('')
+      setPtAlasan(''); setPtJenis('persen'); setPtBesaran(''); setPtGlobal('')
       setPtKomponen(new Set(komponenList.map(k => k.id)))
     }, 320)
   }
@@ -299,11 +300,14 @@ export default function BeasiswaPage() {
         nominal: ptJenis === 'nominal' ? Number(ptBesaran) : null,
       }).select('id').single()
       if (error || !prog) throw error
-      if (ptKomponen.size > 0)
-        await supabase.from('beasiswa_komponen').insert([...ptKomponen].map(kid => ({ beasiswa_id: prog.id, komponen_id: kid })))
-      await supabase.from('beasiswa_siswa').insert(
+      if (ptKomponen.size > 0) {
+        const { error: kompError } = await supabase.from('beasiswa_komponen').insert([...ptKomponen].map(kid => ({ beasiswa_id: prog.id, komponen_id: kid })))
+        if (kompError) throw kompError
+      }
+      const { error: siswaError } = await supabase.from('beasiswa_siswa').insert(
         ptRows.map(r => ({ beasiswa_id: prog.id, siswa_id: r.siswa.id, berlaku_sampai: r.berlaku_sampai || null }))
       )
+      if (siswaError) throw siswaError
       await loadPotongan(sekolahId)
       closePtForm()
     } finally { setPtSaving(false) }
@@ -459,32 +463,6 @@ export default function BeasiswaPage() {
       {/* ══ TAB: POTONGAN PERSONAL ═════════════════════════════════════════ */}
       {!isProgram && (
         <>
-          {potonganList.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
-                <div style={{ width: 52, height: 52, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Scissors size={22} color="#fff" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1A2C4E' }}>Potongan personal</div>
-                  <div style={{ fontSize: '0.83rem', color: '#64748B' }}>Berikan potongan kepada siswa yang membutuhkan</div>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem', maxWidth: 400 }}>
-                {[
-                  { label: 'Potongan aktif', val: potonganList.filter(r => r.status !== 'berakhir').length, icon: <Bell size={16} color="#3B82F6" /> },
-                  { label: 'Segera berakhir', val: potonganList.filter(r => r.status === 'segera_berakhir').length, icon: <AlertTriangle size={16} color="#F59E0B" /> },
-                ].map(c => (
-                  <div key={c.label} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, padding: '0.85rem 1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600 }}>{c.label}</div>{c.icon}
-                    </div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E', marginTop: '0.25rem' }}>{c.val}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
 
           {/* Pt form slide */}
           <div style={{ display: 'grid', gridTemplateRows: ptShowForm && !ptClosing ? '1fr' : '0fr', transition: 'grid-template-rows 0.32s cubic-bezier(0.4,0,0.2,1)', marginBottom: ptShowForm && !ptClosing ? '1.25rem' : 0 }}>
@@ -505,11 +483,6 @@ export default function BeasiswaPage() {
                     </div>
                   </div>
                   <SiswaSearchRow search={ptSearch} results={ptResults} onSearch={handlePtSearch} onAdd={addToPt} />
-                  {ptRows.length > 0 && (
-                    <SiswaTable rows={ptRows.map(r => ({ siswa_id: r.siswa.id, nama: r.siswa.nama, kelas_nama: r.siswa.kelas_nama, kelas_warna: r.siswa.kelas_warna, berlaku_sampai: r.berlaku_sampai }))}
-                      onDateChange={(i, v) => setPtRows(prev => prev.map((x, j) => j === i ? { ...x, berlaku_sampai: v } : x))}
-                      onRemove={i => setPtRows(prev => prev.filter((_, j) => j !== i))} />
-                  )}
                   <div style={sDivider} />
                   <div style={{ marginBottom: '1.25rem' }}>
                     <label style={sLbl}>Alasan potongan</label>
@@ -519,6 +492,27 @@ export default function BeasiswaPage() {
                   <KomponenSelector label="Komponen yang dipotong" list={komponenList} selected={ptKomponen} onChange={setPtKomponen} />
                   <div style={sDivider} />
                   <JenisRow jenis={ptJenis} besaran={ptBesaran} onJenis={setPtJenis} onBesaran={setPtBesaran} />
+                  {ptRows.length > 0 && (
+                    <>
+                      <div style={sDivider} />
+                      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E' }}>Siswa &amp; tanggal berakhir</div>
+                          <div style={{ fontSize: '0.78rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 4 }}><Users size={12} /> {ptRows.length} siswa dipilih</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <input type="date" value={ptGlobal} onChange={e => setPtGlobal(e.target.value)} style={{ ...sInp, padding: '0.35rem 0.6rem', fontSize: '0.8rem', width: 150 }} />
+                          <button onClick={() => setPtRows(prev => prev.map(r => ({ ...r, berlaku_sampai: ptGlobal })))}
+                            style={{ background: '#fff', border: '1.5px solid #1A2C4E', color: '#1A2C4E', borderRadius: 8, padding: '0.4rem 0.85rem', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                            + Samakan Tanggal
+                          </button>
+                        </div>
+                      </div>
+                      <SiswaTable rows={ptRows.map(r => ({ siswa_id: r.siswa.id, nama: r.siswa.nama, kelas_nama: r.siswa.kelas_nama, kelas_warna: r.siswa.kelas_warna, berlaku_sampai: r.berlaku_sampai }))}
+                        onDateChange={(i, v) => setPtRows(prev => prev.map((x, j) => j === i ? { ...x, berlaku_sampai: v } : x))}
+                        onRemove={i => setPtRows(prev => prev.filter((_, j) => j !== i))} />
+                    </>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                     <button onClick={closePtForm} style={sBtnYellow}>Batalkan Pembuatan <X size={15} /></button>
                     <button onClick={savePt} disabled={ptSaving || ptRows.length === 0} style={{ ...sBtnYellow, opacity: ptRows.length === 0 ? 0.6 : 1 }}>
@@ -543,68 +537,94 @@ export default function BeasiswaPage() {
               </div>
             </div>
           ) : potonganList.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.08)', overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                  <div style={{ width: 52, height: 52, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Scissors size={22} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1A2C4E' }}>Potongan personal</div>
+                    <div style={{ fontSize: '0.83rem', color: '#64748B' }}>Berikan potongan kepada siswa yang membutuhkan</div>
+                  </div>
+                </div>
+                {!ptShowForm && (
+                  <button onClick={openPtForm} style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.55rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+                    <Plus size={14} /> Berikan Potongan Individu
+                  </button>
+                )}
+              </div>
+              {/* Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '1.25rem 1.5rem 0', maxWidth: 440 }}>
+                {[
+                  { label: 'Potongan aktif', val: potonganList.filter(r => r.status !== 'berakhir').length, icon: <Bell size={16} color="#3B82F6" /> },
+                  { label: 'Segera berakhir', val: potonganList.filter(r => r.status === 'segera_berakhir').length, icon: <AlertTriangle size={16} color="#F59E0B" /> },
+                ].map(c => (
+                  <div key={c.label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '0.85rem 1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600 }}>{c.label}</div>{c.icon}
+                    </div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E', marginTop: '0.25rem' }}>{c.val}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Filter + Search */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem 0.75rem' }}>
                 <select value={ptFilter} onChange={e => setPtFilter(e.target.value)}
-                  style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1A2C4E' }}>
+                  style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1A2C4E' }}>
                   {['Semua', 'Aktif', 'Segera berakhir', 'Berakhir'].map(f => <option key={f}>{f}</option>)}
                 </select>
                 <div style={{ position: 'relative' }}>
                   <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
-                  <input value={ptSearchQ} onChange={e => setPtSearchQ(e.target.value)} placeholder="Cari nama siswa" style={{ ...sInp, paddingLeft: '2.2rem', width: 220 }} />
+                  <input value={ptSearchQ} onChange={e => setPtSearchQ(e.target.value)} placeholder="Cari nama siswa" style={{ ...sInp, paddingLeft: '2.2rem', width: 220, background: '#F8FAFC' }} />
                 </div>
               </div>
-              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ background: '#1A2C4E', color: '#fff' }}>
-                      {['Nama', 'Potongan', 'Kelas', 'Aksi'].map(h => <th key={h} style={{ padding: '0.7rem 1rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPot.map((r, i) => (
-                      <tr key={r.id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: r.kelas_warna ?? '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', color: '#1A2C4E', flexShrink: 0 }}>{r.inisial}</div>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span style={{ fontWeight: 600, color: '#1A2C4E' }}>{r.siswa_nama}</span>
-                                {r.status === 'aktif'           && <span style={{ background: '#DCFCE7', color: '#15803D', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>Aktif</span>}
-                                {r.status === 'segera_berakhir' && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>⏱ {getDays(r.berlaku_sampai!)} hari lagi</span>}
-                                {r.status === 'berakhir'        && <span style={{ background: '#FEE2E2', color: '#DC2626', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>Berakhir</span>}
-                              </div>
-                              <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{r.alasan}</div>
+              {/* Table */}
+              <div style={{ padding: '0 1rem 1rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', borderRadius: 10, overflow: 'hidden' }}>
+                <thead>
+                  <tr style={{ background: '#1A2C4E', color: '#fff' }}>
+                    {['Nama', 'Potongan', 'Kelas', 'Aksi'].map(h => <th key={h} style={{ padding: '0.7rem 1rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPot.map((r, i) => (
+                    <tr key={r.id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: r.kelas_warna ?? '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', color: '#1A2C4E', flexShrink: 0 }}>{r.inisial}</div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontWeight: 600, color: '#1A2C4E' }}>{r.siswa_nama}</span>
+                              {r.status === 'aktif'           && <span style={{ background: '#DCFCE7', color: '#15803D', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>Aktif</span>}
+                              {r.status === 'segera_berakhir' && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>⏱ {getDays(r.berlaku_sampai!)} hari lagi</span>}
+                              {r.status === 'berakhir'        && <span style={{ background: '#FEE2E2', color: '#DC2626', fontSize: '0.68rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20 }}>Berakhir</span>}
                             </div>
+                            <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{r.alasan}</div>
                           </div>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <div style={{ fontWeight: 700, color: '#1A2C4E' }}>{r.jenis_potongan === 'persen' ? `${r.persen ?? 0}%` : fRp(r.nominal ?? 0)}</div>
-                          {r.berlaku_sampai && <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{fTgl(r.berlaku_sampai)}</div>}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#1A2C4E', padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 700 }}>{r.kelas_nama}</span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <div style={{ display: 'flex', gap: '0.35rem' }}>
-                            <button onClick={() => setDetailPot(r)} style={sIcon}><Eye size={13} /></button>
-                            <button style={sIcon}><Pencil size={13} /></button>
-                            <button style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ fontWeight: 700, color: '#1A2C4E' }}>{r.jenis_potongan === 'persen' ? `${r.persen ?? 0}%` : fRp(r.nominal ?? 0)}</div>
+                        {r.berlaku_sampai && <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{fTgl(r.berlaku_sampai)}</div>}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#ffffff', padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 700 }}>{r.kelas_nama}</span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                          <button onClick={() => setDetailPot(r)} style={sIcon}><Eye size={13} /></button>
+                          <button style={sIcon}><Pencil size={13} /></button>
+                          <button style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               </div>
-              {!ptShowForm && (
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-                  <button onClick={openPtForm} style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.55rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <Plus size={14} /> Tambah Potongan Baru
-                  </button>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </>
       )}
@@ -856,7 +876,7 @@ function SiswaTable({ rows, onDateChange, onRemove }: {
             <tr key={r.siswa_id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
               <td style={{ padding: '0.55rem 1rem', fontWeight: 500, color: '#1A2C4E' }}>{r.nama}</td>
               <td style={{ padding: '0.55rem 0.75rem' }}>
-                <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#1A2C4E', padding: '2px 8px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700 }}>{r.kelas_nama}</span>
+                <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#ffffff', padding: '2px 8px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700 }}>{r.kelas_nama}</span>
               </td>
               <td style={{ padding: '0.55rem 0.75rem' }}>
                 <input type="date" value={r.berlaku_sampai} onChange={e => onDateChange(i, e.target.value)} style={{ ...sInp, padding: '0.3rem 0.5rem', fontSize: '0.8rem' }} />
