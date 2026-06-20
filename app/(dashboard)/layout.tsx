@@ -20,6 +20,7 @@ import {
   Layers,
   Package,
   Gift,
+  SlidersHorizontal,
   GraduationCap,
   Lock,
 } from 'lucide-react'
@@ -461,11 +462,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
               {allDone ? (
                 <Link href="/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/tagihan/beasiswa' ? ' active' : ''}`}>
-                  <Gift size={13} /><span>Beasiswa &amp; Override</span>
+                  <Gift size={13} /><span>Beasiswa</span>
                 </Link>
               ) : (
                 <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
-                  <Gift size={13} /><span>Beasiswa &amp; Override</span>
+                  <Gift size={13} /><span>Beasiswa</span>
+                  <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              )}
+              {allDone ? (
+                <Link href="/tagihan/individu" className={`sidebar-sub-item${pathname === '/tagihan/individu' ? ' active' : ''}`}>
+                  <SlidersHorizontal size={13} /><span>Komponen Individu</span>
+                </Link>
+              ) : (
+                <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
+                  <SlidersHorizontal size={13} /><span>Komponen Individu</span>
                   <Lock size={11} style={{ marginLeft: 'auto', flexShrink: 0 }} />
                 </div>
               )}

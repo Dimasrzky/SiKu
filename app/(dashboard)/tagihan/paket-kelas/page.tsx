@@ -433,14 +433,17 @@ export default function PaketPerKelasPage() {
                               <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.875rem' }}>{avatarInisial}</span>
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)' }}>{k.nama}</div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.15rem' }}>
-                                {k.keterangan && <span>{k.keterangan}</span>}
-                                {k.keterangan && <span>·</span>}
-                                <span style={{ background: '#EEF2FF', color: '#1A2C4E', padding: '0.1rem 0.45rem', borderRadius: 4, fontWeight: 600, fontSize: '0.72rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)' }}>{k.nama}</span>
+                                <span style={{ background: '#EEF2FF', color: '#1A2C4E', padding: '0.1rem 0.45rem', borderRadius: 4, fontWeight: 600, fontSize: '0.72rem', flexShrink: 0 }}>
                                   {jenisBadgeMap[k.jenis] ?? k.jenis}
                                 </span>
                               </div>
+                              {k.keterangan && (
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                                  {k.keterangan}
+                                </div>
+                              )}
                             </div>
                             <div style={{ flexShrink: 0 }}>
                               {isEditing ? (
@@ -546,7 +549,8 @@ export default function PaketPerKelasPage() {
           ) : filtered.map((p, i) => {
             const kelasText    = p.kelas_list.map(k => k.nama).join(', ')
             const siswaTotal   = p.kelas_list.reduce((s, k) => s + k.siswa_count, 0)
-            const shownKomp    = p.komponen_list.slice(0, 5)
+            const row1Komp     = p.komponen_list.slice(0, 3)
+            const row2Komp     = p.komponen_list.slice(3, 5)
             const extraCount   = Math.max(0, p.komponen_list.length - 5)
 
             return (
@@ -577,16 +581,30 @@ export default function PaketPerKelasPage() {
                 </div>
 
                 {/* Komponen badges */}
-                <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', marginTop: '0.875rem' }}>
-                  {shownKomp.map(kp => (
-                    <div key={kp.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: '#D3DFF3', borderRadius: 99, padding: '0.25rem 0.7rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--navy-dark)' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: kp.komponen?.kelas_warna ?? '#94A3B8', flexShrink: 0 }} />
-                      {kp.komponen?.nama} — {formatRupiah(kp.nominal)}
-                    </div>
-                  ))}
-                  {extraCount > 0 && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 99, padding: '0.25rem 0.7rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>
-                      + {extraCount} lainnya
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.875rem' }}>
+                  {/* Baris 1: maks 3 badge */}
+                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'nowrap' }}>
+                    {row1Komp.map(kp => (
+                      <div key={kp.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: '#D3DFF3', borderRadius: 99, padding: '0.25rem 0.7rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--navy-dark)', flexShrink: 0 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: kp.komponen?.kelas_warna ?? '#94A3B8', flexShrink: 0 }} />
+                        {kp.komponen?.nama} — {formatRupiah(kp.nominal)}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Baris 2: maks 2 badge + "+X lainnya" */}
+                  {(row2Komp.length > 0 || extraCount > 0) && (
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'nowrap' }}>
+                      {row2Komp.map(kp => (
+                        <div key={kp.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: '#D3DFF3', borderRadius: 99, padding: '0.25rem 0.7rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--navy-dark)', flexShrink: 0 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: kp.komponen?.kelas_warna ?? '#94A3B8', flexShrink: 0 }} />
+                          {kp.komponen?.nama} — {formatRupiah(kp.nominal)}
+                        </div>
+                      ))}
+                      {extraCount > 0 && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 99, padding: '0.25rem 0.7rem', fontSize: '0.8rem', fontWeight: 600, color: '#64748B', flexShrink: 0 }}>
+                          + {extraCount} lainnya
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -654,14 +672,10 @@ export default function PaketPerKelasPage() {
       })()}
 
       {/* ── Section C: Riwayat paket ────────────────────────────────────────── */}
+      {riwayatList.length > 0 && (
       <div style={{ ...sCard, borderRadius: 15, boxShadow: '0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.04)', marginBottom: '1rem' }}>
         <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--navy-dark)', marginBottom: '0.875rem' }}>Riwayat paket</div>
-        {riwayatList.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2.5rem 0' }}>
-            <Archive size={36} color="#CBD5E1" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
-            <p style={{ fontWeight: 600, fontSize: '0.9rem', color: '#94A3B8', margin: 0 }}>Belum ada riwayat paket dari tahun ajaran sebelumnya</p>
-          </div>
-        ) : riwayatList.map((r, i) => (
+        {riwayatList.map((r, i) => (
           <div key={r.tahun_ajaran}>
             {i > 0 && <div style={{ height: 1, background: '#E2E8F0' }} />}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.875rem 0', cursor: 'pointer' }}>
@@ -682,6 +696,7 @@ export default function PaketPerKelasPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* ── Delete modal ─────────────────────────────────────────────────────── */}
       {deleteTarget && (

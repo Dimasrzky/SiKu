@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle } from 'lucide-react'
+import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle, Eye, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -71,12 +71,17 @@ export default function KelasPage() {
   const [viewAddError,         setViewAddError]         = useState('')
   const [showKelasPenuhPopup,  setShowKelasPenuhPopup]  = useState(false)
 
+  // Detail slide panel
+  const [detailTarget,  setDetailTarget]  = useState<KelasRow | null>(null)
+  const [detailClosing, setDetailClosing] = useState(false)
+
   // Edit modal
-  const [editTarget,    setEditTarget]    = useState<KelasRow | null>(null)
-  const [editWaliKelas, setEditWaliKelas] = useState('')
-  const [editWarna,     setEditWarna]     = useState(WARNA_OPTIONS[0])
-  const [editSaving,    setEditSaving]    = useState(false)
-  const [editError,     setEditError]     = useState('')
+  const [editTarget,     setEditTarget]     = useState<KelasRow | null>(null)
+  const [editIdentitas,  setEditIdentitas]  = useState('')
+  const [editWaliKelas,  setEditWaliKelas]  = useState('')
+  const [editWarna,      setEditWarna]      = useState(WARNA_OPTIONS[0])
+  const [editSaving,     setEditSaving]     = useState(false)
+  const [editError,      setEditError]      = useState('')
 
   // Setup form state
   const [showForm,          setShowForm]          = useState(false)
@@ -302,9 +307,15 @@ export default function KelasPage() {
     closeViewAdd()
   }
 
+  // Detail panel handlers
+  const openDetail  = (kelas: KelasRow) => { setDetailClosing(false); setDetailTarget(kelas) }
+  const closeDetail = () => { setDetailClosing(true); setTimeout(() => { setDetailTarget(null); setDetailClosing(false) }, 350) }
+
   // Edit modal
   const openEdit = (kelas: KelasRow) => {
     setEditTarget(kelas)
+    const dashIdx = kelas.nama.indexOf('-')
+    setEditIdentitas(dashIdx >= 0 ? kelas.nama.slice(dashIdx + 1) : kelas.nama)
     setEditWaliKelas(kelas.wali_kelas ?? '')
     setEditWarna(kelas.warna)
     setEditError('')
@@ -313,13 +324,15 @@ export default function KelasPage() {
 
   const handleEditSimpan = async () => {
     if (!editTarget) return
+    if (!editIdentitas.trim()) { setEditError('Identitas kelas harus diisi.'); return }
     setEditSaving(true)
+    const newNama = `${editTarget.jenjang}-${editIdentitas.trim().toUpperCase()}`
     const { error: updateError } = await supabase
       .from('kelas')
-      .update({ wali_kelas: editWaliKelas.trim() || null, warna: editWarna })
+      .update({ nama: newNama, wali_kelas: editWaliKelas.trim() || null, warna: editWarna })
       .eq('id', editTarget.id)
     if (updateError) { setEditError(updateError.message); setEditSaving(false); return }
-    setRawRows(prev => prev.map(r => r.id === editTarget.id ? { ...r, wali_kelas: editWaliKelas.trim() || null, warna: editWarna } : r))
+    setRawRows(prev => prev.map(r => r.id === editTarget.id ? { ...r, nama: newNama, wali_kelas: editWaliKelas.trim() || null, warna: editWarna } : r))
     setEditTarget(null)
     setEditSaving(false)
   }
@@ -375,6 +388,10 @@ export default function KelasPage() {
           @keyframes popupBar { from { width: 100%; } to { width: 0%; } }
           @keyframes formSlideDown { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
           @keyframes formSlideUp   { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
+          @keyframes panelSlideIn  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+          @keyframes panelSlideOut { from { transform: translateX(0); } to { transform: translateX(100%); } }
+          @keyframes panelFadeIn   { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes panelFadeOut  { from { opacity: 1; } to { opacity: 0; } }
         `}</style>
 
         {/* Header */}
@@ -639,22 +656,22 @@ export default function KelasPage() {
             ) : filterJenjang ? (
               /* Flat list — no group headers */
               filteredRows.map((kelas, i) => {
-                const dashIdx   = kelas.nama.indexOf('-')
-                const identitas = dashIdx >= 0 ? kelas.nama.slice(dashIdx + 1) : kelas.nama
-                const inisial   = identitas.slice(0, 2).toUpperCase()
-                const hasWali   = !!kelas.wali_kelas
+                const dashIdx    = kelas.nama.indexOf('-')
+                const identitas  = dashIdx >= 0 ? kelas.nama.slice(dashIdx + 1) : kelas.nama
+                const inisial    = identitas.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+                const hasWali    = !!kelas.wali_kelas
                 const siswaCount = siswaCounts[kelas.id] ?? 0
                 return (
-                  <div key={kelas.id}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 1.5rem' }}>
+                  <div key={kelas.id} style={{ paddingLeft: '1.5rem', paddingRight: '2.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 0' }}>
                       <div style={{ width: 48, height: 48, borderRadius: 10, background: kelas.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.9rem', letterSpacing: '0.01em' }}>{inisial}</span>
+                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>{inisial}</span>
                       </div>
-                      <div style={{ width: 260, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'nowrap', overflow: 'hidden' }}>
-                          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>Kelas {kelas.nama.replace('-', ' ')}</span>
-                          <span style={{ background: hasWali ? '#DCFCE7' : '#FEF3C7', color: hasWali ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
-                            {hasWali ? '✓ Lengkap' : '⚠ Belum ada wali kelas'}
+                      <div style={{ width: 240, minWidth: 0, overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Kelas {kelas.nama.replace('-', ' ')}</span>
+                          <span style={{ background: hasWali ? '#DCFCE7' : '#FEF3C7', color: hasWali ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                            {hasWali ? '✓ Lengkap' : '⚠ Tanpa wali'}
                           </span>
                         </div>
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -668,6 +685,10 @@ export default function KelasPage() {
                       </div>
                       <div style={{ flex: 1 }} />
                       <div style={{ display: 'flex', gap: '1.5rem', flexShrink: 0, position: 'relative', right: 20 }}>
+                        <button onClick={() => openDetail(kelas)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                          <Eye size={18} />
+                        </button>
                         <button onClick={() => openEdit(kelas)}
                           style={{ background: 'transparent', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
                           <Image src="/icons/IconEdit2.png" width={16} height={16} alt="Edit" />
@@ -679,7 +700,7 @@ export default function KelasPage() {
                       </div>
                     </div>
                     {i < filteredRows.length - 1 && (
-                      <div style={{ height: 1, background: '#C1C6CF', margin: '0 4rem 0 0.75rem' }} />
+                      <div style={{ height: 1, background: '#C1C6CF' }} />
                     )}
                   </div>
                 )
@@ -702,20 +723,20 @@ export default function KelasPage() {
                     {group.items.map((kelas, i) => {
                       const dashIdx    = kelas.nama.indexOf('-')
                       const identitas  = dashIdx >= 0 ? kelas.nama.slice(dashIdx + 1) : kelas.nama
-                      const inisial    = identitas.slice(0, 2).toUpperCase()
+                      const inisial    = identitas.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
                       const hasWali    = !!kelas.wali_kelas
                       const siswaCount = siswaCounts[kelas.id] ?? 0
                       return (
-                        <div key={kelas.id}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 1.5rem' }}>
+                        <div key={kelas.id} style={{ paddingLeft: '1.5rem', paddingRight: '2.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.8rem 0' }}>
                             <div style={{ width: 48, height: 48, borderRadius: 10, background: kelas.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.9rem', letterSpacing: '0.01em' }}>{inisial}</span>
+                              <span style={{ color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.02em' }}>{inisial}</span>
                             </div>
-                            <div style={{ width: 260, minWidth: 0 }}>
+                            <div style={{ width: 240, minWidth: 0, overflow: 'hidden' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'nowrap', overflow: 'hidden' }}>
                                 <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>Kelas {kelas.nama.replace('-', ' ')}</span>
                                 <span style={{ background: hasWali ? '#DCFCE7' : '#FEF3C7', color: hasWali ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>
-                                  {hasWali ? '✓ Lengkap' : '⚠ Belum ada wali kelas'}
+                                  {hasWali ? '✓ Lengkap' : '⚠ Tanpa wali'}
                                 </span>
                               </div>
                               <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -729,6 +750,10 @@ export default function KelasPage() {
                             </div>
                             <div style={{ flex: 1 }} />
                             <div style={{ display: 'flex', gap: '1.5rem', flexShrink: 0, position: 'relative', right: 20 }}>
+                              <button onClick={() => openDetail(kelas)}
+                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                                <Eye size={18} />
+                              </button>
                               <button onClick={() => openEdit(kelas)}
                                 style={{ background: 'transparent', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
                                 <Image src="/icons/IconEdit2.png" width={16} height={16} alt="Edit" />
@@ -740,7 +765,7 @@ export default function KelasPage() {
                             </div>
                           </div>
                           {i < group.items.length - 1 && (
-                            <div style={{ height: 1, background: '#C1C6CF', margin: '0 4rem 0 0.75rem' }} />
+                            <div style={{ height: 1, background: '#C1C6CF' }} />
                           )}
                         </div>
                       )
@@ -781,8 +806,16 @@ export default function KelasPage() {
               {editError && <div className="login-error" style={{ marginBottom: '1rem' }}>{editError}</div>}
 
               <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>Identitas kelas</label>
+                <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Akan digabung dengan tingkat {editTarget.jenjang}. Contoh: A → &ldquo;{editTarget.jenjang}-A&rdquo;
+                </div>
+                <input type="text" placeholder="Contoh: A, 1, Unggulan, MIPA" value={editIdentitas} onChange={e => setEditIdentitas(e.target.value)} style={sInput} autoFocus />
+              </div>
+
+              <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{ ...sLabel, display: 'block', marginBottom: 6 }}>Wali kelas</label>
-                <input type="text" placeholder="Nama wali kelas" value={editWaliKelas} onChange={e => setEditWaliKelas(e.target.value)} style={sInput} autoFocus />
+                <input type="text" placeholder="Nama wali kelas" value={editWaliKelas} onChange={e => setEditWaliKelas(e.target.value)} style={sInput} />
               </div>
 
               <div style={{ marginBottom: '1.75rem' }}>
@@ -810,6 +843,72 @@ export default function KelasPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Detail Slide Panel */}
+        {detailTarget && (
+          <>
+            <div onClick={closeDetail} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 9998, animation: detailClosing ? 'panelFadeOut 0.35s ease forwards' : 'panelFadeIn 0.25s ease' }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, background: '#fff', zIndex: 9999, boxShadow: '-8px 0 32px rgba(26,44,78,0.22)', display: 'flex', flexDirection: 'column', animation: detailClosing ? 'panelSlideOut 0.35s cubic-bezier(0.4,0,0.2,1) forwards' : 'panelSlideIn 0.35s cubic-bezier(0.22,1,0.36,1)' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1.5px solid #E2E8F0' }}>
+                <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--navy-dark)' }}>Detail Kelas</span>
+                <button onClick={closeDetail} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6F788A', display: 'flex', alignItems: 'center', padding: '0.25rem' }}>
+                  <X size={20} />
+                </button>
+              </div>
+              {/* Body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '1.75rem 1.5rem' }}>
+                {/* Avatar + nama */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.75rem' }}>
+                  <div style={{ width: 60, height: 60, borderRadius: 14, background: detailTarget.warna, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                    <span style={{ color: '#fff', fontWeight: 800, fontSize: '1.2rem' }}>
+                      {(() => { const d = detailTarget.nama.indexOf('-'); return d >= 0 ? detailTarget.nama.slice(d + 1, d + 3).toUpperCase() : detailTarget.nama.slice(0, 2).toUpperCase() })()}
+                    </span>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '1.15rem', color: 'var(--navy-dark)', marginBottom: '0.3rem' }}>Kelas {detailTarget.nama.replace('-', ' ')}</div>
+                    <span style={{ background: '#A3CDFE', color: '#1A2C4E', fontSize: '0.72rem', fontWeight: 700, padding: '3px 12px', borderRadius: 20 }}>Tingkat {detailTarget.jenjang}</span>
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Wali Kelas</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: detailTarget.wali_kelas ? 'var(--navy-dark)' : '#94A3B8' }}>
+                    {detailTarget.wali_kelas || 'Belum ada wali kelas'}
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Jumlah Siswa</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)' }}>
+                    {siswaCounts[detailTarget.id] ?? 0} siswa
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Tahun Ajaran</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--navy-dark)' }}>{detailTarget.tahun_ajaran} · Semester {detailTarget.semester}</div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0', marginBottom: '1.5rem' }} />
+
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Warna Kelas</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: detailTarget.warna, boxShadow: `0 2px 8px ${detailTarget.warna}88` }} />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy-dark)' }}>{detailTarget.warna}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Delete modal */}

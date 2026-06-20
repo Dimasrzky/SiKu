@@ -191,14 +191,14 @@
 .sidebar-submenu--open {
   max-height: 400px;
   opacity: 1;
-  padding: 2px 0 6px 0.5rem;
+  padding: 2px 0 10px 0.5rem;
 }
 
 .sidebar-sub-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0.42rem 0.75rem;
+  padding: 0.35rem 0.75rem;
   border-radius: 6px;
   font-size: 0.8rem;
   font-weight: 500;
