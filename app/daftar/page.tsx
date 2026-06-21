@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -37,10 +37,44 @@ export default function DaftarPage() {
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
   const [isDemo, setIsDemo] = useState(false)
+  // Email yang sudah berhasil di-signUp di sesi ini (untuk handle navigasi kembali ke step 1)
+  const [step1Email, setStep1Email] = useState('')
+
+  // Jika sudah login, arahkan ke dashboard (onboarding selesai) atau biarkan isi form dari awal
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('sekolah_id')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      if (profile?.sekolah_id) {
+        router.replace('/dashboard')
+      }
+      // Onboarding belum selesai — form tetap kosong, user isi sendiri
+    }
+    checkSession()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleStep1 = async () => {
     setError('')
     setEmailError('')
+
+    // Navigasi kembali ke step 1 dengan email yang sama di sesi ini — skip signUp
+    if (step1Email && step1Email === email.trim()) {
+      if (!nama.trim() || !jabatanFinal.trim()) {
+        setError('Semua field wajib diisi.')
+        return
+      }
+      setStep(2)
+      return
+    }
+
     if (!nama.trim() || !jabatanFinal.trim() || !email.trim() || !password) {
       setError('Semua field wajib diisi.')
       return
@@ -85,6 +119,23 @@ export default function DaftarPage() {
         return
       }
 
+      // Cek apakah sesi aktif cocok — user ini yang belum selesai onboarding
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user?.email === email.trim()) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('sekolah_id')
+          .eq('id', session.user.id)
+          .maybeSingle()
+        if (!profile?.sekolah_id) {
+          // Onboarding belum selesai — lanjut ke step 2
+          setStep1Email(email.trim())
+          setStep(2)
+          setLoading(false)
+          return
+        }
+      }
+
       setEmailError('Email ini sudah terdaftar. Silakan masuk.')
       setLoading(false)
       return
@@ -97,6 +148,7 @@ export default function DaftarPage() {
     }
 
     // signUp berhasil → trial baru
+    setStep1Email(email.trim())
     setStep(2)
     setLoading(false)
   }

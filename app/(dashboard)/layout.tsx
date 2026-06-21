@@ -332,6 +332,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = () => {
     localStorage.removeItem('siku_auth')
+    localStorage.removeItem('siku_setup_steps')
+    localStorage.removeItem('siku_setup_done')
     router.push('/')
   }
 

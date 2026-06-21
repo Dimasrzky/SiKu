@@ -81,6 +81,17 @@ export default function BeasiswaPage() {
   const [detailProg,   setDetailProg]   = useState<ProgramItem | null>(null)
   const [detailPot,    setDetailPot]    = useState<PotonganRow | null>(null)
 
+  // Edit/delete program states
+  const [editProg,     setEditProg]     = useState<ProgramItem | null>(null)
+  const [editNama,     setEditNama]     = useState('')
+  const [editKet,      setEditKet]      = useState('')
+  const [editJenis,    setEditJenis]    = useState<'persen' | 'nominal'>('persen')
+  const [editBesaran,  setEditBesaran]  = useState('')
+  const [editKomponen, setEditKomponen] = useState<Set<string>>(new Set())
+  const [editSaving,   setEditSaving]   = useState(false)
+  const [deleteProg,   setDeleteProg]   = useState<ProgramItem | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
   // Potongan Personal states
   const [potonganList, setPotonganList] = useState<PotonganRow[]>([])
   const [ptShowForm,   setPtShowForm]   = useState(false)
@@ -228,6 +239,46 @@ export default function BeasiswaPage() {
       await loadProgram(sekolahId)
       closeForm()
     } finally { setFormSaving(false) }
+  }
+
+  const openEditProg = async (p: ProgramItem) => {
+    setEditNama(p.nama)
+    setEditKet(p.keterangan ?? '')
+    setEditJenis(p.jenis_potongan)
+    setEditBesaran(p.jenis_potongan === 'persen' ? String(p.persen ?? 0) : String(p.nominal ?? 0))
+    const { data } = await supabase.from('beasiswa_komponen').select('komponen_id').eq('beasiswa_id', p.id)
+    setEditKomponen(new Set(((data ?? []) as { komponen_id: string }[]).map(r => r.komponen_id)))
+    setEditProg(p)
+  }
+
+  const saveEditProg = async () => {
+    if (!editProg || !editNama.trim()) return
+    setEditSaving(true)
+    try {
+      await supabase.from('beasiswa').update({
+        nama: editNama.trim(), keterangan: editKet.trim() || null,
+        jenis_potongan: editJenis,
+        persen: editJenis === 'persen' ? Number(editBesaran) : null,
+        nominal: editJenis === 'nominal' ? Number(editBesaran) : null,
+      }).eq('id', editProg.id)
+      await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', editProg.id)
+      if (editKomponen.size > 0)
+        await supabase.from('beasiswa_komponen').insert([...editKomponen].map(kid => ({ beasiswa_id: editProg!.id, komponen_id: kid })))
+      await loadProgram(sekolahId)
+      setEditProg(null)
+    } finally { setEditSaving(false) }
+  }
+
+  const confirmDeleteProg = async () => {
+    if (!deleteProg) return
+    setDeleteLoading(true)
+    try {
+      await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', deleteProg.id)
+      await supabase.from('beasiswa_siswa').delete().eq('beasiswa_id', deleteProg.id)
+      await supabase.from('beasiswa').delete().eq('id', deleteProg.id)
+      await loadProgram(sekolahId)
+      setDeleteProg(null)
+    } finally { setDeleteLoading(false) }
   }
 
   // ── Assign handlers ───────────────────────────────────────────────────────
@@ -430,8 +481,8 @@ export default function BeasiswaPage() {
                       </div>
                       <div style={{ display: 'flex', gap: '0.3rem' }}>
                         <button onClick={() => setDetailProg(p)} style={sIcon}><Eye size={13} /></button>
-                        <button style={sIcon}><Pencil size={13} /></button>
-                        <button style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
+                        <button onClick={() => openEditProg(p)} style={sIcon}><Pencil size={13} /></button>
+                        <button onClick={() => setDeleteProg(p)} style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
                       </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
@@ -627,6 +678,67 @@ export default function BeasiswaPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* ══ MODAL: EDIT PROGRAM ════════════════════════════════════════ */}
+      {editProg && (
+        <Modal onClose={() => setEditProg(null)}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Edit Program Beasiswa</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: 2 }}>📁 {editProg.nama}</div>
+              </div>
+              <button onClick={() => setEditProg(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={sLbl}>Nama program</label>
+                <input value={editNama} onChange={e => setEditNama(e.target.value)} autoFocus style={sInp} />
+              </div>
+              <div>
+                <label style={sLbl}>Keterangan <span style={{ fontWeight: 400, color: '#94A3B8' }}>(Opsional)</span></label>
+                <input value={editKet} onChange={e => setEditKet(e.target.value)} style={sInp} />
+              </div>
+            </div>
+            <div style={sDivider} />
+            <KomponenSelector label="Komponen yang dipotong" list={komponenList} selected={editKomponen} onChange={setEditKomponen} />
+            <div style={sDivider} />
+            <JenisRow jenis={editJenis} besaran={editBesaran} onJenis={setEditJenis} onBesaran={setEditBesaran} />
+          </div>
+          <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button onClick={() => setEditProg(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+            <button onClick={saveEditProg} disabled={editSaving || !editNama.trim()} style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: !editNama.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !editNama.trim() ? 0.6 : 1 }}>
+              {editSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: HAPUS PROGRAM ═══════════════════════════════════════ */}
+      {deleteProg && (
+        <Modal onClose={() => setDeleteProg(null)} maxWidth={420}>
+          <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#DC2626' }}>Hapus Program Beasiswa</div>
+              <button onClick={() => setDeleteProg(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#64748B', marginBottom: '1.5rem', lineHeight: 1.7 }}>
+              Yakin ingin menghapus program <strong style={{ color: '#1A2C4E' }}>{deleteProg.nama}</strong>?
+              {deleteProg.jumlah_penerima > 0 && (
+                <> Tindakan ini juga akan menghapus <strong style={{ color: '#DC2626' }}>{deleteProg.jumlah_penerima} penerima</strong> yang terkait.</>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button onClick={() => setDeleteProg(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+              <button onClick={confirmDeleteProg} disabled={deleteLoading} style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: deleteLoading ? 0.7 : 1 }}>
+                {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ══ MODAL: ASSIGN SISWA ═══════════════════════════════════════════ */}

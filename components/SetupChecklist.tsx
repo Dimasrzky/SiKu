@@ -314,15 +314,22 @@ export function SetupChecklist() {
     let cancelled = false
 
     async function fetchAndSync() {
-      const [{ data: pengaturan }, { count: tagihanCount }, { count: siswaCount }] =
-        await Promise.all([
-          supabase.from('pengaturan').select('setup_steps').maybeSingle(),
-          supabase.from('tagihan').select('id', { count: 'exact', head: true }),
-          supabase.from('siswa').select('id', { count: 'exact', head: true }),
-        ])
+      // Ambil pengaturan + sekolah_id dulu agar query siswa/tagihan difilter per sekolah
+      const { data: pengaturan } = await supabase
+        .from('pengaturan')
+        .select('setup_steps, sekolah_id')
+        .maybeSingle()
 
       if (cancelled) return
       if (!pengaturan?.setup_steps) { setLoading(false); return }
+
+      const sekolahId = (pengaturan as { setup_steps: SetupSteps; sekolah_id: string }).sekolah_id
+
+      // Filter eksplisit per sekolah_id — hindari baca data sekolah lain jika RLS belum sempurna
+      const [{ count: tagihanCount }, { count: siswaCount }] = await Promise.all([
+        supabase.from('tagihan').select('id', { count: 'exact', head: true }).eq('sekolah_id', sekolahId),
+        supabase.from('siswa').select('id', { count: 'exact', head: true }).eq('sekolah_id', sekolahId),
+      ])
 
       const s = pengaturan.setup_steps as SetupSteps
       let needsUpdate = false

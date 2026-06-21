@@ -802,32 +802,63 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    supabase
-      .from('siswa')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'aktif')
-      .then(({ count }: { count: number | null }) => {
-        const total = count ?? 0
-        setHasSiswa(total > 0)
-        if (total > 0) {
-          loadDashData(total)
-            .then(d => { setData(d); setLastUpd(new Date()) })
-            .catch(() => setData({
-              totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
-              totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
-              lunasRef: 0, siswaTunggakanLama: 0, terkumpulIni: 0,
-              terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
-              belumBayarLalu: 0, totalBeasiswaNom: 0, penerimaBeasiswa: 0,
-              totalTagihanNom: 0, trenData: [], komposisi: [], perKelas: [],
-              siswaBayarList: [],
-              insights: [{
-                id: 'load-error', level: 'amber',
-                judul: 'Gagal memuat data', desc: 'Terjadi kesalahan saat mengambil data dashboard.',
-                sub: 'Coba refresh halaman atau periksa koneksi internet.',
-              }],
-            }))
-        }
-      })
+    const load = async () => {
+      // Ambil sekolah_id dari profile untuk filter eksplisit — jangan andalkan RLS saja
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (!authUser) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('sekolah_id')
+        .eq('id', authUser.id)
+        .single()
+
+      const sekolahId = profile?.sekolah_id
+      if (!sekolahId) { setHasSiswa(false); return }
+
+      const { data } = await supabase
+        .from('pengaturan')
+        .select('setup_steps')
+        .eq('sekolah_id', sekolahId)
+        .maybeSingle()
+
+      const steps = data?.setup_steps as Record<string, boolean> | null
+      const importSiswaDone = steps?.import_siswa === true
+
+      if (!importSiswaDone) {
+        setHasSiswa(false)
+        return
+      }
+
+      // Setup selesai — hitung siswa aktif untuk tampilkan full dashboard
+      const { count } = await supabase
+        .from('siswa')
+        .select('id', { count: 'exact', head: true })
+        .eq('sekolah_id', sekolahId)
+        .eq('status', 'aktif')
+
+      const total = count ?? 0
+      setHasSiswa(total > 0)
+      if (total > 0) {
+        loadDashData(total)
+          .then(d => { setData(d); setLastUpd(new Date()) })
+          .catch(() => setData({
+            totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
+            totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
+            lunasRef: 0, siswaTunggakanLama: 0, terkumpulIni: 0,
+            terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
+            belumBayarLalu: 0, totalBeasiswaNom: 0, penerimaBeasiswa: 0,
+            totalTagihanNom: 0, trenData: [], komposisi: [], perKelas: [],
+            siswaBayarList: [],
+            insights: [{
+              id: 'load-error', level: 'amber',
+              judul: 'Gagal memuat data', desc: 'Terjadi kesalahan saat mengambil data dashboard.',
+              sub: 'Coba refresh halaman atau periksa koneksi internet.',
+            }],
+          }))
+      }
+    }
+    load()
   }, [])
 
   if (hasSiswa === null) {

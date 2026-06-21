@@ -35,10 +35,19 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email, nama, jabatan, sekolah, avatar, role')
+      .select('email, nama, jabatan, sekolah, sekolah_id, avatar, role')
       .eq('id', data.user.id)
       .single()
 
+    // Onboarding belum selesai (belum isi data sekolah) — arahkan untuk melanjutkan
+    if (!profile?.sekolah_id) {
+      router.push('/daftar')
+      setLoading(false)
+      return
+    }
+
+    localStorage.removeItem('siku_setup_steps')
+    localStorage.removeItem('siku_setup_done')
     localStorage.setItem(
       'siku_auth',
       JSON.stringify({

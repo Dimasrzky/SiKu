@@ -98,6 +98,7 @@ export default function DaftarSiswaPage() {
   const [mNamaWali,  setMNamaWali]  = useState('')
   const [mNoWa,      setMNoWa]      = useState('')
   const [mNoWaError, setMNoWaError] = useState('')
+  const [mNisError,  setMNisError]  = useState('')
   const [mSaving,    setMSaving]    = useState(false)
   const [mError,     setMError]     = useState('')
 
@@ -248,7 +249,7 @@ export default function DaftarSiswaPage() {
   // ── Manual add ────────────────────────────────────────────────────────────
 
   const openModal = () => {
-    setMNama(''); setMNis(''); setMKelasId(''); setMNamaWali(''); setMNoWa(''); setMNoWaError(''); setMError('')
+    setMNama(''); setMNis(''); setMKelasId(''); setMNamaWali(''); setMNoWa(''); setMNoWaError(''); setMNisError(''); setMError('')
     setShowModal(true)
   }
 
@@ -256,6 +257,7 @@ export default function DaftarSiswaPage() {
     if (!mNama.trim() || !mNis.trim() || !mKelasId || !mNamaWali.trim() || !mNoWa.trim()) {
       setMError('Semua field wajib diisi.'); return
     }
+    if (mNisError) return
     if (!/^\d+$/.test(mNoWa.trim())) { setMNoWaError('Nomor WhatsApp hanya boleh berisi angka.'); return }
     setMNoWaError(''); setMSaving(true); setMError('')
 
@@ -556,6 +558,7 @@ export default function DaftarSiswaPage() {
       mNamaWali={mNamaWali} setMNamaWali={setMNamaWali}
       mNoWa={mNoWa} setMNoWa={setMNoWa}
       mNoWaError={mNoWaError} setMNoWaError={setMNoWaError}
+      mNisError={mNisError} setMNisError={setMNisError}
       mSaving={mSaving} mError={mError}
       onSave={handleManualSave}
       onClose={() => setShowModal(false)}
@@ -728,6 +731,7 @@ export default function DaftarSiswaPage() {
       mNamaWali={mNamaWali} setMNamaWali={setMNamaWali}
       mNoWa={mNoWa} setMNoWa={setMNoWa}
       mNoWaError={mNoWaError} setMNoWaError={setMNoWaError}
+      mNisError={mNisError} setMNisError={setMNisError}
       mSaving={mSaving} mError={mError}
       onSave={handleManualSave}
       onClose={() => setShowModal(false)}
@@ -871,14 +875,27 @@ interface ModalProps {
   mNamaWali:    string; setMNamaWali:(v: string) => void
   mNoWa:        string; setMNoWa:    (v: string) => void
   mNoWaError:   string; setMNoWaError:(v: string) => void
+  mNisError:    string; setMNisError: (v: string) => void
   mSaving:      boolean
   mError:       string
   onSave:       () => void
   onClose:      () => void
 }
 
-function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mNoWaError, setMNoWaError, mSaving, mError, onSave, onClose }: ModalProps) {
+function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mNoWaError, setMNoWaError, mNisError, setMNisError, mSaving, mError, onSave, onClose }: ModalProps) {
   const [kelasOpen, setKelasOpen] = useState(false)
+  const nisTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleNisChange = (val: string) => {
+    setMNis(val)
+    setMNisError('')
+    if (nisTimer.current) clearTimeout(nisTimer.current)
+    if (!val.trim()) return
+    nisTimer.current = setTimeout(async () => {
+      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).maybeSingle()
+      if (data) setMNisError('NIS sudah digunakan')
+    }, 400)
+  }
 
   const selectedKelas = kelasList.find(k => k.id === mKelasId)
 
@@ -905,7 +922,8 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
         {/* NIS */}
         <div style={{ marginBottom: '0.875rem' }}>
           <label style={sLabel}>NIS <span style={{ color: '#DC2626' }}>*</span></label>
-          <input type="text" style={sInput} placeholder="Nomor Induk Siswa" value={mNis} onChange={e => setMNis(e.target.value)} />
+          <input type="text" style={{ ...sInput, borderColor: mNisError ? '#DC2626' : undefined }} placeholder="Nomor Induk Siswa" value={mNis} onChange={e => handleNisChange(e.target.value)} />
+          {mNisError && <div style={{ fontSize: '0.78rem', color: '#DC2626', marginTop: '0.3rem', fontWeight: 500 }}>{mNisError}</div>}
         </div>
 
         {/* Pilih Kelas — trigger button */}
