@@ -23,14 +23,14 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL('https://app.pakaisiku.id'),
   title: 'Login | SiKu',
-  description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari platform PakaiSiku.',
+  description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari Siku.',
   keywords: 'login siku, masuk akun pakaisiku, sistem keuangan sekolah, aplikasi SPP',
   alternates: {
     canonical: 'https://app.pakaisiku.id',
   },
   openGraph: {
     title: 'Login | SiKu',
-    description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari platform PakaiSiku.',
+    description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari Siku.',
     siteName: 'PakaiSiku',
     url: 'https://app.pakaisiku.id',
     locale: 'id_ID',
