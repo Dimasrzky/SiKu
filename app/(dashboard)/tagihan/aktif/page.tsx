@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Zap } from 'lucide-react'
+import { Search, Zap, AlertTriangle } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { buildWaLink } from '@/lib/templates/waTagihan'
@@ -30,14 +30,17 @@ interface SiswaTagihanRow {
 }
 
 // Raw Supabase response types
-type KelasNestedRaw    = { nama: string; jenjang: string }
+type KelasNestedRaw    = { id: string; nama: string; jenjang: string }
 type SiswaNestedRaw    = { id: string; nama: string; no_wa: string | null; nama_wali: string | null; kelas: KelasNestedRaw | null }
 type TagihanRawRow     = { id: string; total_nominal: number; status: string; siswa: SiswaNestedRaw | null }
+type PaketTotalRaw     = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
 type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type PaketKelasRaw     = { kelas_id: string }
 type PaketForGenerate  = { id: string; paket_kelas: PaketKelasRaw[]; paket_komponen: PaketKomponenRaw[] }
 type SiswaForGenerate  = { id: string; nama: string; kelas_id: string }
 type ExistingTagRow    = { siswa_id: string }
+type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; beasiswa_komponen: { komponen_id: string }[] } | null }
+type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -63,32 +66,142 @@ export default function TagihanAktifPage() {
   const [filterStatus,      setFilterStatus]      = useState('Semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
-  const [generateError,     setGenerateError]     = useState('')
-  const [namaSekolah,       setNamaSekolah]       = useState('')
+  const [generateError,          setGenerateError]          = useState('')
+  const [namaSekolah,            setNamaSekolah]            = useState('')
+  const [showPaketKurangPopup,   setShowPaketKurangPopup]   = useState(false)
+  const [showKelasKosongPopup,   setShowKelasKosongPopup]   = useState(false)
 
   // ── Load tagihan ────────────────────────────────────────────────────────────
 
   const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number) => {
-    const { data } = await supabase
-      .from('tagihan')
-      .select('id, total_nominal, status, siswa:siswa_id(id, nama, no_wa, nama_wali, kelas:kelas_id(nama, jenjang))')
-      .eq('sekolah_id', sid)
-      .eq('bulan', bulan)
-      .eq('tahun', tahun)
-      .order('created_at', { ascending: false })
-      .limit(500)
+    const isSemesterMonth = bulan === 1 || bulan === 7
 
-    setTagihanList(((data ?? []) as unknown as TagihanRawRow[]).map(r => ({
-      tagihan_id:    r.id,
-      siswa_id:      r.siswa?.id ?? '',
-      nama:          r.siswa?.nama ?? '—',
-      kelas_nama:    r.siswa?.kelas?.nama ?? '—',
-      kelas_jenjang: r.siswa?.kelas?.jenjang ?? '',
-      total_nominal: r.total_nominal,
-      status:        (r.status as SiswaTagihanRow['status']) ?? 'belum_bayar',
-      no_wa:         r.siswa?.no_wa ?? '',
-      nama_wali:     r.siswa?.nama_wali ?? '',
-    })))
+    const [{ data: tagihanData }, { data: paketData }] = await Promise.all([
+      supabase
+        .from('tagihan')
+        .select('id, total_nominal, status, siswa:siswa_id(id, nama, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang))')
+        .eq('sekolah_id', sid)
+        .eq('bulan', bulan)
+        .eq('tahun', tahun)
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('paket')
+        .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
+        .eq('sekolah_id', sid),
+    ])
+
+    // kelas_id → total paket & map(komponen_id → nominal) untuk pencocokan beasiswa
+    const kelasTotal = new Map<string, number>()
+    const kelasKomps = new Map<string, Map<string, number>>()
+    for (const p of ((paketData ?? []) as unknown as PaketTotalRaw[])) {
+      const total      = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
+      const kompNomMap = new Map(p.paket_komponen.map(k => [k.komponen_id, k.nominal]))
+      for (const pk of p.paket_kelas) {
+        kelasTotal.set(pk.kelas_id, total)
+        kelasKomps.set(pk.kelas_id, kompNomMap)
+      }
+    }
+
+    const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
+    const siswaIds = rows.map(r => r.siswa?.id).filter(Boolean) as string[]
+
+    // Per-siswa: fetch beasiswa aktif + komponen individu
+    const today = new Date().toISOString().split('T')[0]
+    const [{ data: bsData }, { data: individuData }] = siswaIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from('beasiswa_siswa')
+            .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
+            .in('siswa_id', siswaIds)
+            .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
+          supabase
+            .from('siswa_komponen_individu')
+            .select('siswa_id, komponen_id, nominal, komponen:komponen_id(jenis)')
+            .in('siswa_id', siswaIds),
+        ])
+      : [{ data: [] }, { data: [] }]
+
+    // siswa_id → beasiswa aktif list
+    const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
+    for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
+      if (!row.beasiswa) continue
+      const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
+      list.push({
+        jenis_potongan: row.beasiswa.jenis_potongan,
+        persen:         row.beasiswa.persen,
+        nominal:        row.beasiswa.nominal,
+        komponen_ids:   new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)),
+      })
+      siswaBeasiswaMap.set(row.siswa_id, list)
+    }
+
+    // siswa_id → individu list
+    type IndividuEntry = { jenis: string; nominal: number }
+    const siswaIndividuMap = new Map<string, IndividuEntry[]>()
+    for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
+      if (!row.komponen) continue
+      const list = siswaIndividuMap.get(row.siswa_id) ?? []
+      list.push({ jenis: row.komponen.jenis, nominal: row.nominal })
+      siswaIndividuMap.set(row.siswa_id, list)
+    }
+
+    // Hitung total yang benar per siswa
+    const siswaCorrectTotal = new Map<string, number>()
+    for (const r of rows) {
+      const siswaId   = r.siswa?.id ?? ''
+      const kelasId   = r.siswa?.kelas?.id ?? ''
+      const paketBase = kelasTotal.get(kelasId) ?? 0
+      const kompNomMap = kelasKomps.get(kelasId)
+
+      // Individu: rutin selalu, semester hanya jan/jul, sekali_bayar skip (sudah fix saat generate)
+      const individuTotal = (siswaIndividuMap.get(siswaId) ?? [])
+        .filter(k => k.jenis === 'rutin_bulanan' || (k.jenis === 'per_semester' && isSemesterMonth))
+        .reduce((s, k) => s + k.nominal, 0)
+
+      // Beasiswa: hanya berlaku pada komponen paket, tidak menyentuh individu
+      let deduction = 0
+      if (kompNomMap) {
+        for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
+          for (const kid of bs.komponen_ids) {
+            const kNominal = kompNomMap.get(kid)
+            if (kNominal === undefined) continue
+            deduction += bs.jenis_potongan === 'persen'
+              ? Math.round(kNominal * (bs.persen ?? 0) / 100)
+              : (bs.nominal ?? 0)
+          }
+        }
+      }
+
+      siswaCorrectTotal.set(siswaId, Math.max(0, paketBase + individuTotal - deduction))
+    }
+
+    // Update DB untuk tagihan yang totalnya berbeda
+    const toUpdate = rows.flatMap(r => {
+      const siswaId = r.siswa?.id ?? ''
+      const correct = siswaCorrectTotal.get(siswaId)
+      return correct !== undefined && correct !== r.total_nominal ? [{ id: r.id, total: correct }] : []
+    })
+    if (toUpdate.length > 0) {
+      await Promise.all(toUpdate.map(({ id, total }) =>
+        supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)
+      ))
+    }
+
+    setTagihanList(rows.map(r => {
+      const siswaId = r.siswa?.id ?? ''
+      return {
+        tagihan_id:    r.id,
+        siswa_id:      siswaId,
+        nama:          r.siswa?.nama ?? '—',
+        kelas_nama:    r.siswa?.kelas?.nama ?? '—',
+        kelas_jenjang: r.siswa?.kelas?.jenjang ?? '',
+        total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
+        status:        (r.status as SiswaTagihanRow['status']) ?? 'belum_bayar',
+        no_wa:         r.siswa?.no_wa ?? '',
+        nama_wali:     r.siswa?.nama_wali ?? '',
+      }
+    }))
   }, [])
 
   // ── Init ────────────────────────────────────────────────────────────────────
@@ -156,6 +269,16 @@ export default function TagihanAktifPage() {
         }
       }
 
+      // 2b. Cek apakah semua kelas sudah punya paket
+      const { data: allKelasData } = await supabase
+        .from('kelas').select('id').eq('sekolah_id', sekolahId)
+      const missingKelas = (allKelasData ?? []).filter((k: { id: string }) => !kelasToKomponen.has(k.id))
+      if (missingKelas.length > 0) {
+        setShowPaketKurangPopup(true)
+        setGenerating(false)
+        return
+      }
+
       // 3. Ambil semua siswa aktif dengan kelas
       const { data: siswaData, error: e2 } = await supabase
         .from('siswa')
@@ -164,6 +287,53 @@ export default function TagihanAktifPage() {
         .eq('status', 'aktif')
         .limit(1000)
       if (e2 || !siswaData) throw new Error(`Gagal memuat data siswa: ${e2?.message ?? 'tidak ada data'}`)
+
+      // 3b. Cek kelas yang sudah dipaketkan tapi belum ada siswanya
+      const siswaPorKelas = new Set((siswaData as SiswaForGenerate[]).map(s => s.kelas_id))
+      const kelasKosong = [...kelasToKomponen.keys()].filter(kid => !siswaPorKelas.has(kid))
+      if (kelasKosong.length > 0) {
+        setShowKelasKosongPopup(true)
+        setGenerating(false)
+        return
+      }
+
+      // 3c. Fetch beasiswa aktif + komponen individu untuk semua siswa (parallel)
+      const siswaIds = (siswaData as SiswaForGenerate[]).map(s => s.id)
+      const today    = new Date().toISOString().split('T')[0]
+      const [{ data: bsData }, { data: individuData }] = await Promise.all([
+        supabase
+          .from('beasiswa_siswa')
+          .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
+          .in('siswa_id', siswaIds)
+          .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
+        supabase
+          .from('siswa_komponen_individu')
+          .select('siswa_id, komponen_id, nominal, komponen:komponen_id(nama, jenis)')
+          .in('siswa_id', siswaIds),
+      ])
+
+      // Map: siswa_id → beasiswa aktif
+      const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
+      for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
+        if (!row.beasiswa) continue
+        const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
+        list.push({
+          jenis_potongan: row.beasiswa.jenis_potongan,
+          persen:         row.beasiswa.persen,
+          nominal:        row.beasiswa.nominal,
+          komponen_ids:   new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)),
+        })
+        siswaBeasiswaMap.set(row.siswa_id, list)
+      }
+
+      // Map: siswa_id → komponen individu
+      const siswaIndividuMap = new Map<string, { komponen_id: string; nama: string; jenis: string; nominal: number }[]>()
+      for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
+        if (!row.komponen) continue
+        const list = siswaIndividuMap.get(row.siswa_id) ?? []
+        list.push({ komponen_id: row.komponen_id, nama: row.komponen.nama, jenis: row.komponen.jenis, nominal: row.nominal })
+        siswaIndividuMap.set(row.siswa_id, list)
+      }
 
       // 4. Tagihan yang sudah ada bulan ini (skip jika sudah ada)
       const { data: existingData } = await supabase
@@ -196,17 +366,45 @@ export default function TagihanAktifPage() {
           if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
           return false
         })
-        if (filtered.length === 0) continue
+
+        // Komponen individu — ikut aturan jenis yang sama
+        const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(k => {
+          if (k.jenis === 'rutin_bulanan') return true
+          if (k.jenis === 'per_semester')  return isSemesterMonth
+          if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
+          return false
+        })
+
+        const allKomps = [...filtered, ...individu]
+        if (allKomps.length === 0) continue
+
+        // Potongan beasiswa — hanya berlaku jika komponen-nya masuk tagihan bulan ini
+        const tagihanKompIds = new Set(allKomps.map(k => k.komponen_id))
+        let totalPotongan = 0
+        for (const bs of (siswaBeasiswaMap.get(siswa.id) ?? [])) {
+          for (const kid of bs.komponen_ids) {
+            if (!tagihanKompIds.has(kid)) continue
+            const komp = allKomps.find(k => k.komponen_id === kid)
+            if (!komp) continue
+            if (bs.jenis_potongan === 'persen') {
+              totalPotongan += Math.round(komp.nominal * (bs.persen ?? 0) / 100)
+            } else {
+              totalPotongan += bs.nominal ?? 0
+            }
+          }
+        }
+
+        const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
 
         toInsert.push({
           sekolah_id:    sekolahId,
           siswa_id:      siswa.id,
           bulan:         selectedBulan,
           tahun:         selectedTahun,
-          total_nominal: filtered.reduce((s, k) => s + k.nominal, 0),
+          total_nominal: total,
           status:        'belum_bayar',
         })
-        for (const k of filtered) {
+        for (const k of allKomps) {
           itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
         }
       }
@@ -465,6 +663,80 @@ export default function TagihanAktifPage() {
           )}
         </>
       )}
+      {/* ── Popup: paket belum lengkap ───────────────────────────────────────── */}
+      {showPaketKurangPopup && (
+        <>
+          <style>{`
+            @keyframes popupBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes popupCardIn     { from { opacity: 0; transform: scale(0.88) translateY(24px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+          `}</style>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(18,47,102,0.38)', backdropFilter: 'blur(3px)', animation: 'popupBackdropIn 0.22s ease' }}
+            onClick={() => setShowPaketKurangPopup(false)}>
+            <div
+              style={{ background: '#fff', borderRadius: 18, padding: '2rem 2rem 1.75rem', maxWidth: 420, width: '90%', boxShadow: '0 24px 64px rgba(18,47,102,0.26)', animation: 'popupCardIn 0.32s cubic-bezier(0.22,1,0.36,1)' }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: '#FEF3C7', borderRadius: 10, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertTriangle size={21} color="#D97706" strokeWidth={2.5} />
+                </div>
+                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1A2C4E' }}>Paket Belum Lengkap</span>
+              </div>
+              <p style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, lineHeight: 1.65, marginBottom: '1.5rem', paddingLeft: '0.1rem' }}>
+                Paket per kelas untuk beberapa kelas belum dibuat.<br />Segera buat semua paket kelas terlebih dahulu!
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowPaketKurangPopup(false)}
+                  style={{ padding: '0.6rem 1.2rem', borderRadius: 10, border: '2px solid #E5E7EB', background: '#fff', color: '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' }}>
+                  Tutup
+                </button>
+                <button onClick={() => { setShowPaketKurangPopup(false); router.push('/tagihan/paket-kelas') }}
+                  style={{ padding: '0.6rem 1.4rem', borderRadius: 10, border: 'none', background: '#F7DD7D', color: '#1A2C4E', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(18,47,102,0.2)', transition: 'opacity 0.15s' }}>
+                  Buat Paket Kelas
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Popup: kelas sudah dipaketkan tapi belum ada siswa ───────────────── */}
+      {showKelasKosongPopup && (
+        <>
+          <style>{`
+            @keyframes popupBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes popupCardIn     { from { opacity: 0; transform: scale(0.88) translateY(24px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+          `}</style>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(18,47,102,0.38)', backdropFilter: 'blur(3px)', animation: 'popupBackdropIn 0.22s ease' }}
+            onClick={() => setShowKelasKosongPopup(false)}>
+            <div
+              style={{ background: '#fff', borderRadius: 18, padding: '2rem 2rem 1.75rem', maxWidth: 420, width: '90%', boxShadow: '0 24px 64px rgba(18,47,102,0.26)', animation: 'popupCardIn 0.32s cubic-bezier(0.22,1,0.36,1)' }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: '#FEE2E2', borderRadius: 10, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertTriangle size={21} color="#DC2626" strokeWidth={2.5} />
+                </div>
+                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1A2C4E' }}>Kelas Belum Ada Siswa</span>
+              </div>
+              <p style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, lineHeight: 1.65, marginBottom: '1.5rem' }}>
+                Beberapa kelas yang sudah dipaketkan belum memiliki siswa.<br />Segera isi data siswa terlebih dahulu!
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowKelasKosongPopup(false)}
+                  style={{ padding: '0.6rem 1.2rem', borderRadius: 10, border: '2px solid #E5E7EB', background: '#fff', color: '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' }}>
+                  Tutup
+                </button>
+                <button onClick={() => { setShowKelasKosongPopup(false); router.push('/siswa') }}
+                  style={{ padding: '0.6rem 1.4rem', borderRadius: 10, border: 'none', background: '#F7DD7D', color: '#1A2C4E', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(18,47,102,0.2)', transition: 'opacity 0.15s' }}>
+                  Isi Data Siswa
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
     </div>
   )
 }

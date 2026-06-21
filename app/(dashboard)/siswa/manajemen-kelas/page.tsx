@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle, Eye, X } from 'lucide-react'
+import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle, Eye, X, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -69,7 +69,17 @@ export default function KelasPage() {
   const [viewAddWarna,         setViewAddWarna]         = useState(WARNA_OPTIONS[0])
   const [viewAddSaving,        setViewAddSaving]        = useState(false)
   const [viewAddError,         setViewAddError]         = useState('')
-  const [showKelasPenuhPopup,  setShowKelasPenuhPopup]  = useState(false)
+
+  // Popup semua jenjang lengkap
+  const [showAllJenjangDonePopup, setShowAllJenjangDonePopup] = useState(false)
+
+  // Modal tambah dari group header
+  const [showHeaderModal,          setShowHeaderModal]          = useState(false)
+  const [headerModalJenjang,       setHeaderModalJenjang]       = useState('')
+  const [headerModalIdentitasList, setHeaderModalIdentitasList] = useState<string[]>([''])
+  const [headerModalWarna,         setHeaderModalWarna]         = useState(WARNA_OPTIONS[0])
+  const [headerModalSaving,        setHeaderModalSaving]        = useState(false)
+  const [headerModalError,         setHeaderModalError]         = useState('')
 
   // Detail slide panel
   const [detailTarget,  setDetailTarget]  = useState<KelasRow | null>(null)
@@ -208,10 +218,18 @@ export default function KelasPage() {
   const handleDeleteKelas = async () => {
     if (!deleteTarget) return
     setDeleteLoading(true)
-    const { error } = await supabase.from('kelas').delete().eq('id', deleteTarget.id)
+    const kelasId = deleteTarget.id
+
+    // Hapus semua siswa di kelas ini terlebih dahulu
+    if ((siswaCounts[kelasId] ?? 0) > 0) {
+      const { error: siswaError } = await supabase.from('siswa').delete().eq('kelas_id', kelasId)
+      if (siswaError) { setApiError(siswaError.message); setShowErrorPopup(true); setDeleteLoading(false); return }
+    }
+
+    const { error } = await supabase.from('kelas').delete().eq('id', kelasId)
     if (error) { setApiError(error.message); setShowErrorPopup(true); setDeleteLoading(false); return }
-    setRawRows(prev => prev.filter(r => r.id !== deleteTarget.id))
-    setSiswaCounts(prev => { const n = { ...prev }; delete n[deleteTarget.id]; return n })
+    setRawRows(prev => prev.filter(r => r.id !== kelasId))
+    setSiswaCounts(prev => { const n = { ...prev }; delete n[kelasId]; return n })
     setDeleteTarget(null)
     setDeleteLoading(false)
   }
@@ -255,14 +273,62 @@ export default function KelasPage() {
 
   // View mode inline add
   const openViewAdd = () => {
-    const available = jenjangOptions.filter(j => !rawRows.some(r => r.jenjang === j))
-    if (available.length === 0) { setShowKelasPenuhPopup(true); return }
+    const allDone = jenjangOptions.length > 0 && jenjangOptions.every(j => rawRows.some(r => r.jenjang === j))
+    if (allDone) { setShowAllJenjangDonePopup(true); return }
+
     setViewAddJenjang('')
     setViewAddIdentitasList([''])
     setViewAddWarna(WARNA_OPTIONS[0])
     setViewAddError('')
     setViewAddClosing(false)
     setShowViewAdd(true)
+  }
+
+  const openHeaderModal = (jenjang: string) => {
+    const existingWarna = rawRows.find(r => r.jenjang === jenjang)?.warna ?? WARNA_OPTIONS[0]
+    setHeaderModalJenjang(jenjang)
+    setHeaderModalIdentitasList([''])
+    setHeaderModalWarna(existingWarna)
+    setHeaderModalError('')
+    setHeaderModalSaving(false)
+    setShowHeaderModal(true)
+  }
+
+  const handleHeaderModalSimpan = async () => {
+    setHeaderModalError('')
+    const validIds = headerModalIdentitasList.filter(i => i.trim())
+    if (validIds.length === 0) { setHeaderModalError('Identitas kelas harus diisi.'); return }
+    setHeaderModalSaving(true)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setHeaderModalError('Sesi tidak ditemukan.'); setHeaderModalSaving(false); return }
+
+    const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
+    if (!profile?.sekolah_id) { setHeaderModalError('Data sekolah tidak ditemukan.'); setHeaderModalSaving(false); return }
+
+    const rows = validIds.map(id => ({
+      sekolah_id: profile.sekolah_id as string,
+      nama: `${headerModalJenjang}-${id.trim().toUpperCase()}`,
+      jenjang: headerModalJenjang,
+      warna: headerModalWarna,
+      tahun_ajaran: tahunAjaran,
+      semester,
+    }))
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('kelas')
+      .insert(rows)
+      .select('id, nama, jenjang, warna, tahun_ajaran, semester, wali_kelas')
+
+    if (insertError) { setHeaderModalError(insertError.message); setHeaderModalSaving(false); return }
+    if (inserted) {
+      const newRows = [...rawRows, ...(inserted as KelasRow[])]
+      setRawRows(newRows)
+      const allDone = jenjangOptions.length > 0 && jenjangOptions.every(j => newRows.some(r => r.jenjang === j))
+      if (allDone) setShowAllJenjangDonePopup(true)
+    }
+    setHeaderModalSaving(false)
+    setShowHeaderModal(false)
   }
 
   const closeViewAdd = () => {
@@ -302,7 +368,12 @@ export default function KelasPage() {
       .select('id, nama, jenjang, warna, tahun_ajaran, semester, wali_kelas')
 
     if (insertError) { setViewAddError(insertError.message); setViewAddSaving(false); return }
-    if (inserted) setRawRows(prev => [...prev, ...(inserted as KelasRow[])])
+    if (inserted) {
+      const newRows = [...rawRows, ...(inserted as KelasRow[])]
+      setRawRows(newRows)
+      const allDone = jenjangOptions.length > 0 && jenjangOptions.every(j => newRows.some(r => r.jenjang === j))
+      if (allDone) setShowAllJenjangDonePopup(true)
+    }
     setViewAddSaving(false)
     closeViewAdd()
   }
@@ -411,7 +482,7 @@ export default function KelasPage() {
           </div>
           {!showViewAdd && (
             <button
-              onClick={openViewAdd}
+              onClick={() => openViewAdd()}
               style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.7rem 1.4rem', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 5px 2px rgba(18,47,102,0.31)', whiteSpace: 'nowrap' }}
             >
               + Tambah Kelas Baru
@@ -428,23 +499,35 @@ export default function KelasPage() {
 
                 {viewAddError && <div className="login-error" style={{ marginBottom: '1rem' }}>{viewAddError}</div>}
 
-                {/* Tingkat kelas */}
+                {/* Tingkat kelas — hanya tampilkan jenjang yang belum punya kelas */}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <label style={sLabel}>Tingkat kelas</label>
                   <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
                     Pilih satu tingkat untuk kelas yang akan dibuat
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {jenjangOptions.filter(j => !rawRows.some(r => r.jenjang === j)).map(j => {
-                      const selected = viewAddJenjang === j
+                  {(() => {
+                    const available = jenjangOptions.filter(j => !rawRows.some(r => r.jenjang === j))
+                    if (available.length === 0) {
                       return (
-                        <button key={j} onClick={() => setViewAddJenjang(prev => prev === j ? '' : j)}
-                          style={{ padding: '0.55rem 1.1rem', borderRadius: 10, fontFamily: 'inherit', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.15s', border: selected ? '2px solid #8CA6D0' : '2px solid #BABFC7', background: selected ? '#A3CDFE' : '#fff', color: selected ? '#1A2C4E' : 'var(--text-mid)', boxShadow: selected ? '0 4px 12px rgba(26,44,78,0.3)' : '6px 6px 8px rgba(18,47,102,0.10)' }}>
-                          Kelas {j}
-                        </button>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#6F788A', background: '#6F788A1A', borderRadius: 8, padding: '0.6rem 0.875rem', margin: 0 }}>
+                          Semua tingkat sudah memiliki kelas. Gunakan tombol <strong>+</strong> pada header tingkat untuk menambah identitas baru.
+                        </p>
                       )
-                    })}
-                  </div>
+                    }
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {available.map(j => {
+                          const selected = viewAddJenjang === j
+                          return (
+                            <button key={j} onClick={() => setViewAddJenjang(prev => prev === j ? '' : j)}
+                              style={{ padding: '0.55rem 1.1rem', borderRadius: 10, fontFamily: 'inherit', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.15s', border: selected ? '2px solid #8CA6D0' : '2px solid #BABFC7', background: selected ? '#A3CDFE' : '#fff', color: selected ? '#1A2C4E' : 'var(--text-mid)', boxShadow: selected ? '0 4px 12px rgba(26,44,78,0.3)' : '6px 6px 8px rgba(18,47,102,0.10)' }}>
+                              Kelas {j}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 <div style={{ height: 2, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
@@ -714,10 +797,19 @@ export default function KelasPage() {
                     {/* Group header */}
                     <div style={{ background: '#A3CDFE', width: '94%', borderRadius: 6, marginLeft: 20, padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Image src="/icons/IconLayer.png" width={16} height={16} alt="Edit" />
-                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', position:'relative', right:'40%', }}>Kelas {group.jenjang}</span>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', opacity: 0.75 }}>
-                        {group.items.length} kelas · {groupSiswa} siswa
-                      </span>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', position:'relative', right:'38%', }}>Kelas {group.jenjang}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', opacity: 0.75 }}>
+                          {group.items.length} kelas · {groupSiswa} siswa
+                        </span>
+                        <button
+                          onClick={() => openHeaderModal(group.jenjang)}
+                          style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                          title={`Tambah identitas kelas ${group.jenjang}`}
+                        >
+                          <Plus size={15} strokeWidth={2.5} />
+                        </button>
+                      </div>
                     </div>
                     {/* Items */}
                     {group.items.map((kelas, i) => {
@@ -779,23 +871,6 @@ export default function KelasPage() {
 
         </div>
 
-        {/* Kelas penuh popup */}
-        {showKelasPenuhPopup && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
-            <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 380, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
-                <CheckCircle2 size={28} color="#16A34A" />
-              </div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.5rem' }}>Semua Kelas Sudah Dibuat</h3>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
-                Seluruh tingkat kelas untuk jenjang sekolah ini sudah ditambahkan. Tidak ada tingkat yang tersisa.
-              </p>
-              <button onClick={() => setShowKelasPenuhPopup(false)} style={{ width: '100%', padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}>
-                Mengerti
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Edit modal */}
         {editTarget && (
@@ -919,9 +994,23 @@ export default function KelasPage() {
                 <Trash2 size={24} color="#DC2626" />
               </div>
               <h3 style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.5rem' }}>Hapus Kelas?</h3>
-              <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.5 }}>
-                Kelas <strong>{deleteTarget.nama}</strong> akan dihapus permanen. Data siswa terkait tidak ikut terhapus.
-              </p>
+              {(siswaCounts[deleteTarget.id] ?? 0) > 0 ? (
+                <>
+                  <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 0.75rem', lineHeight: 1.5 }}>
+                    Anda yakin ingin menghapus kelas <strong>{deleteTarget.nama}</strong>?
+                  </p>
+                  <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '0.7rem 1rem', marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                    <AlertCircle size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <p style={{ fontSize: '0.82rem', color: '#DC2626', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>
+                      Kelas ini memiliki <strong>{siswaCounts[deleteTarget.id]} siswa</strong>. Menghapus kelas akan membuat seluruh data siswa tersebut ikut terhapus permanen.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.5 }}>
+                  Kelas <strong>{deleteTarget.nama}</strong> akan dihapus permanen. Kelas ini tidak memiliki siswa.
+                </p>
+              )}
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button onClick={() => setDeleteTarget(null)} disabled={deleteLoading} style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}>
                   Batal
@@ -930,6 +1019,111 @@ export default function KelasPage() {
                   {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal tambah dari group header */}
+        {showHeaderModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+            <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 500, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.35rem' }}>
+                Tambah Kelas {headerModalJenjang}
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1.5rem' }}>
+                Tambah identitas baru untuk tingkat kelas {headerModalJenjang}
+              </p>
+
+              {headerModalError && <div className="login-error" style={{ marginBottom: '1rem' }}>{headerModalError}</div>}
+
+              {/* Identitas kelas */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>Identitas kelas</label>
+                <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Akan digabung dengan tingkat. Contoh: {headerModalJenjang} + A → &ldquo;{headerModalJenjang}-A&rdquo;
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {headerModalIdentitasList.map((val, i) => {
+                    const isLast = i === headerModalIdentitasList.length - 1
+                    return (
+                      <div key={i} style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input
+                          type="text"
+                          placeholder="Contoh: A, 1, Unggulan, MIPA"
+                          value={val}
+                          onChange={e => setHeaderModalIdentitasList(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
+                          style={{ ...sInput, flex: 1 }}
+                          autoFocus={i === 0}
+                        />
+                        {isLast ? (
+                          <button
+                            onClick={() => setHeaderModalIdentitasList(prev => [...prev, ''])}
+                            style={{ flexShrink: 0, padding: '0 1rem', borderRadius: 10, background: '#1A2C4E', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.85rem', color: '#fff', whiteSpace: 'nowrap', border: 'none' }}
+                          >
+                            + Tambah
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setHeaderModalIdentitasList(prev => prev.filter((_, idx) => idx !== i))}
+                            style={{ flexShrink: 0, padding: '0 0.75rem', border: '2.5px solid #c7504e', borderRadius: 10, background: '#dab1b1', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '1.6rem', color: '#000', lineHeight: 1 }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div style={{ height: 1.5, background: '#E2E8F0', margin: '0 0 1.25rem' }} />
+
+              {/* Review */}
+              {(() => {
+                const validIds = headerModalIdentitasList.filter(i => i.trim())
+                if (validIds.length === 0) return null
+                return (
+                  <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '0.875rem 1.1rem', background: '#F8FAFC', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                    {validIds.map((id, i) => (
+                      <div key={i} style={{ background: headerModalWarna, color: '#fff', fontWeight: 800, fontSize: '0.9rem', padding: '0.4rem 0.9rem', borderRadius: 10, boxShadow: `0 3px 8px ${headerModalWarna}55` }}>
+                        {headerModalJenjang} {id.trim()}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button onClick={() => setShowHeaderModal(false)} disabled={headerModalSaving} style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}>
+                  Batal
+                </button>
+                <button onClick={handleHeaderModalSimpan} disabled={headerModalSaving} style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: 'none', background: headerModalSaving ? '#D1D5DB' : '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: headerModalSaving ? 'not-allowed' : 'pointer' }}>
+                  {headerModalSaving ? 'Menyimpan...' : 'Simpan Kelas'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Popup semua jenjang sudah lengkap */}
+        {showAllJenjangDonePopup && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+            <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 380, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+              <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+                <CheckCircle2 size={28} color="#059669" />
+              </div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
+                Semua Jenjang Sudah Lengkap!
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
+                Seluruh jenjang kelas telah berhasil dibuat. Anda sekarang dapat melanjutkan ke pengaturan paket tagihan per kelas.
+              </p>
+              <button
+                onClick={() => setShowAllJenjangDonePopup(false)}
+                style={{ width: '100%', padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}
+              >
+                Mengerti
+              </button>
             </div>
           </div>
         )}

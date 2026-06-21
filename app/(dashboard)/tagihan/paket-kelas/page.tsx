@@ -6,6 +6,14 @@ import Image from 'next/image'
 import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+const JENJANG_MAP: Record<string, string[]> = {
+  'TK/PAUD': ['A', 'B', 'C'],
+  'SD/MI':   ['1', '2', '3', '4', '5', '6'],
+  'SMP/MTs': ['7', '8', '9'],
+  'SMA/MA':  ['10', '11', '12'],
+  'SMK':     ['10', '11', '12'],
+}
+
 const formatRupiah = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
 const formatDate = (iso: string | null) => {
@@ -97,6 +105,7 @@ export default function PaketPerKelasPage() {
   const [showForm,           setShowForm]           = useState(false)
   const [formClosing,        setFormClosing]        = useState(false)
   const [formNama,           setFormNama]           = useState('')
+  const [formJatuhTempo,     setFormJatuhTempo]     = useState('')
   const [formSaving,         setFormSaving]         = useState(false)
   const [formError,          setFormError]          = useState('')
   const [selectedJenjang,    setSelectedJenjang]    = useState('')
@@ -109,6 +118,10 @@ export default function PaketPerKelasPage() {
   // Delete modal
   const [deleteTarget,  setDeleteTarget]  = useState<PaketItem | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Popup kelas belum lengkap
+  const [jenjangOptions,       setJenjangOptions]       = useState<string[]>([])
+  const [showKelasKurangPopup, setShowKelasKurangPopup] = useState(false)
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadPaket = async (sid: string, tahun: string) => {
@@ -168,9 +181,11 @@ export default function PaketPerKelasPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: pData } = await supabase.from('pengaturan').select('setup_steps').maybeSingle()
-      const steps = (pData as { setup_steps?: Record<string, boolean> } | null)?.setup_steps ?? {}
+      const { data: pData } = await supabase.from('pengaturan').select('setup_steps, jenjang_sekolah').maybeSingle()
+      const peng  = pData as { setup_steps?: Record<string, boolean>; jenjang_sekolah?: string } | null
+      const steps = peng?.setup_steps ?? {}
       if (!steps['buat_kelas']) { router.replace('/siswa/manajemen-kelas'); return }
+      setJenjangOptions(JENJANG_MAP[peng?.jenjang_sekolah ?? ''] ?? [])
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -231,7 +246,11 @@ export default function PaketPerKelasPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openForm = () => {
-    setFormNama(''); setFormError(''); setFormClosing(false)
+    const allJenjangReady = jenjangOptions.length > 0 &&
+      jenjangOptions.every(j => kelasList.some(k => k.jenjang === j))
+    if (!allJenjangReady) { setShowKelasKurangPopup(true); return }
+
+    setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
     setSelectedJenjang(''); setSelectedKelasIds([])
     setCheckedKomponenIds([]); setNominalMap({})
     setEditingNominalId(null)
@@ -274,7 +293,7 @@ export default function PaketPerKelasPage() {
 
     const { data: paket, error: e1 } = await supabase
       .from('paket')
-      .insert({ sekolah_id: sekolahId, nama: formNama.trim(), tahun_ajaran: activeTahunAjaran })
+      .insert({ sekolah_id: sekolahId, nama: formNama.trim(), tahun_ajaran: activeTahunAjaran, jatuh_tempo: formJatuhTempo || null })
       .select('id').single()
     if (e1 || !paket) { setFormError(e1?.message ?? 'Gagal menyimpan paket.'); setFormSaving(false); return }
     const paketId = (paket as { id: string }).id
@@ -492,13 +511,23 @@ export default function PaketPerKelasPage() {
 
                 <div style={{ height: 3, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
-                <div style={{ marginBottom: '0.5rem' }}>
-                  <label style={sLabel}>Nama paket</label>
-                  <input
-                    type="text" placeholder="Contoh: Paket Kelas 10 Semester Ganjil"
-                    value={formNama} onChange={e => setFormNama(e.target.value)}
-                    style={sInput}
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '0.5rem' }}>
+                  <div>
+                    <label style={sLabel}>Nama paket</label>
+                    <input
+                      type="text" placeholder="Contoh: Paket Kelas 10 Semester Ganjil"
+                      value={formNama} onChange={e => setFormNama(e.target.value)}
+                      style={sInput}
+                    />
+                  </div>
+                  <div>
+                    <label style={sLabel}>Tentukan jatuh tempo</label>
+                    <input
+                      type="date"
+                      value={formJatuhTempo} onChange={e => setFormJatuhTempo(e.target.value)}
+                      style={sInput}
+                    />
+                  </div>
                 </div>
 
                 <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#6F788A', margin: '0 0 1.25rem', display: 'flex', alignItems: 'flex-start', gap: '0.3rem' }}>
@@ -546,7 +575,9 @@ export default function PaketPerKelasPage() {
             <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
               Tidak ada paket yang sesuai pencarian.
             </div>
-          ) : filtered.map((p, i) => {
+          ) : (
+          <div style={{ maxHeight: filtered.length > 2 ? 580 : 'none', overflowY: filtered.length > 2 ? 'auto' : 'visible', paddingRight: filtered.length > 2 ? '0.35rem' : 0, paddingLeft: filtered.length > 2 ? 12 : 0, marginLeft: filtered.length > 2 ? -12 : 0, paddingBottom: filtered.length > 2 ? 4 : 0 }}>
+          {filtered.map((p, i) => {
             const kelasText    = p.kelas_list.map(k => k.nama).join(', ')
             const siswaTotal   = p.kelas_list.reduce((s, k) => s + k.siswa_count, 0)
             const row1Komp     = p.komponen_list.slice(0, 3)
@@ -622,6 +653,8 @@ export default function PaketPerKelasPage() {
               </div>
             )
           })}
+          </div>
+          )}
         </div>
       )}
 
@@ -717,6 +750,43 @@ export default function PaketPerKelasPage() {
               <button onClick={handleDelete} disabled={deleteLoading}
                 style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: 'none', background: '#EF4444', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: deleteLoading ? 'not-allowed' : 'pointer' }}>
                 {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Popup kelas belum lengkap ─────────────────────────────────────────── */}
+      {showKelasKurangPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <AlertTriangle size={28} color="#D97706" />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
+              Kelas Belum Lengkap
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 0.5rem', lineHeight: 1.6 }}>
+              Semua jenjang kelas belum dibuat. Silahkan buat terlebih dahulu sebelum menambah paket.
+            </p>
+            <p style={{ fontSize: '0.82rem', color: '#D97706', fontWeight: 600, background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 8, padding: '0.5rem 0.75rem', margin: '0 0 1.5rem' }}>
+              Jenjang yang belum punya kelas:{' '}
+              <strong>
+                {jenjangOptions.filter(j => !kelasList.some(k => k.jenjang === j)).map(j => `Kelas ${j}`).join(', ')}
+              </strong>
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => setShowKelasKurangPopup(false)}
+                style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}
+              >
+                Nanti
+              </button>
+              <button
+                onClick={() => { setShowKelasKurangPopup(false); router.push('/siswa/manajemen-kelas') }}
+                style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}
+              >
+                Buat Kelas Sekarang
               </button>
             </div>
           </div>

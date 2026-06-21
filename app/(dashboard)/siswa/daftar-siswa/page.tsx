@@ -680,7 +680,7 @@ export default function DaftarSiswaPage() {
             <Upload size={14} /> Import Excel
           </button>
           <button onClick={openModal} style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}>
-            <Plus size={14} /> + Tambah Siswa
+            <Plus size={14} />  Tambah Siswa
           </button>
         </div>
       </div>
