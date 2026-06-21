@@ -48,11 +48,19 @@ export default function DaftarPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('sekolah_id')
+        .select('email, nama, jabatan, sekolah, sekolah_id, avatar, role')
         .eq('id', session.user.id)
         .maybeSingle()
 
       if (profile?.sekolah_id) {
+        localStorage.setItem('siku_auth', JSON.stringify({
+          email:   profile.email   ?? session.user.email ?? '',
+          nama:    profile.nama    ?? session.user.email ?? '',
+          jabatan: profile.jabatan ?? 'Admin',
+          sekolah: profile.sekolah ?? '',
+          avatar:  profile.avatar  ?? '',
+          role:    profile.role    ?? 'admin',
+        }))
         router.replace('/dashboard')
       }
       // Onboarding belum selesai — form tetap kosong, user isi sendiri

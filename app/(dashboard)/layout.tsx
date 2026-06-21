@@ -330,7 +330,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     load()
   }, [pathname])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     localStorage.removeItem('siku_auth')
     localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
@@ -464,7 +465,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
               {allDone ? (
                 <Link href="/tagihan/beasiswa" className={`sidebar-sub-item${pathname === '/tagihan/beasiswa' ? ' active' : ''}`}>
-                  <Gift size={13} /><span>Beasiswa</span>
+                  <Gift size={13} /><span>Beasiswa & Potongan</span>
                 </Link>
               ) : (
                 <div className="sidebar-sub-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>

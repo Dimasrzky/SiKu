@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface KomponenItem   { id: string; nama: string }
+interface KomponenItem   { id: string; nama: string; warna: string }
 interface KelasItem      { id: string; nama: string; jenjang: string; warna: string | null }
 interface SiswaResult    { id: string; nama: string; kelas_id: string; kelas_nama: string; kelas_jenjang: string; kelas_warna: string | null }
 
@@ -24,6 +24,14 @@ interface PotonganRow {
   id: string; beasiswa_id: string; siswa_id: string
   siswa_nama: string; inisial: string; kelas_nama: string; kelas_warna: string | null
   alasan: string | null; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null
+  berlaku_sampai: string | null; status: 'aktif' | 'segera_berakhir' | 'berakhir'
+}
+
+interface PenerimaRow {
+  id: string; beasiswa_id: string; program_nama: string
+  siswa_id: string; siswa_nama: string; inisial: string
+  kelas_nama: string; kelas_warna: string | null
+  jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null
   berlaku_sampai: string | null; status: 'aktif' | 'segera_berakhir' | 'berakhir'
 }
 
@@ -80,6 +88,29 @@ export default function BeasiswaPage() {
   // Detail modals
   const [detailProg,   setDetailProg]   = useState<ProgramItem | null>(null)
   const [detailPot,    setDetailPot]    = useState<PotonganRow | null>(null)
+
+  // Penerima aksi states
+  const [detailPenerima,       setDetailPenerima]       = useState<PenerimaRow | null>(null)
+  const [editPenerima,         setEditPenerima]         = useState<PenerimaRow | null>(null)
+  const [editPenerimaTgl,      setEditPenerimaTgl]      = useState('')
+  const [editPenerimaSaving,   setEditPenerimaSaving]   = useState(false)
+  const [deletePenerima,       setDeletePenerima]       = useState<PenerimaRow | null>(null)
+  const [deletePenerimaLoading, setDeletePenerimaLoading] = useState(false)
+
+  // Potongan aksi states
+  const [editPot,        setEditPot]        = useState<PotonganRow | null>(null)
+  const [editPotAlasan,  setEditPotAlasan]  = useState('')
+  const [editPotJenis,   setEditPotJenis]   = useState<'persen' | 'nominal'>('persen')
+  const [editPotBesaran, setEditPotBesaran] = useState('')
+  const [editPotTgl,     setEditPotTgl]     = useState('')
+  const [editPotSaving,  setEditPotSaving]  = useState(false)
+  const [deletePot,      setDeletePot]      = useState<PotonganRow | null>(null)
+  const [deletePotLoading, setDeletePotLoading] = useState(false)
+
+  // Penerima beasiswa states
+  const [penerimaList,   setPenerimaList]   = useState<PenerimaRow[]>([])
+  const [penerimaFilter, setPenerimaFilter] = useState('Semua')
+  const [penerimaSearch, setPenerimaSearch] = useState('')
 
   // Edit/delete program states
   const [editProg,     setEditProg]     = useState<ProgramItem | null>(null)
@@ -167,6 +198,39 @@ export default function BeasiswaPage() {
     }))
   }, [])
 
+  const loadPenerima = useCallback(async (sid: string) => {
+    const { data: programs } = await supabase
+      .from('beasiswa')
+      .select('id, nama, jenis_potongan, persen, nominal')
+      .eq('sekolah_id', sid).eq('jenis', 'beasiswa').limit(100)
+
+    if (!programs || programs.length === 0) { setPenerimaList([]); return }
+
+    type ProgRaw = { id: string; nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
+    const progMap = new Map((programs as ProgRaw[]).map(p => [p.id, p]))
+    const progIds = (programs as ProgRaw[]).map(p => p.id)
+
+    const { data: rows } = await supabase
+      .from('beasiswa_siswa')
+      .select('id, beasiswa_id, berlaku_sampai, siswa:siswa_id(id, nama, kelas:kelas_id(nama, warna))')
+      .in('beasiswa_id', progIds).limit(500)
+
+    type RawRow = {
+      id: string; beasiswa_id: string; berlaku_sampai: string | null
+      siswa: { id: string; nama: string; kelas: { nama: string; warna: string | null } | null } | null
+    }
+    setPenerimaList(((rows ?? []) as RawRow[]).filter(r => r.siswa).map(r => {
+      const prog = progMap.get(r.beasiswa_id)!
+      return {
+        id: r.id, beasiswa_id: r.beasiswa_id, program_nama: prog.nama,
+        siswa_id: r.siswa!.id, siswa_nama: r.siswa!.nama, inisial: getInisial(r.siswa!.nama),
+        kelas_nama: r.siswa!.kelas?.nama ?? '—', kelas_warna: r.siswa!.kelas?.warna ?? null,
+        jenis_potongan: prog.jenis_potongan, persen: prog.persen, nominal: prog.nominal,
+        berlaku_sampai: r.berlaku_sampai, status: getStatus(r.berlaku_sampai),
+      }
+    }))
+  }, [])
+
   useEffect(() => {
     ;(async () => {
       const { data: pData } = await supabase.from('pengaturan').select('setup_steps').maybeSingle()
@@ -182,19 +246,20 @@ export default function BeasiswaPage() {
       setSekolahId(sid)
 
       const [{ data: komps }, { data: kelas }] = await Promise.all([
-        supabase.from('komponen_tagihan').select('id, nama').eq('sekolah_id', sid).order('nama').limit(100),
+        supabase.from('komponen_tagihan').select('id, nama, kelas_warna').eq('sekolah_id', sid).order('nama').limit(100),
         supabase.from('kelas').select('id, nama, jenjang, warna').eq('sekolah_id', sid).order('jenjang').limit(100),
       ])
-      const kompArr = (komps ?? []) as KomponenItem[]
+      const kompArr = ((komps ?? []) as Array<{ id: string; nama: string; kelas_warna: string | null }>)
+        .map(k => ({ id: k.id, nama: k.nama, warna: k.kelas_warna ?? '#1A2C4E' }))
       setKomponenList(kompArr)
       setFKomponen(new Set(kompArr.map(k => k.id)))
       setPtKomponen(new Set(kompArr.map(k => k.id)))
       setKelasList((kelas ?? []) as KelasItem[])
 
-      await Promise.all([loadProgram(sid), loadPotongan(sid)])
+      await Promise.all([loadProgram(sid), loadPotongan(sid), loadPenerima(sid)])
       setLoading(false)
     })()
-  }, [router, loadProgram, loadPotongan])
+  }, [router, loadProgram, loadPotongan, loadPenerima])
 
   // ── Search siswa ──────────────────────────────────────────────────────────
 
@@ -236,7 +301,7 @@ export default function BeasiswaPage() {
       if (error || !prog) throw error
       if (fKomponen.size > 0)
         await supabase.from('beasiswa_komponen').insert([...fKomponen].map(kid => ({ beasiswa_id: prog.id, komponen_id: kid })))
-      await loadProgram(sekolahId)
+      await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
       closeForm()
     } finally { setFormSaving(false) }
   }
@@ -281,6 +346,71 @@ export default function BeasiswaPage() {
     } finally { setDeleteLoading(false) }
   }
 
+  // ── Penerima aksi handlers ───────────────────────────────────────────────
+
+  const openEditPenerima = (r: PenerimaRow) => {
+    setEditPenerimaTgl(r.berlaku_sampai ?? '')
+    setEditPenerima(r)
+  }
+
+  const saveEditPenerima = async () => {
+    if (!editPenerima) return
+    setEditPenerimaSaving(true)
+    try {
+      await supabase.from('beasiswa_siswa').update({ berlaku_sampai: editPenerimaTgl || null }).eq('id', editPenerima.id)
+      await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
+      setEditPenerima(null)
+    } finally { setEditPenerimaSaving(false) }
+  }
+
+  const confirmDeletePenerima = async () => {
+    if (!deletePenerima) return
+    setDeletePenerimaLoading(true)
+    try {
+      await supabase.from('beasiswa_siswa').delete().eq('id', deletePenerima.id)
+      await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
+      setDeletePenerima(null)
+    } finally { setDeletePenerimaLoading(false) }
+  }
+
+  // ── Potongan aksi handlers ────────────────────────────────────────────────
+
+  const openEditPot = (r: PotonganRow) => {
+    setEditPotAlasan(r.alasan ?? '')
+    setEditPotJenis(r.jenis_potongan)
+    setEditPotBesaran(r.jenis_potongan === 'persen' ? String(r.persen ?? 0) : String(r.nominal ?? 0))
+    setEditPotTgl(r.berlaku_sampai ?? '')
+    setEditPot(r)
+  }
+
+  const saveEditPot = async () => {
+    if (!editPot) return
+    setEditPotSaving(true)
+    try {
+      await supabase.from('beasiswa').update({
+        keterangan: editPotAlasan.trim() || null,
+        jenis_potongan: editPotJenis,
+        persen: editPotJenis === 'persen' ? Number(editPotBesaran) : null,
+        nominal: editPotJenis === 'nominal' ? Number(editPotBesaran) : null,
+      }).eq('id', editPot.beasiswa_id)
+      await supabase.from('beasiswa_siswa').update({ berlaku_sampai: editPotTgl || null }).eq('id', editPot.id)
+      await loadPotongan(sekolahId)
+      setEditPot(null)
+    } finally { setEditPotSaving(false) }
+  }
+
+  const confirmDeletePot = async () => {
+    if (!deletePot) return
+    setDeletePotLoading(true)
+    try {
+      await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', deletePot.beasiswa_id)
+      await supabase.from('beasiswa_siswa').delete().eq('id', deletePot.id)
+      await supabase.from('beasiswa').delete().eq('id', deletePot.beasiswa_id)
+      await loadPotongan(sekolahId)
+      setDeletePot(null)
+    } finally { setDeletePotLoading(false) }
+  }
+
   // ── Assign handlers ───────────────────────────────────────────────────────
 
   const uniqueJenjang = [...new Set(kelasList.map(k => k.jenjang).filter(Boolean))]
@@ -310,7 +440,7 @@ export default function BeasiswaPage() {
         assignRows.map(r => ({ beasiswa_id: assignProg.id, siswa_id: r.siswa_id, berlaku_sampai: r.berlaku_sampai || null })),
         { onConflict: 'beasiswa_id,siswa_id' }
       )
-      await loadProgram(sekolahId)
+      await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
       setAssignProg(null)
     } finally { setAssignSaving(false) }
   }
@@ -366,6 +496,11 @@ export default function BeasiswaPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  const filteredPenerima = penerimaList.filter(r => {
+    const fProg = penerimaFilter === 'Semua' || r.program_nama === penerimaFilter
+    return fProg && (!penerimaSearch || r.siswa_nama.toLowerCase().includes(penerimaSearch.toLowerCase()))
+  })
+
   const filteredPot = potonganList.filter(r => {
     const fs = ptFilter === 'Semua' || (ptFilter === 'Aktif' && r.status === 'aktif') || (ptFilter === 'Segera berakhir' && r.status === 'segera_berakhir') || (ptFilter === 'Berakhir' && r.status === 'berakhir')
     return fs && (!ptSearchQ || r.siswa_nama.toLowerCase().includes(ptSearchQ.toLowerCase()))
@@ -388,7 +523,7 @@ export default function BeasiswaPage() {
           <Award size={28} color="#fff" />
         </div>
         <div>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>Beasiswa</h1>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>Beasiswa & Potongan</h1>
           <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>Kelola program beasiswa untuk siswa</p>
         </div>
       </div>
@@ -505,6 +640,109 @@ export default function BeasiswaPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Card: Penerima Beasiswa ─────────────────────────────── */}
+          {penerimaList.length > 0 && (
+            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.08)', overflow: 'hidden', marginTop: '1.5rem' }}>
+              {/* Card header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ width: 38, height: 38, background: '#1A2C4E', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Users size={18} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>Penerima Beasiswa</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748B' }}>{penerimaList.length} siswa terdaftar di semua program</div>
+                  </div>
+                </div>
+              </div>
+              {/* Filter + Search */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.5rem' }}>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={penerimaFilter}
+                    onChange={e => setPenerimaFilter(e.target.value)}
+                    style={{ appearance: 'none', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.45rem 2rem 0.45rem 0.9rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1A2C4E' }}
+                  >
+                    <option value="Semua">Semua</option>
+                    {programList.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)}
+                  </select>
+                  <ChevronDown size={13} style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B' }} />
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                  <input
+                    value={penerimaSearch}
+                    onChange={e => setPenerimaSearch(e.target.value)}
+                    placeholder="Cari nama siswa"
+                    style={{ ...sInp, paddingLeft: '2.2rem', width: 220, background: '#F8FAFC' }}
+                  />
+                </div>
+              </div>
+              {/* Table */}
+              <div style={{ padding: '0 1rem 1rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', borderRadius: 10, overflow: 'hidden' }}>
+                  <thead>
+                    <tr style={{ background: '#1A2C4E', color: '#fff' }}>
+                      {['Siswa', 'Potongan', 'Kelas', 'Aksi'].map(h => (
+                        <th key={h} style={{ padding: '0.7rem 1rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPenerima.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.85rem' }}>
+                          Tidak ada penerima ditemukan
+                        </td>
+                      </tr>
+                    ) : filteredPenerima.map((r, i) => (
+                      <tr key={r.id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
+                        {/* Kolom Siswa */}
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: r.kelas_warna ?? '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', color: '#fff', flexShrink: 0 }}>
+                              {r.inisial}
+                            </div>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 600, color: '#1A2C4E' }}>{r.siswa_nama}</span>
+                                {r.status === 'aktif'           && <span style={{ background: '#DCFCE7', color: '#15803D', fontSize: '0.65rem', fontWeight: 700, padding: '1px 7px', borderRadius: 20 }}>Aktif</span>}
+                                {r.status === 'segera_berakhir' && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: '0.65rem', fontWeight: 700, padding: '1px 7px', borderRadius: 20 }}>⏱ {getDays(r.berlaku_sampai!)} hari lagi</span>}
+                                {r.status === 'berakhir'        && <span style={{ background: '#FEE2E2', color: '#DC2626', fontSize: '0.65rem', fontWeight: 700, padding: '1px 7px', borderRadius: 20 }}>Berakhir</span>}
+                              </div>
+                              <div style={{ fontSize: '0.73rem', color: '#94A3B8' }}>{r.program_nama}</div>
+                            </div>
+                          </div>
+                        </td>
+                        {/* Kolom Potongan */}
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div style={{ fontWeight: 700, color: '#1A2C4E' }}>
+                            {r.jenis_potongan === 'persen' ? `${r.persen ?? 0}%` : fRp(r.nominal ?? 0)}
+                          </div>
+                          {r.berlaku_sampai && <div style={{ fontSize: '0.73rem', color: '#94A3B8' }}>{fTgl(r.berlaku_sampai)}</div>}
+                        </td>
+                        {/* Kolom Kelas */}
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#fff', padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 700 }}>
+                            {r.kelas_nama}
+                          </span>
+                        </td>
+                        {/* Kolom Aksi */}
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <button onClick={() => setDetailPenerima(r)} style={sIcon}><Eye size={13} /></button>
+                            <button onClick={() => openEditPenerima(r)} style={sIcon}><Pencil size={13} /></button>
+                            <button onClick={() => setDeletePenerima(r)} style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -666,8 +904,8 @@ export default function BeasiswaPage() {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
                           <button onClick={() => setDetailPot(r)} style={sIcon}><Eye size={13} /></button>
-                          <button style={sIcon}><Pencil size={13} /></button>
-                          <button style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
+                          <button onClick={() => openEditPot(r)} style={sIcon}><Pencil size={13} /></button>
+                          <button onClick={() => setDeletePot(r)} style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
                         </div>
                       </td>
                     </tr>
@@ -855,6 +1093,138 @@ export default function BeasiswaPage() {
           </div>
         </Modal>
       )}
+
+      {/* ══ MODAL: DETAIL PENERIMA ══════════════════════════════════════ */}
+      {detailPenerima && (
+        <Modal onClose={() => setDetailPenerima(null)} maxWidth={420}>
+          <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 42, height: 42, borderRadius: '50%', background: detailPenerima.kelas_warna ?? '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>{detailPenerima.inisial}</div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#1A2C4E' }}>{detailPenerima.siswa_nama}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748B' }}>{detailPenerima.kelas_nama}</div>
+                </div>
+              </div>
+              <button onClick={() => setDetailPenerima(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+            {[
+              { label: 'Program', val: detailPenerima.program_nama },
+              { label: 'Potongan', val: detailPenerima.jenis_potongan === 'persen' ? `${detailPenerima.persen ?? 0}%` : fRp(detailPenerima.nominal ?? 0) },
+              { label: 'Berlaku sampai', val: detailPenerima.berlaku_sampai ? fTgl(detailPenerima.berlaku_sampai) : 'Tidak ada batas' },
+              { label: 'Status', val: detailPenerima.status === 'aktif' ? 'Aktif' : detailPenerima.status === 'segera_berakhir' ? 'Segera berakhir' : 'Berakhir' },
+            ].map(item => (
+              <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: '0.83rem', color: '#64748B' }}>{item.label}</span>
+                <span style={{ fontSize: '0.83rem', fontWeight: 600, color: '#1A2C4E' }}>{item.val}</span>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: EDIT PENERIMA ════════════════════════════════════════ */}
+      {editPenerima && (
+        <Modal onClose={() => setEditPenerima(null)} maxWidth={420}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Edit Penerima</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: 2 }}>{editPenerima.siswa_nama} · {editPenerima.program_nama}</div>
+              </div>
+              <button onClick={() => setEditPenerima(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+          </div>
+          <div style={{ padding: '1.25rem 1.5rem' }}>
+            <label style={sLbl}>Berlaku sampai</label>
+            <input type="date" value={editPenerimaTgl} onChange={e => setEditPenerimaTgl(e.target.value)} style={sInp} />
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>Kosongkan jika tidak ada batas waktu</div>
+          </div>
+          <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button onClick={() => setEditPenerima(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+            <button onClick={saveEditPenerima} disabled={editPenerimaSaving} style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: editPenerimaSaving ? 0.7 : 1 }}>
+              {editPenerimaSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: HAPUS PENERIMA ═══════════════════════════════════════ */}
+      {deletePenerima && (
+        <Modal onClose={() => setDeletePenerima(null)} maxWidth={420}>
+          <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#DC2626' }}>Hapus Penerima Beasiswa</div>
+              <button onClick={() => setDeletePenerima(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#64748B', marginBottom: '1.5rem', lineHeight: 1.7 }}>
+              Yakin ingin menghapus <strong style={{ color: '#1A2C4E' }}>{deletePenerima.siswa_nama}</strong> dari program <strong style={{ color: '#1A2C4E' }}>{deletePenerima.program_nama}</strong>?
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button onClick={() => setDeletePenerima(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+              <button onClick={confirmDeletePenerima} disabled={deletePenerimaLoading} style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: deletePenerimaLoading ? 0.7 : 1 }}>
+                {deletePenerimaLoading ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: EDIT POTONGAN ════════════════════════════════════════ */}
+      {editPot && (
+        <Modal onClose={() => setEditPot(null)} maxWidth={480}>
+          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Edit Potongan Personal</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: 2 }}>{editPot.siswa_nama} · {editPot.kelas_nama}</div>
+              </div>
+              <button onClick={() => setEditPot(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={sLbl}>Alasan potongan</label>
+              <input value={editPotAlasan} onChange={e => setEditPotAlasan(e.target.value)} placeholder="Contoh: Orang tua meninggal" style={sInp} />
+            </div>
+            <div style={sDivider} />
+            <JenisRow jenis={editPotJenis} besaran={editPotBesaran} onJenis={setEditPotJenis} onBesaran={setEditPotBesaran} />
+            <div style={{ marginTop: '1.25rem' }}>
+              <label style={sLbl}>Berlaku sampai</label>
+              <input type="date" value={editPotTgl} onChange={e => setEditPotTgl(e.target.value)} style={sInp} />
+              <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>Kosongkan jika tidak ada batas waktu</div>
+            </div>
+          </div>
+          <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button onClick={() => setEditPot(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+            <button onClick={saveEditPot} disabled={editPotSaving} style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: editPotSaving ? 0.7 : 1 }}>
+              {editPotSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: HAPUS POTONGAN ═══════════════════════════════════════ */}
+      {deletePot && (
+        <Modal onClose={() => setDeletePot(null)} maxWidth={420}>
+          <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#DC2626' }}>Hapus Potongan Personal</div>
+              <button onClick={() => setDeletePot(null)} style={sBtnX}><X size={20} /></button>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#64748B', marginBottom: '1.5rem', lineHeight: 1.7 }}>
+              Yakin ingin menghapus potongan personal untuk <strong style={{ color: '#1A2C4E' }}>{deletePot.siswa_nama}</strong>?
+              {deletePot.alasan && <> Alasan: <em>{deletePot.alasan}</em>.</>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button onClick={() => setDeletePot(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
+              <button onClick={confirmDeletePot} disabled={deletePotLoading} style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: deletePotLoading ? 0.7 : 1 }}>
+                {deletePotLoading ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -886,7 +1256,7 @@ function KomponenSelector({ label, list, selected, onChange }: { label: string; 
           const sel = selected.has(k.id)
           return (
             <button key={k.id} onClick={() => { const n = new Set(selected); if (sel) n.delete(k.id); else n.add(k.id); onChange(n) }}
-              style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', border: sel ? 'none' : '1.5px solid #CBD5E1', background: sel ? '#22C55E' : '#fff', color: sel ? '#fff' : '#475569', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+              style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', border: sel ? 'none' : '1.5px solid #CBD5E1', background: sel ? k.warna : '#fff', color: sel ? '#fff' : '#475569', fontFamily: 'inherit', transition: 'all 0.15s' }}>
               {k.nama}
             </button>
           )

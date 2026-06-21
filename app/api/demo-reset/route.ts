@@ -14,6 +14,7 @@ const DEMO_TABLES = [
   'pembayaran',
   'rekening',
   'tagihan',
+  'siswa_komponen_individu',
   'siswa',
   'kelas',
   'tahun_ajaran',
@@ -45,6 +46,21 @@ async function deleteTagihanItemDemo() {
     const ids = tagihans.map((t: { id: string }) => t.id)
     await supabaseAdmin.from('tagihan_item').delete().in('tagihan_id', ids)
   }
+}
+
+// beasiswa_siswa & beasiswa_komponen tidak punya sekolah_id — hapus via beasiswa_id
+async function deleteBeasiswaDemo() {
+  const { data: beasiswas } = await supabaseAdmin
+    .from('beasiswa')
+    .select('id')
+    .eq('sekolah_id', DEMO_SEKOLAH_ID)
+
+  if (beasiswas && beasiswas.length > 0) {
+    const ids = beasiswas.map((b: { id: string }) => b.id)
+    await supabaseAdmin.from('beasiswa_siswa').delete().in('beasiswa_id', ids)
+    await supabaseAdmin.from('beasiswa_komponen').delete().in('beasiswa_id', ids)
+  }
+  await supabaseAdmin.from('beasiswa').delete().eq('sekolah_id', DEMO_SEKOLAH_ID)
 }
 
 // komponen_tagihan_potongan & komponen_tagihan_item tidak punya sekolah_id
@@ -95,6 +111,7 @@ export async function POST(req: NextRequest) {
   // Hapus child tables yang tidak punya sekolah_id lebih dulu
   await deleteTagihanItemDemo()
   await deletePaketDemo()
+  await deleteBeasiswaDemo()
   await deleteKomponenTagihanDemo()
 
   // Hapus tabel dengan sekolah_id
