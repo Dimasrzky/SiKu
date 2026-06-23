@@ -63,6 +63,9 @@ export default function DaftarSiswaPage() {
   const [loading,   setLoading]   = useState(true)
   const [setupDone, setSetupDone] = useState(false)
 
+  // Sekolah
+  const [sekolahId, setSekolahId] = useState('')
+
   // Data
   const [kelasList, setKelasList] = useState<KelasOption[]>([])
   const [siswaList, setSiswaList] = useState<SiswaRow[]>([])
@@ -120,20 +123,28 @@ export default function DaftarSiswaPage() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
-  const loadSiswa = async () => {
+  const loadSiswa = async (sid: string) => {
     const { data } = await supabase
       .from('siswa')
       .select('id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang), nama_wali, no_wa, status')
+      .eq('sekolah_id', sid)
       .order('nama')
       .limit(500)
     setSiswaList((data ?? []) as unknown as SiswaRow[])
   }
 
-  const loadBeasiswa = async () => {
-    const [{ data: programs }, { data: assignments }] = await Promise.all([
-      supabase.from('beasiswa').select('id, nama, jenis, persen, nominal').limit(100),
-      supabase.from('beasiswa_siswa').select('siswa_id, beasiswa_id').limit(1000),
-    ])
+  const loadBeasiswa = async (sid: string) => {
+    const { data: programs } = await supabase
+      .from('beasiswa')
+      .select('id, nama, jenis, persen, nominal')
+      .eq('sekolah_id', sid)
+      .limit(100)
+
+    const progIds = (programs ?? []).map((p: { id: string }) => p.id)
+    const { data: assignments } = progIds.length > 0
+      ? await supabase.from('beasiswa_siswa').select('siswa_id, beasiswa_id').in('beasiswa_id', progIds).limit(1000)
+      : { data: [] }
+
     type ProgRaw = { id: string; nama: string; jenis: string; persen: number | null; nominal: number | null }
     const progMap = new Map<string, ProgRaw>(((programs ?? []) as ProgRaw[]).map(p => [p.id, p]))
     const countMap = new Map<string, number>()
@@ -152,9 +163,15 @@ export default function DaftarSiswaPage() {
 
   useEffect(() => {
     ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: prof } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
+      const sid = (prof?.sekolah_id as string) ?? ''
+      setSekolahId(sid)
+
       const [{ data: pData }, { data: kData }] = await Promise.all([
         supabase.from('pengaturan').select('setup_steps').maybeSingle(),
-        supabase.from('kelas').select('id, nama, warna, jenjang').order('nama').limit(100),
+        supabase.from('kelas').select('id, nama, warna, jenjang').eq('sekolah_id', sid).order('nama').limit(100),
       ])
 
       const steps = (pData?.setup_steps ?? {}) as Record<string, boolean>
@@ -168,7 +185,7 @@ export default function DaftarSiswaPage() {
       setSetupDone(done)
       setKelasList((kData ?? []) as KelasOption[])
 
-      if (done) await Promise.all([loadSiswa(), loadBeasiswa()])
+      if (done) await Promise.all([loadSiswa(sid), loadBeasiswa(sid)])
 
       setLoading(false)
     })()
@@ -181,7 +198,7 @@ export default function DaftarSiswaPage() {
     setDeleteLoading(true)
     try {
       await supabase.from('siswa').delete().eq('id', deleteSiswa.id)
-      await Promise.all([loadSiswa(), loadBeasiswa()])
+      await Promise.all([loadSiswa(sekolahId), loadBeasiswa(sekolahId)])
       setDeleteSiswa(null)
     } finally { setDeleteLoading(false) }
   }
@@ -308,7 +325,7 @@ export default function DaftarSiswaPage() {
     }
 
     setPreviewRows(null)
-    await loadSiswa()
+    await loadSiswa(sekolahId)
     setImporting(false)
   }
 
@@ -349,7 +366,7 @@ export default function DaftarSiswaPage() {
       setSetupDone(true)
     }
 
-    await loadSiswa()
+    await loadSiswa(sekolahId)
     setMSaving(false)
     setShowModal(false)
     setSavedInSetupMode(wasSetupMode)
@@ -393,7 +410,7 @@ export default function DaftarSiswaPage() {
 
     if (error) { setEditError(error.message); setEditSaving(false); return }
 
-    await loadSiswa()
+    await loadSiswa(sekolahId)
     setEditSiswa(null)
     setEditSaving(false)
   }
@@ -1154,7 +1171,7 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
     if (nisTimer.current) clearTimeout(nisTimer.current)
     if (!val.trim()) return
     nisTimer.current = setTimeout(async () => {
-      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).maybeSingle()
+      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).eq('sekolah_id', sekolahId).maybeSingle()
       if (data) setMNisError('NIS sudah digunakan')
     }, 400)
   }

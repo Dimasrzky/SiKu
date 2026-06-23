@@ -109,11 +109,17 @@ export default function KelasPage() {
 
   useEffect(() => {
     const load = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: prof } = user
+        ? await supabase.from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
+        : { data: null }
+      const sid = (prof?.sekolah_id as string) ?? ''
+
       const [{ data: pData }, kResult, { data: taData }, { data: siswaData }] = await Promise.all([
         supabase.from('pengaturan').select('jenjang_sekolah, setup_steps').maybeSingle(),
-        supabase.from('kelas').select('id, nama, jenjang, warna, tahun_ajaran, semester, wali_kelas').order('jenjang'),
+        supabase.from('kelas').select('id, nama, jenjang, warna, tahun_ajaran, semester, wali_kelas').eq('sekolah_id', sid).order('jenjang'),
         supabase.from('tahun_ajaran').select('nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai').eq('is_aktif', true).maybeSingle(),
-        supabase.from('siswa').select('kelas_id').limit(2000),
+        supabase.from('siswa').select('kelas_id').eq('sekolah_id', sid).limit(2000),
       ])
 
       const peng = pData as { jenjang_sekolah?: string; setup_steps?: Record<string, unknown> } | null
@@ -136,7 +142,7 @@ export default function KelasPage() {
       if (!kResult.error && kResult.data) {
         kRows = kResult.data as KelasRow[]
       } else {
-        const { data: kBase } = await supabase.from('kelas').select('id, nama, jenjang, warna, tahun_ajaran, semester').order('jenjang')
+        const { data: kBase } = await supabase.from('kelas').select('id, nama, jenjang, warna, tahun_ajaran, semester').eq('sekolah_id', sid).order('jenjang')
         kRows = (kBase ?? []) as KelasRow[]
       }
 
