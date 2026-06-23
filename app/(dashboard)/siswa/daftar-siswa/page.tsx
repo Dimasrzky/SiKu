@@ -13,6 +13,8 @@ import * as XLSX from 'xlsx'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
+const SekolahId = ''
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
@@ -1171,7 +1173,7 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
     if (nisTimer.current) clearTimeout(nisTimer.current)
     if (!val.trim()) return
     nisTimer.current = setTimeout(async () => {
-      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).eq('sekolah_id', sekolahId).maybeSingle()
+      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).eq('sekolah_id', SekolahId).maybeSingle()
       if (data) setMNisError('NIS sudah digunakan')
     }, 400)
   }
