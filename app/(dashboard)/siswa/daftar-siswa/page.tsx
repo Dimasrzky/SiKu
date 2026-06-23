@@ -19,7 +19,6 @@ const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', '
 const THIS_STEP_INDEX = 4
 
 const TEMPLATE_HEADERS = ['Nama Lengkap', 'NIS', 'Nama Kelas', 'Nama Orang Tua', 'No WhatsApp']
-const TEMPLATE_EXAMPLE = ['Budi Santoso', '2024001', 'VII-A', 'Santi Dewi', '628123456789']
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -202,9 +201,15 @@ export default function DaftarSiswaPage() {
 
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, TEMPLATE_EXAMPLE])
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS])
     ws['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 25 }, { wch: 20 }]
     XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa')
+
+    const kelasRows: (string | number)[][] = [['Nama Kelas (gunakan persis seperti ini)'], ...kelasList.map(k => [k.nama])]
+    const wsKelas = XLSX.utils.aoa_to_sheet(kelasRows)
+    wsKelas['!cols'] = [{ wch: 35 }]
+    XLSX.utils.book_append_sheet(wb, wsKelas, 'Daftar Kelas')
+
     XLSX.writeFile(wb, 'template-import-siswa.xlsx')
   }
 
@@ -220,7 +225,13 @@ export default function DaftarSiswaPage() {
         const ws    = wb.Sheets[wb.SheetNames[0]]
         const rows  = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
 
-        const kelasMap = new Map(kelasList.map(k => [k.nama.toUpperCase(), k.id]))
+        const kelasMap = new Map<string, string>()
+        kelasList.forEach(k => {
+          const upper = k.nama.toUpperCase()
+          kelasMap.set(upper, k.id)
+          // juga petakan versi tanpa dash/spasi, misal "1-A" → "1A"
+          kelasMap.set(upper.replace(/[-\s]/g, ''), k.id)
+        })
 
         const parsed: ParsedRow[] = rows.map((row, i) => {
           const nama      = String(row['Nama Lengkap'] ?? '').trim()
@@ -228,7 +239,7 @@ export default function DaftarSiswaPage() {
           const namaKelas = String(row['Nama Kelas'] ?? '').trim()
           const namaWali  = String(row['Nama Orang Tua'] ?? '').trim()
           const noWa      = String(row['No WhatsApp'] ?? '').trim()
-          const kelasId   = kelasMap.get(namaKelas.toUpperCase())
+          const kelasId   = kelasMap.get(namaKelas.toUpperCase()) ?? kelasMap.get(namaKelas.toUpperCase().replace(/[-\s]/g, ''))
 
           let error: string | undefined
           if (!nama)        error = 'Nama wajib diisi'
@@ -817,10 +828,10 @@ export default function DaftarSiswaPage() {
         </div>
 
         {/* Table */}
-        <div style={{ overflowX: 'auto', padding: '0 1.5rem 1.5rem' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', padding: '0 1.5rem 1.5rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
-              <tr style={{ background: '#1A2C4E', color: '#fff' }}>
+              <tr style={{ background: '#1A2C4E', color: '#fff', position: 'sticky', top: 0, zIndex: 1 }}>
                 {['Nama', 'NIS', 'Kelas', 'Orang tua', 'Beasiswa/potongan', 'Aksi'].map(h => (
                   <th key={h} style={{ padding: '0.75rem 1.25rem', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}

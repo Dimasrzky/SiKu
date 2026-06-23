@@ -252,7 +252,16 @@ export default function IndividuPage() {
       await supabase.from('siswa_komponen_individu').upsert(inserts, { onConflict: 'komponen_id,siswa_id' })
       await loadData(sekolahId)
       closeForm()
+      triggerRecalculate()
     } finally { setFormSaving(false) }
+  }
+
+  const triggerRecalculate = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    fetch('/api/recalculate-tagihan', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+    }).catch(() => {})
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

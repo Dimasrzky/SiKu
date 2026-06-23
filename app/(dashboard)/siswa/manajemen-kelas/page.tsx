@@ -893,21 +893,6 @@ export default function KelasPage() {
                 <input type="text" placeholder="Nama wali kelas" value={editWaliKelas} onChange={e => setEditWaliKelas(e.target.value)} style={sInput} />
               </div>
 
-              <div style={{ marginBottom: '1.75rem' }}>
-                <label style={{ ...sLabel, display: 'block', marginBottom: 10 }}>Warna kelas</label>
-                <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', background: '#fff', border: '3px solid #BABFC7', borderRadius: 13, padding: '0.5rem 0.75rem', boxShadow: '6px 6px 8px rgba(18,47,102,0.18)' }}>
-                  {WARNA_OPTIONS.map(w => (
-                    <button key={w} onClick={() => setEditWarna(w)} style={{ width: 28, height: 28, borderRadius: 8, background: w, border: 'none', cursor: 'pointer', flexShrink: 0, boxShadow: editWarna === w ? `0 0 0 2px #fff, 0 0 0 4px ${w}` : 'none', transition: 'all 0.15s' }} />
-                  ))}
-                  <label style={{ position: 'relative', width: 30, height: 30, cursor: 'pointer', flexShrink: 0 }}>
-                    <input type="color" value={editWarna} onChange={e => setEditWarna(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }} />
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: !WARNA_OPTIONS.includes(editWarna) ? editWarna : 'transparent', boxShadow: !WARNA_OPTIONS.includes(editWarna) ? `0 0 0 2px #fff, 0 0 0 4px ${editWarna}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
-                      {WARNA_OPTIONS.includes(editWarna) && <Image src="/icons/IconPipet.png" width={16} height={16} alt="Pipet" />}
-                    </div>
-                  </label>
-                </div>
-              </div>
-
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button onClick={() => setEditTarget(null)} disabled={editSaving} style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}>
                   Batal

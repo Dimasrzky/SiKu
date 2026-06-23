@@ -61,6 +61,7 @@ interface PaketItem {
   id:            string
   nama:          string
   tahun_ajaran:  string
+  jatuh_tempo:   string | null
   kelas_list:    PaketKelasData[]
   komponen_list: PaketKomponenData[]
 }
@@ -82,6 +83,7 @@ type PaketRawFull = {
   id:            string
   nama:          string
   tahun_ajaran:  string
+  jatuh_tempo:   string | null
   paket_kelas:   PaketKelasNested[]
   paket_komponen: PaketKomponenNested[]
 }
@@ -119,16 +121,27 @@ export default function PaketPerKelasPage() {
   const [deleteTarget,  setDeleteTarget]  = useState<PaketItem | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  // Edit modal
+  const [editTarget,         setEditTarget]         = useState<PaketItem | null>(null)
+  const [editNama,           setEditNama]           = useState('')
+  const [editJatuhTempo,     setEditJatuhTempo]     = useState('')
+  const [editNominalMap,     setEditNominalMap]     = useState<Record<string, number>>({})
+  const [editingKompId,      setEditingKompId]      = useState<string | null>(null)
+  const [editingKompVal,     setEditingKompVal]     = useState('')
+  const [editSaving,         setEditSaving]         = useState(false)
+  const [editError,          setEditError]          = useState('')
+
   // Popup kelas belum lengkap
-  const [jenjangOptions,       setJenjangOptions]       = useState<string[]>([])
-  const [showKelasKurangPopup, setShowKelasKurangPopup] = useState(false)
+  const [jenjangOptions,         setJenjangOptions]         = useState<string[]>([])
+  const [showKelasKurangPopup,   setShowKelasKurangPopup]   = useState(false)
+  const [showAllPaketedPopup,    setShowAllPaketedPopup]    = useState(false)
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadPaket = async (sid: string, tahun: string) => {
     const { data: paketData } = await supabase
       .from('paket')
       .select(`
-        id, nama, tahun_ajaran,
+        id, nama, tahun_ajaran, jatuh_tempo,
         paket_kelas(kelas_id, kelas:kelas_id(id, nama, jenjang, siswa(count))),
         paket_komponen(id, nominal, komponen:komponen_id(nama, kelas_warna))
       `)
@@ -141,6 +154,7 @@ export default function PaketPerKelasPage() {
         id:           p.id,
         nama:         p.nama,
         tahun_ajaran: p.tahun_ajaran,
+        jatuh_tempo:  p.jatuh_tempo ?? null,
         kelas_list:   p.paket_kelas
           .map(pk => ({
             id:          pk.kelas?.id ?? '',
@@ -250,6 +264,10 @@ export default function PaketPerKelasPage() {
       jenjangOptions.every(j => kelasList.some(k => k.jenjang === j))
     if (!allJenjangReady) { setShowKelasKurangPopup(true); return }
 
+    const allPaketed = kelasList.length > 0 &&
+      kelasList.every(k => paketList.some(p => p.kelas_list.some(pk => pk.id === k.id)))
+    if (allPaketed) { setShowAllPaketedPopup(true); return }
+
     setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
     setSelectedJenjang(''); setSelectedKelasIds([])
     setCheckedKomponenIds([]); setNominalMap({})
@@ -314,6 +332,15 @@ export default function PaketPerKelasPage() {
     await loadPaket(sekolahId, activeTahunAjaran)
     setFormSaving(false)
     closeForm()
+    triggerRecalculate()
+  }
+
+  const triggerRecalculate = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    fetch('/api/recalculate-tagihan', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+    }).catch(() => {})
   }
 
   const handleDelete = async () => {
@@ -324,6 +351,48 @@ export default function PaketPerKelasPage() {
     setPaketList(prev => prev.filter(p => p.id !== deleteTarget.id))
     setDeleteTarget(null)
     setDeleteLoading(false)
+  }
+
+  const openEdit = (p: PaketItem) => {
+    setEditTarget(p)
+    setEditNama(p.nama)
+    setEditJatuhTempo(p.jatuh_tempo ?? '')
+    const map: Record<string, number> = {}
+    p.komponen_list.forEach(kp => { map[kp.id] = kp.nominal })
+    setEditNominalMap(map)
+    setEditingKompId(null)
+    setEditError('')
+  }
+
+  const commitEditNominal = (id: string) => {
+    const val = parseInt(editingKompVal.replace(/\D/g, ''), 10)
+    setEditNominalMap(prev => ({ ...prev, [id]: isNaN(val) ? 0 : val }))
+    setEditingKompId(null)
+  }
+
+  const handleEditSimpan = async () => {
+    if (!editTarget) return
+    if (!editNama.trim()) { setEditError('Nama paket harus diisi.'); return }
+    setEditSaving(true)
+    setEditError('')
+
+    const { error: e1 } = await supabase
+      .from('paket')
+      .update({ nama: editNama.trim(), jatuh_tempo: editJatuhTempo || null })
+      .eq('id', editTarget.id)
+    if (e1) { setEditError(e1.message); setEditSaving(false); return }
+
+    const updates = editTarget.komponen_list.map(kp =>
+      supabase.from('paket_komponen')
+        .update({ nominal: editNominalMap[kp.id] ?? kp.nominal })
+        .eq('id', kp.id)
+    )
+    await Promise.all(updates)
+
+    await loadPaket(sekolahId, activeTahunAjaran)
+    setEditTarget(null)
+    setEditSaving(false)
+    triggerRecalculate()
   }
 
   if (loading) {
@@ -599,9 +668,9 @@ export default function PaketPerKelasPage() {
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '0.45rem', flexShrink: 0 }}>
-                    <button
-                      style={{ background: '#EFF6FF', border: 'none', borderRadius: 8, padding: '0.5rem', cursor: 'default', display: 'flex', alignItems: 'center', color: '#1D4ED8' }}
-                      title="Edit paket (segera hadir)">
+                    <button onClick={() => openEdit(p)}
+                      style={{ background: '#EFF6FF', border: 'none', borderRadius: 8, padding: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#1D4ED8' }}
+                      title="Edit paket">
                       <Pencil size={16} />
                     </button>
                     <button onClick={() => setDeleteTarget(p)}
@@ -756,7 +825,129 @@ export default function PaketPerKelasPage() {
         </div>
       )}
 
+      {/* ── Edit modal ───────────────────────────────────────────────────────── */}
+      {editTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.18s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', maxHeight: '90vh', overflowY: 'auto' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0 }}>Edit Paket</h3>
+              <button onClick={() => setEditTarget(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: '0.25rem', display: 'flex' }}>
+                <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>✕</span>
+              </button>
+            </div>
+
+            {editError && <div className="login-error" style={{ marginBottom: '1rem' }}>{editError}</div>}
+
+            {/* Nama + Jatuh Tempo */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={sLabel}>Nama paket</label>
+                <input
+                  type="text" value={editNama} onChange={e => setEditNama(e.target.value)}
+                  style={sInput}
+                />
+              </div>
+              <div>
+                <label style={sLabel}>Jatuh tempo</label>
+                <input
+                  type="date" value={editJatuhTempo} onChange={e => setEditJatuhTempo(e.target.value)}
+                  style={sInput}
+                />
+              </div>
+            </div>
+
+            {/* Info kelas */}
+            <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '0.65rem 1rem', marginBottom: '1.25rem', fontSize: '0.875rem', color: '#64748B', fontWeight: 500 }}>
+              Berlaku untuk kelas: <strong style={{ color: 'var(--navy-dark)' }}>{editTarget.kelas_list.map(k => k.nama).join(', ')}</strong>
+            </div>
+
+            <div style={{ height: 2, background: '#E2E8F0', margin: '0 0 1.25rem' }} />
+
+            {/* Komponen nominals */}
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)', marginBottom: '0.75rem' }}>Nominal Komponen</div>
+            <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', marginBottom: '1.5rem' }}>
+              {editTarget.komponen_list.map((kp, i) => {
+                const isEditingThis = editingKompId === kp.id
+                const inisial = (kp.komponen?.nama ?? '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+                return (
+                  <div key={kp.id}>
+                    {i > 0 && <div style={{ height: 1, background: '#E2E8F0' }} />}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: kp.komponen?.kelas_warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.8rem' }}>{inisial}</span>
+                      </div>
+                      <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: 'var(--navy-dark)' }}>{kp.komponen?.nama ?? '—'}</span>
+                      <div style={{ flexShrink: 0 }}>
+                        {isEditingThis ? (
+                          <input
+                            type="number"
+                            value={editingKompVal}
+                            onChange={e => setEditingKompVal(e.target.value)}
+                            onBlur={() => commitEditNominal(kp.id)}
+                            onKeyDown={e => { if (e.key === 'Enter') commitEditNominal(kp.id) }}
+                            style={{ ...sInput, width: 150, padding: '0.4rem 0.75rem', fontSize: '0.875rem', boxShadow: 'none', borderRadius: 999 }}
+                            autoFocus
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: 999, padding: '0.35rem 0.5rem 0.35rem 0.875rem', gap: '0.3rem', minWidth: 160 }}>
+                            <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: '#64748B', whiteSpace: 'nowrap' }}>
+                              {formatRupiah(editNominalMap[kp.id] ?? kp.nominal)}
+                            </span>
+                            <button
+                              onClick={() => { setEditingKompId(kp.id); setEditingKompVal(String(editNominalMap[kp.id] ?? kp.nominal)) }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem 0.35rem', color: '#94A3B8', display: 'flex', alignItems: 'center' }}>
+                              <Pencil size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button onClick={() => setEditTarget(null)} disabled={editSaving}
+                style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}>
+                Batal
+              </button>
+              <button onClick={handleEditSimpan} disabled={editSaving}
+                style={{ flex: 2, padding: '0.7rem', borderRadius: 10, border: 'none', background: editSaving ? '#D1D5DB' : '#F7DD7D', color: '#1A2C4E', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: editSaving ? 'not-allowed' : 'pointer', boxShadow: editSaving ? 'none' : '0 4px 2px rgba(18,47,102,0.25)' }}>
+                {editSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* ── Popup kelas belum lengkap ─────────────────────────────────────────── */}
+      {showAllPaketedPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <Layers size={28} color="#059669" />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
+              Semua Kelas Sudah Dipaketkan
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
+              Seluruh kelas yang ada sudah memiliki paket tagihan masing-masing. Tambah kelas baru jika ingin membuat paket tambahan.
+            </p>
+            <button
+              onClick={() => setShowAllPaketedPopup(false)}
+              style={{ width: '100%', padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}
+            >
+              Mengerti
+            </button>
+          </div>
+        </div>
+      )}
+
       {showKelasKurangPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
           <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>

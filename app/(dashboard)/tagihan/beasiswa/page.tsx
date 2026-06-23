@@ -316,21 +316,41 @@ export default function BeasiswaPage() {
     setEditProg(p)
   }
 
+  const triggerRecalculate = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    fetch('/api/recalculate-tagihan', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+    }).catch(() => {})
+  }
+
   const saveEditProg = async () => {
     if (!editProg || !editNama.trim()) return
     setEditSaving(true)
     try {
+      const newJenis   = editJenis
+      const newPersen  = editJenis === 'persen'  ? Number(editBesaran) : null
+      const newNominal = editJenis === 'nominal' ? Number(editBesaran) : null
+      const newNama    = editNama.trim()
+
       await supabase.from('beasiswa').update({
-        nama: editNama.trim(), keterangan: editKet.trim() || null,
-        jenis_potongan: editJenis,
-        persen: editJenis === 'persen' ? Number(editBesaran) : null,
-        nominal: editJenis === 'nominal' ? Number(editBesaran) : null,
+        nama: newNama, keterangan: editKet.trim() || null,
+        jenis_potongan: newJenis, persen: newPersen, nominal: newNominal,
       }).eq('id', editProg.id)
       await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', editProg.id)
       if (editKomponen.size > 0)
         await supabase.from('beasiswa_komponen').insert([...editKomponen].map(kid => ({ beasiswa_id: editProg!.id, komponen_id: kid })))
+
+      // Update penerimaList langsung tanpa refetch
+      setPenerimaList(prev => prev.map(r =>
+        r.beasiswa_id === editProg!.id
+          ? { ...r, program_nama: newNama, jenis_potongan: newJenis, persen: newPersen, nominal: newNominal }
+          : r
+      ))
+
       await loadProgram(sekolahId)
       setEditProg(null)
+      triggerRecalculate()
     } finally { setEditSaving(false) }
   }
 
@@ -343,6 +363,7 @@ export default function BeasiswaPage() {
       await supabase.from('beasiswa').delete().eq('id', deleteProg.id)
       await loadProgram(sekolahId)
       setDeleteProg(null)
+      triggerRecalculate()
     } finally { setDeleteLoading(false) }
   }
 
@@ -370,6 +391,7 @@ export default function BeasiswaPage() {
       await supabase.from('beasiswa_siswa').delete().eq('id', deletePenerima.id)
       await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
       setDeletePenerima(null)
+      triggerRecalculate()
     } finally { setDeletePenerimaLoading(false) }
   }
 
@@ -396,6 +418,7 @@ export default function BeasiswaPage() {
       await supabase.from('beasiswa_siswa').update({ berlaku_sampai: editPotTgl || null }).eq('id', editPot.id)
       await loadPotongan(sekolahId)
       setEditPot(null)
+      triggerRecalculate()
     } finally { setEditPotSaving(false) }
   }
 
@@ -408,6 +431,7 @@ export default function BeasiswaPage() {
       await supabase.from('beasiswa').delete().eq('id', deletePot.beasiswa_id)
       await loadPotongan(sekolahId)
       setDeletePot(null)
+      triggerRecalculate()
     } finally { setDeletePotLoading(false) }
   }
 
@@ -442,6 +466,7 @@ export default function BeasiswaPage() {
       )
       await Promise.all([loadProgram(sekolahId), loadPenerima(sekolahId)])
       setAssignProg(null)
+      triggerRecalculate()
     } finally { setAssignSaving(false) }
   }
 
@@ -491,6 +516,7 @@ export default function BeasiswaPage() {
       if (siswaError) throw siswaError
       await loadPotongan(sekolahId)
       closePtForm()
+      triggerRecalculate()
     } finally { setPtSaving(false) }
   }
 

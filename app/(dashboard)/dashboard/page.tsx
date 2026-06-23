@@ -54,29 +54,34 @@ function daysLeftInMonth(): number {
 
 interface AuthUser { nama: string; jabatan: string; sekolah: string }
 
-interface TagihanRow {
+interface TagihanRaw {
   id:            string
-  jenis:         string
-  bulan:         string
+  status:        'lunas' | 'belum_bayar' | 'cicilan'
+  total_nominal: number
+  bulan:         number
   tahun:         number
-  nominal:       number
-  kelas_jenjang: string | null
-  nama:          string | null
-  status:        'draft' | 'aktif' | 'selesai'
-  total_siswa:   number
-  sudah_bayar:   number
+  siswa_id:      string
+  siswa: {
+    id: string; nama: string; nis: string | null
+    kelas: { id: string; nama: string; warna: string; jenjang: string } | null
+  } | null
 }
 
-interface BeasiswaRow {
-  jenis:       'beasiswa' | 'override'
-  nominal:     number | null
-  persen:      number | null
-  jumlah_siswa: number
+interface BeasiswaProgRaw {
+  jenis_potongan: 'persen' | 'nominal'
+  persen:         number | null
+  nominal:        number | null
+  beasiswa_siswa: { siswa_id: string; berlaku_sampai: string | null }[]
 }
 
-interface TrenItem    { short: string; terkumpul: number; tunggakan: number }
+interface PaketKomposisiRaw {
+  paket_kelas:    { kelas_id: string }[]
+  paket_komponen: { nominal: number; komponen: { nama: string; kelas_warna: string | null } | null }[]
+}
+
+interface TrenItem      { short: string; terkumpul: number; tunggakan: number }
 interface KomposisiItem { nama: string; nominal: number; persen: number }
-interface KelasItem   { nama: string; lunas: number; total: number }
+interface KelasItem     { nama: string; lunas: number; total: number }
 
 interface Insight {
   id:           string
@@ -92,18 +97,10 @@ interface SiswaBayarRow {
   id:                string
   nis:               string
   nama:              string
-  kelas:             { nama: string; warna: string } | null
+  kelas:             { id: string; nama: string; warna: string; jenjang: string } | null
   tagihan_bulan_ini: number
-  status:            'lunas' | 'sebagian' | 'belum_bayar'
+  status:            'lunas' | 'belum_bayar' | 'cicilan'
   has_tunggakan:     boolean
-}
-
-interface TagihanSiswaRaw {
-  id:      string
-  status:  string
-  nominal: number | null
-  tagihan: { bulan: string; tahun: number; nominal: number } | null
-  siswa:   { id: string; nis: string | null; nama: string; kelas: { nama: string; warna: string } | null } | null
 }
 
 interface DashData {
@@ -208,318 +205,240 @@ function DonutChart({ items, total }: { items: KomposisiItem[]; total: number })
 
 // ── Data Loader ───────────────────────────────────────────────────────────────
 
-async function loadDashData(siswaTotal: number): Promise<DashData> {
-  const now       = new Date()
-  const bulanIni  = BULAN_NAMES[now.getMonth()]
-  const tahunIni  = now.getFullYear()
-  const prevDate  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const bulanLalu = BULAN_NAMES[prevDate.getMonth()]
+async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> {
+  const now      = new Date()
+  const bulanIni = now.getMonth() + 1        // 1–12
+  const tahunIni = now.getFullYear()
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const bulanLalu = prevDate.getMonth() + 1
   const tahunLalu = prevDate.getFullYear()
-  const last6     = getLast6Months()
+  const last6    = getLast6Months()
+  const today    = now.toISOString().split('T')[0]
 
   const [
     { count: kelasCount },
-    { data: taRows },
-    { data: bsRows },
+    { data: tagihanRaw },
+    { data: beasiswaRaw },
+    { data: paketRaw },
     { data: taData },
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
       .from('tagihan')
-      .select('id, jenis, bulan, tahun, nominal, kelas_jenjang, nama, status, total_siswa, sudah_bayar')
-      .neq('status', 'draft')
-      .order('tahun', { ascending: false })
-      .order('bulan')
-      .limit(500),
+      .select('id, status, total_nominal, bulan, tahun, siswa_id, siswa:siswa_id(id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang))')
+      .eq('sekolah_id', sid)
+      .limit(2000),
     supabase
       .from('beasiswa')
-      .select('jenis, nominal, persen, jumlah_siswa')
-      .limit(100),
+      .select('jenis_potongan, persen, nominal, beasiswa_siswa(siswa_id, berlaku_sampai)')
+      .eq('sekolah_id', sid)
+      .eq('jenis', 'beasiswa'),
     supabase
-      .from('tahun_ajaran')
-      .select('nama')
-      .eq('is_aktif', true)
-      .maybeSingle(),
+      .from('paket')
+      .select('paket_kelas(kelas_id), paket_komponen(nominal, komponen:komponen_id(nama, kelas_warna))')
+      .eq('sekolah_id', sid),
+    supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle(),
   ])
 
-  const rows   = (taRows  ?? []) as TagihanRow[]
-  const bsList = (bsRows  ?? []) as BeasiswaRow[]
+  const allTagihan = (tagihanRaw ?? []) as TagihanRaw[]
+  const bsProgs    = (beasiswaRaw ?? []) as BeasiswaProgRaw[]
+  const pakets     = (paketRaw ?? []) as unknown as PaketKomposisiRaw[]
 
-  const currentRows = rows.filter(t => t.bulan === bulanIni && t.tahun === tahunIni)
-  const lastRows    = rows.filter(t => t.bulan === bulanLalu && t.tahun === tahunLalu)
+  // ── Filter per bulan ───────────────────────────────────────────────────────
+  const tagihanIni  = allTagihan.filter(t => t.bulan === bulanIni  && t.tahun === tahunIni)
+  const tagihanLalu = allTagihan.filter(t => t.bulan === bulanLalu && t.tahun === tahunLalu)
 
-  // ── Tunggakan card ──────────────────────────────────────────────────────────
+  // ── Statistik bulan ini ────────────────────────────────────────────────────
+  const lunasIni        = tagihanIni.filter(t => t.status === 'lunas')
+  const totalSiswaRef   = tagihanIni.length
+  const lunasRef        = lunasIni.length
+  const siswaBelumBayar = tagihanIni.filter(t => t.status === 'belum_bayar').length
+  const terkumpulIni    = lunasIni.reduce((s, t) => s + t.total_nominal, 0)
+  const targetIni       = tagihanIni.reduce((s, t) => s + t.total_nominal, 0)
+  const belumBayarNominal = tagihanIni
+    .filter(t => t.status !== 'lunas')
+    .reduce((s, t) => s + t.total_nominal, 0)
 
-  const totalTunggakan = rows.reduce(
-    (s, t) => s + (t.total_siswa - t.sudah_bayar) * t.nominal, 0
-  )
+  // ── Statistik bulan lalu ───────────────────────────────────────────────────
+  const terkumpulLalu   = tagihanLalu.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
+  const belumBayarLalu  = tagihanLalu.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0)
 
-  const repRow       = [...currentRows].sort((a, b) => b.total_siswa - a.total_siswa)[0]
-  const totalSiswaRef = repRow?.total_siswa  ?? siswaTotal
-  const lunasRef      = repRow?.sudah_bayar   ?? 0
-  const siswaBelumBayar = totalSiswaRef - lunasRef
-
-  // Students with debt from previous months
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const oldUnpaid = rows.filter(t => {
-    const idx = BULAN_NAMES.indexOf(t.bulan)
-    if (idx < 0) return false
-    return new Date(t.tahun, idx, 1) < thisMonthStart && t.sudah_bayar < t.total_siswa
+  // ── Tunggakan (bulan-bulan sebelumnya yang belum lunas) ────────────────────
+  const tunggakanRows = allTagihan.filter(t => {
+    const isPast = t.tahun < tahunIni || (t.tahun === tahunIni && t.bulan < bulanIni)
+    return isPast && t.status !== 'lunas'
   })
-  const siswaTunggakanLama = oldUnpaid.length > 0
-    ? Math.max(...oldUnpaid.map(t => t.total_siswa - t.sudah_bayar))
-    : 0
+  const totalTunggakan    = tunggakanRows.reduce((s, t) => s + t.total_nominal, 0)
+  const tunggakanSiswaIds = new Set(tunggakanRows.map(t => t.siswa_id))
+  const siswaTunggakanLama = tunggakanSiswaIds.size
 
-  // ── Financial ───────────────────────────────────────────────────────────────
+  // ── Beasiswa ───────────────────────────────────────────────────────────────
+  const activeBsSiswa    = bsProgs.flatMap(bs =>
+    bs.beasiswa_siswa.filter(bss => !bss.berlaku_sampai || bss.berlaku_sampai >= today)
+  )
+  const penerimaBeasiswa = activeBsSiswa.length
+  const totalBeasiswaNom = bsProgs.reduce((s, bs) => {
+    if (bs.jenis_potongan !== 'nominal' || !bs.nominal) return s
+    const aktif = bs.beasiswa_siswa.filter(bss => !bss.berlaku_sampai || bss.berlaku_sampai >= today).length
+    return s + bs.nominal * aktif
+  }, 0)
 
-  const terkumpulIni   = currentRows.reduce((s, t) => s + t.sudah_bayar * t.nominal, 0)
-  const terkumpulLalu  = lastRows.reduce((s, t) => s + t.sudah_bayar * t.nominal, 0)
-  const targetIni      = currentRows.reduce((s, t) => s + t.total_siswa * t.nominal, 0)
-  const belumBayarNominal = currentRows.reduce((s, t) => s + (t.total_siswa - t.sudah_bayar) * t.nominal, 0)
-  const belumBayarLalu    = lastRows.reduce((s, t) => s + (t.total_siswa - t.sudah_bayar) * t.nominal, 0)
-
-  // ── Beasiswa ────────────────────────────────────────────────────────────────
-
-  const beasiswaOnly   = bsList.filter(b => b.jenis === 'beasiswa')
-  const totalBeasiswaNom = beasiswaOnly.reduce((s, b) => s + (b.nominal ?? 0), 0)
-  const penerimaBeasiswa = beasiswaOnly.reduce((s, b) => s + b.jumlah_siswa, 0)
-
-  // ── Tren 6 bulan ────────────────────────────────────────────────────────────
-
-  const trenData: TrenItem[] = last6.map(({ bulan, tahun, short }) => {
-    const mRows = rows.filter(t => t.bulan === bulan && t.tahun === tahun)
+  // ── Tren 6 bulan ──────────────────────────────────────────────────────────
+  const trenData: TrenItem[] = last6.map(({ short }, idx) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
+    const b = d.getMonth() + 1
+    const y = d.getFullYear()
+    const mRows = allTagihan.filter(t => t.bulan === b && t.tahun === y)
     return {
       short,
-      terkumpul: mRows.reduce((s, t) => s + t.sudah_bayar * t.nominal, 0),
-      tunggakan: mRows.reduce((s, t) => s + (t.total_siswa - t.sudah_bayar) * t.nominal, 0),
+      terkumpul: mRows.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0),
+      tunggakan: mRows.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0),
     }
   })
 
-  // ── Komposisi per komponen ──────────────────────────────────────────────────
-
-  const komMap = new Map<string, number>()
-  currentRows.forEach(t => {
-    const key = t.nama || t.jenis || 'Lainnya'
-    komMap.set(key, (komMap.get(key) ?? 0) + t.sudah_bayar * t.nominal)
-  })
-  const totalKom = Math.max(Array.from(komMap.values()).reduce((s, v) => s + v, 0), 1)
-  const komposisi: KomposisiItem[] = Array.from(komMap.entries())
+  // ── Komposisi pemasukan per komponen (siswa lunas bulan ini) ───────────────
+  const kelasKompMap = new Map<string, { nama: string; nominal: number }[]>()
+  for (const paket of pakets) {
+    const komps = paket.paket_komponen
+      .filter(pk => pk.komponen)
+      .map(pk => ({ nama: pk.komponen!.nama, nominal: pk.nominal }))
+    for (const pk of paket.paket_kelas) {
+      kelasKompMap.set(pk.kelas_id, komps)
+    }
+  }
+  const kompMap = new Map<string, number>()
+  for (const t of lunasIni) {
+    const kelasId = t.siswa?.kelas?.id
+    if (!kelasId) continue
+    for (const k of kelasKompMap.get(kelasId) ?? []) {
+      kompMap.set(k.nama, (kompMap.get(k.nama) ?? 0) + k.nominal)
+    }
+  }
+  const totalKom = Math.max(Array.from(kompMap.values()).reduce((s, v) => s + v, 0), 1)
+  const komposisi: KomposisiItem[] = Array.from(kompMap.entries())
     .map(([nama, nominal]) => ({ nama, nominal, persen: Math.round((nominal / totalKom) * 100) }))
     .sort((a, b) => b.persen - a.persen)
     .slice(0, 6)
 
-  // ── Per kelas ───────────────────────────────────────────────────────────────
-
-  const kelasMap = new Map<string, { lunas: number; total: number }>()
-  currentRows.filter(t => t.kelas_jenjang).forEach(t => {
-    const key = t.kelas_jenjang!
-    const e = kelasMap.get(key) ?? { lunas: 0, total: 0 }
-    e.lunas += t.sudah_bayar
-    e.total += t.total_siswa
-    kelasMap.set(key, e)
-  })
-  const perKelas: KelasItem[] = Array.from(kelasMap.entries())
-    .map(([nama, { lunas, total }]) => ({ nama, lunas, total }))
-    .sort((a, b) => b.lunas / b.total - a.lunas / a.total)
+  // ── Pembayaran per kelas ───────────────────────────────────────────────────
+  const kelasAggMap = new Map<string, { nama: string; lunas: number; total: number }>()
+  for (const t of tagihanIni) {
+    const kelas = t.siswa?.kelas
+    if (!kelas) continue
+    const e = kelasAggMap.get(kelas.id) ?? { nama: kelas.nama, lunas: 0, total: 0 }
+    e.total++
+    if (t.status === 'lunas') e.lunas++
+    kelasAggMap.set(kelas.id, e)
+  }
+  const perKelas: KelasItem[] = Array.from(kelasAggMap.values())
+    .sort((a, b) => (b.total > 0 ? b.lunas / b.total : 0) - (a.total > 0 ? a.lunas / a.total : 0))
     .slice(0, 5)
 
-  // ── Insights ────────────────────────────────────────────────────────────────
-
+  // ── Insights ───────────────────────────────────────────────────────────────
   const insights: Insight[] = []
-  const pctIni = totalSiswaRef > 0 ? (lunasRef / totalSiswaRef) * 100 : 0
+  const pctIni    = totalSiswaRef > 0 ? (lunasRef / totalSiswaRef) * 100 : 0
+  const bulanNama = BULAN_NAMES[now.getMonth()]
 
-  // Merah: kelas rendah (< 50%)
   const kelasRendah = perKelas.filter(k => k.total > 0 && k.lunas / k.total < 0.5)
-  if (kelasRendah.length > 0) {
-    insights.push({
-      id: 'kelas-rendah',
-      level: 'merah',
-      judul: 'Kelas bayar rendah',
-      desc: `${kelasRendah.length} kelas memiliki tingkat pembayaran di bawah 50%.`,
-      sub: kelasRendah.map(k => k.nama).join(' • '),
-      actionLabel: 'Kirim Pengingat',
-      actionHref: '/tagihan/aktif',
-    })
-  }
+  if (kelasRendah.length > 0) insights.push({
+    id: 'kelas-rendah', level: 'merah',
+    judul: 'Kelas bayar rendah',
+    desc: `${kelasRendah.length} kelas memiliki tingkat pembayaran di bawah 50%.`,
+    sub: kelasRendah.map(k => k.nama).join(' • '),
+    actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
+  })
 
-  // Merah: akhir bulan & pct rendah
   const sisa = daysLeftInMonth()
-  if (sisa <= 5 && pctIni < 80) {
-    insights.push({
-      id: 'akhir-bulan',
-      level: 'merah',
-      judul: 'Akhir bulan kritis',
-      desc: `Sisa ${sisa} hari, tingkat pembayaran baru ${Math.round(pctIni)}%.`,
-      sub: 'Kirim pengingat massal ke siswa yang belum membayar.',
-      actionLabel: 'Kirim Pengingat',
-    })
-  }
+  if (sisa <= 5 && pctIni < 80) insights.push({
+    id: 'akhir-bulan', level: 'merah',
+    judul: 'Akhir bulan kritis',
+    desc: `Sisa ${sisa} hari, tingkat pembayaran baru ${Math.round(pctIni)}%.`,
+    sub: 'Kirim pengingat massal ke siswa yang belum membayar.',
+    actionLabel: 'Kirim Pengingat',
+  })
 
-  // Merah: tunggakan lama
-  if (siswaTunggakanLama > 0) {
-    insights.push({
-      id: 'tunggakan-lama',
-      level: 'merah',
-      judul: 'Tunggakan kritis',
-      desc: `${oldUnpaid.length} tagihan bulan sebelumnya belum lunas.`,
-      sub: `Sekitar ${siswaTunggakanLama} siswa memiliki tunggakan lebih dari 1 bulan.`,
-      actionLabel: 'Kirim Pengingat',
-    })
-  }
+  if (siswaTunggakanLama > 0) insights.push({
+    id: 'tunggakan-lama', level: 'merah',
+    judul: 'Tunggakan kritis',
+    desc: `${tunggakanRows.length} tagihan bulan-bulan sebelumnya belum lunas.`,
+    sub: `${siswaTunggakanLama} siswa memiliki tunggakan lebih dari 1 bulan.`,
+    actionLabel: 'Kirim Pengingat',
+  })
 
-  // Amber: override aktif
-  const overrideCount = bsList.filter(b => b.jenis === 'override').length
-  if (overrideCount > 0) {
-    insights.push({
-      id: 'override-aktif',
-      level: 'amber',
-      judul: 'Override tagihan aktif',
-      desc: `Ada ${overrideCount} override tarif aktif untuk beberapa siswa.`,
-      sub: 'Periksa jika ada override yang perlu diperpanjang atau dikembalikan.',
-      actionLabel: 'Lihat Detail',
-      actionHref: '/tagihan/beasiswa',
-    })
-  }
+  if (penerimaBeasiswa > 0) insights.push({
+    id: 'beasiswa-aktif', level: 'amber',
+    judul: 'Beasiswa sedang berjalan',
+    desc: `${penerimaBeasiswa} siswa sedang menerima program beasiswa.`,
+    sub: 'Pastikan data penerima beasiswa sudah sesuai dan terkini.',
+    actionLabel: 'Lihat Detail', actionHref: '/tagihan/beasiswa',
+  })
 
-  // Amber: beasiswa berjalan
-  if (penerimaBeasiswa > 0) {
-    insights.push({
-      id: 'beasiswa-aktif',
-      level: 'amber',
-      judul: 'Beasiswa sedang berjalan',
-      desc: `${penerimaBeasiswa} siswa sedang menerima program beasiswa.`,
-      sub: 'Pastikan data penerima beasiswa sudah sesuai dan terkini.',
-      actionLabel: 'Lihat Detail',
-      actionHref: '/tagihan/beasiswa',
-    })
-  }
-
-  // Hijau: pemasukan naik
   if (terkumpulLalu > 0 && terkumpulIni > terkumpulLalu * 1.05) {
     const pct = Math.round(((terkumpulIni - terkumpulLalu) / terkumpulLalu) * 100)
     insights.push({
-      id: 'pemasukan-naik',
-      level: 'hijau',
+      id: 'pemasukan-naik', level: 'hijau',
       judul: 'Pemasukan naik',
-      desc: `Pemasukan bulan ini sudah ${pct}% lebih tinggi dari bulan lalu.`,
-      sub: `Dibandingkan periode yang sama bulan ${bulanLalu}.`,
-      actionLabel: 'Lihat Detail',
-      actionHref: '/laporan',
+      desc: `Pemasukan bulan ini ${pct}% lebih tinggi dari bulan lalu.`,
+      sub: `Dibandingkan ${BULAN_NAMES[prevDate.getMonth()]} ${tahunLalu}.`,
+      actionLabel: 'Lihat Detail', actionHref: '/laporan',
     })
   }
 
-  // Hijau: kelas 100%
   const kelas100 = perKelas.filter(k => k.total > 0 && k.lunas >= k.total)
-  if (kelas100.length > 0) {
-    insights.push({
-      id: 'kelas-100',
-      level: 'hijau',
-      judul: `Kelas 100% Lunas`,
-      desc: `${kelas100.length} kelas sudah mencapai 100% pembayaran bulan ${bulanIni}.`,
-      sub: kelas100.map(k => k.nama).join(' • '),
-      actionLabel: 'Lihat Detail',
-      actionHref: '/tagihan/aktif',
-    })
-  }
+  if (kelas100.length > 0) insights.push({
+    id: 'kelas-100', level: 'hijau',
+    judul: 'Kelas 100% Lunas',
+    desc: `${kelas100.length} kelas sudah mencapai 100% pembayaran bulan ${bulanNama}.`,
+    sub: kelas100.map(k => k.nama).join(' • '),
+    actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
+  })
 
-  // Fallback: jika tidak ada insight lain, tampilkan ringkasan status bulan ini
   if (insights.length === 0) {
-    if (currentRows.length === 0) {
+    if (tagihanIni.length === 0) {
       insights.push({
-        id: 'belum-tagihan',
-        level: 'amber',
+        id: 'belum-tagihan', level: 'amber',
         judul: 'Belum ada tagihan bulan ini',
-        desc: `Tidak ada tagihan aktif untuk ${bulanIni} ${tahunIni}.`,
+        desc: `Tidak ada tagihan aktif untuk ${bulanNama} ${tahunIni}.`,
         sub: 'Buat tagihan baru untuk memulai monitoring pembayaran bulan ini.',
-        actionLabel: 'Buat Tagihan',
-        actionHref: '/tagihan/aktif',
+        actionLabel: 'Buat Tagihan', actionHref: '/tagihan/aktif',
       })
     } else if (pctIni >= 80) {
       insights.push({
-        id: 'semua-baik',
-        level: 'hijau',
+        id: 'semua-baik', level: 'hijau',
         judul: 'Pembayaran berjalan baik',
-        desc: `${Math.round(pctIni)}% siswa sudah membayar tagihan bulan ${bulanIni}.`,
-        sub: `${lunasRef} dari ${totalSiswaRef} siswa lunas — tidak ada kondisi yang perlu perhatian.`,
-        actionLabel: 'Lihat Detail',
-        actionHref: '/tagihan/aktif',
+        desc: `${Math.round(pctIni)}% siswa sudah membayar tagihan bulan ${bulanNama}.`,
+        sub: `${lunasRef} dari ${totalSiswaRef} siswa lunas.`,
+        actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
       })
     } else {
       insights.push({
-        id: 'pembayaran-berjalan',
-        level: 'amber',
+        id: 'pembayaran-berjalan', level: 'amber',
         judul: 'Pembayaran sedang berlangsung',
-        desc: `${Math.round(pctIni)}% siswa sudah membayar tagihan bulan ${bulanIni}.`,
-        sub: `${totalSiswaRef - lunasRef} siswa belum membayar — pantau terus hingga akhir bulan.`,
-        actionLabel: 'Lihat Detail',
-        actionHref: '/tagihan/aktif',
+        desc: `${Math.round(pctIni)}% siswa sudah membayar tagihan bulan ${bulanNama}.`,
+        sub: `${totalSiswaRef - lunasRef} siswa belum membayar.`,
+        actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
       })
     }
   }
 
-  // ── Siswa bayar tabel ────────────────────────────────────────────────────────
-
-  const currentTagihanIds = currentRows.map(t => t.id)
-  const prevTagihanIds    = oldUnpaid.map(t => t.id)
-
-  const [{ data: tsRaw }, { data: prevTsRaw }] = await Promise.all([
-    currentTagihanIds.length > 0
-      ? supabase
-          .from('tagihan_siswa')
-          .select('id, status, nominal, tagihan:tagihan_id(bulan, tahun, nominal), siswa:siswa_id(id, nis, nama, kelas:kelas_id(nama, warna))')
-          .in('tagihan_id', currentTagihanIds)
-          .limit(500)
-      : Promise.resolve({ data: [] as TagihanSiswaRaw[], error: null }),
-    prevTagihanIds.length > 0
-      ? supabase
-          .from('tagihan_siswa')
-          .select('siswa_id, status')
-          .in('tagihan_id', prevTagihanIds)
-          .neq('status', 'lunas')
-          .limit(500)
-      : Promise.resolve({ data: [] as { siswa_id: string; status: string }[], error: null }),
-  ])
-
-  const tunggakanSiswaIds = new Set(
-    ((prevTsRaw ?? []) as { siswa_id: string; status: string }[]).map(r => r.siswa_id)
-  )
-
-  const STATUS_PRIORITY: Record<string, number> = { lunas: 0, sebagian: 1, belum_bayar: 2 }
-  const siswaMap = new Map<string, SiswaBayarRow>()
-
-  for (const row of ((tsRaw ?? []) as TagihanSiswaRaw[])) {
-    if (!row.siswa) continue
-    const siswaId  = row.siswa.id
-    const nominal  = row.tagihan?.nominal ?? row.nominal ?? 0
-    const raw      = row.status as SiswaBayarRow['status']
-    const status   = (['lunas', 'sebagian', 'belum_bayar'].includes(raw) ? raw : 'belum_bayar') as SiswaBayarRow['status']
-
-    const existing = siswaMap.get(siswaId)
-    if (!existing) {
-      siswaMap.set(siswaId, {
-        id: siswaId,
-        nis: row.siswa.nis ?? '-',
-        nama: row.siswa.nama,
-        kelas: row.siswa.kelas,
-        tagihan_bulan_ini: nominal,
-        status,
-        has_tunggakan: tunggakanSiswaIds.has(siswaId),
-      })
-    } else {
-      if ((STATUS_PRIORITY[status] ?? 0) > (STATUS_PRIORITY[existing.status] ?? 0)) {
-        existing.status = status
-      }
-      existing.tagihan_bulan_ini += nominal
-    }
-  }
-
-  const siswaBayarList: SiswaBayarRow[] = Array.from(siswaMap.values())
+  // ── Tabel status pembayaran siswa ──────────────────────────────────────────
+  const siswaBayarList: SiswaBayarRow[] = tagihanIni
+    .filter(t => t.siswa)
+    .map(t => ({
+      id:                t.siswa!.id,
+      nis:               t.siswa!.nis ?? '-',
+      nama:              t.siswa!.nama,
+      kelas:             t.siswa!.kelas,
+      tagihan_bulan_ini: t.total_nominal,
+      status:            t.status,
+      has_tunggakan:     tunggakanSiswaIds.has(t.siswa_id),
+    }))
     .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
 
   return {
-    totalSiswaAktif: siswaTotal,
-    totalKelas: kelasCount ?? 0,
-    tahunAjaranNama: (taData as { nama: string } | null)?.nama ?? '-',
+    totalSiswaAktif:    siswaTotal,
+    totalKelas:         kelasCount ?? 0,
+    tahunAjaranNama:    (taData as { nama: string } | null)?.nama ?? '-',
     totalTunggakan,
     siswaBelumBayar,
     totalSiswaRef,
@@ -610,9 +529,9 @@ function InsightCard({ insight }: { insight: Insight }) {
 
 const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
   lunas:      { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
-  sebagian:   { bg: '#FEF3C7', color: '#D97706', label: 'Sebagian' },
-  belum_bayar:{ bg: '#FEF9C3', color: '#92400E', label: 'Belum Bayar' },
-  tunggakan:  { bg: '#FEE2E2', color: '#DC2626', label: 'Tunggakan' },
+  cicilan:    { bg: '#FEF3C7', color: '#D97706', label: 'Cicilan' },
+  belum_bayar:{ bg: '#FEE2E2', color: '#DC2626', label: 'Belum Bayar' },
+  tunggakan:  { bg: '#FECACA', color: '#991B1B', label: 'Tunggakan' },
 }
 
 function StatusBadgeSiswa({ status }: { status: string }) {
@@ -776,7 +695,7 @@ export default function DashboardPage() {
   const [now,               setNow]               = useState(new Date())
   const [lastUpd,           setLastUpd]           = useState<Date | null>(null)
   const [showSetupBerhasil, setShowSetupBerhasil] = useState(false)
-  const [tabAktif,          setTabAktif]          = useState<'semua' | 'belum_bayar' | 'sebagian' | 'lunas' | 'tunggakan'>('semua')
+  const [tabAktif,          setTabAktif]          = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan'>('semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
 
@@ -840,7 +759,7 @@ export default function DashboardPage() {
       const total = count ?? 0
       setHasSiswa(total > 0)
       if (total > 0) {
-        loadDashData(total)
+        loadDashData(sekolahId!, total)
           .then(d => { setData(d); setLastUpd(new Date()) })
           .catch(() => setData({
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
@@ -1059,7 +978,7 @@ export default function DashboardPage() {
               {sk(`${pctLunas}%`)}
             </div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah lunas</div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-2rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.8rem' }}>
               {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
             </div>
           </div>
@@ -1279,7 +1198,7 @@ export default function DashboardPage() {
             {([
               { key: 'semua',       label: 'Semua' },
               { key: 'belum_bayar', label: 'Belum Bayar' },
-              { key: 'sebagian',    label: 'Sebagian' },
+              { key: 'cicilan',     label: 'Cicilan' },
               { key: 'lunas',       label: 'Lunas' },
               { key: 'tunggakan',   label: 'Tunggakan Lama' },
             ] as const).map(tab => {

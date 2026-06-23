@@ -222,7 +222,7 @@
 
 /* ── Notifikasi ── */
 .sidebar-notification-wrap {
-  padding: 4rem 0 0.25rem;
+  padding: 1rem 0 0.25rem;
   margin-left: -1.4rem;
   display: flex;
   justify-content: flex-start;

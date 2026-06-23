@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays, Eye, X } from 'lucide-react'
+import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays, Eye, X, Upload, Download, AlertCircle } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -28,7 +29,27 @@ const TIPE_WARNA: Record<string, string> = {
   per_semester:  '#7D7ADC',
 }
 
+const DEFAULT_IMPORT_WARNA = '#94A3B8'
+
+const TIPE_ALIAS_MAP: Record<string, string> = {
+  'rutin bulanan': 'rutin_bulanan', 'rutin_bulanan': 'rutin_bulanan', 'rutin': 'rutin_bulanan',
+  'sekali bayar':  'sekali_bayar',  'sekali_bayar':  'sekali_bayar',  'sekali': 'sekali_bayar',
+  'per semester':  'per_semester',  'per_semester':  'per_semester',   'semester': 'per_semester',
+}
+
+const IMPORT_TEMPLATE_HEADERS = ['Nama Komponen', 'Tipe Pembayaran', 'Nominal Default', 'Keterangan']
+
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ImportKomponenRow {
+  no:       number
+  nama:     string
+  tipeRaw:  string
+  tipeVal?: string
+  nominal:  string
+  keterangan: string
+  error?:   string
+}
 
 interface KomponenItem {
   id:              string
@@ -96,6 +117,15 @@ export default function KomponenTagihanPage() {
   // Detail slide panel
   const [detailTarget,  setDetailTarget]  = useState<KomponenItem | null>(null)
   const [detailClosing, setDetailClosing] = useState(false)
+
+  // Import Excel
+  const importFileRef                                       = useRef<HTMLInputElement>(null)
+  const [showImportModal,   setShowImportModal]   = useState(false)
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
+  const [modalDragging,     setModalDragging]     = useState(false)
+  const [importPreviewRows, setImportPreviewRows] = useState<ImportKomponenRow[] | null>(null)
+  const [importError,       setImportError]       = useState('')
+  const [importing,         setImporting]         = useState(false)
 
   // View mode inline add form
   const [showViewForm,       setShowViewForm]       = useState(false)
@@ -195,6 +225,14 @@ export default function KomponenTagihanPage() {
       setDataLoading(false)
     })()
   }, [router])
+
+  const triggerRecalculate = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    fetch('/api/recalculate-tagihan', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+    }).catch(() => {})
+  }
 
   useEffect(() => {
     if (!showSuccessPopup) return
@@ -303,12 +341,22 @@ export default function KomponenTagihanPage() {
       })
       .eq('id', editTarget.id)
     if (error) { setEditError(error.message); setEditSaving(false); return }
+
+    // Cascade nominal_default ke semua paket_komponen yang memakai komponen ini
+    if (nominalNum !== (editTarget.nominal_default ?? 0)) {
+      await supabase
+        .from('paket_komponen')
+        .update({ nominal: nominalNum })
+        .eq('komponen_id', editTarget.id)
+    }
+
     setAllKomponen(prev => prev.map(k => k.id === editTarget.id
       ? { ...k, nama: editNama.trim(), jenis: editTipe, nominal_default: nominalNum || null, keterangan: editKeterangan.trim(), warna: editWarna }
       : k
     ))
     setEditTarget(null)
     setEditSaving(false)
+    triggerRecalculate()
   }
 
   const handleDelete = async () => {
@@ -367,6 +415,93 @@ export default function KomponenTagihanPage() {
     })
 
     if (error) { setViewFormError(error.message); setViewFormSaving(false); return }
+    window.location.reload()
+  }
+
+  // ── Import Excel handlers ─────────────────────────────────────────────────────
+
+  const downloadKomponenTemplate = () => {
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([
+      IMPORT_TEMPLATE_HEADERS,
+    ])
+    ws['!cols'] = [{ wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 30 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'Komponen Tagihan')
+
+    const wsTipe = XLSX.utils.aoa_to_sheet([
+      ['Tipe Pembayaran (gunakan persis seperti ini)'],
+      ['Rutin Bulanan'], ['Sekali Bayar'], ['Per Semester'],
+    ])
+    wsTipe['!cols'] = [{ wch: 42 }]
+    XLSX.utils.book_append_sheet(wb, wsTipe, 'Daftar Tipe')
+
+    XLSX.writeFile(wb, 'template-import-komponen.xlsx')
+  }
+
+  const parseKomponenFile = (file: File) => {
+    setImportError('')
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer)
+        const wb   = XLSX.read(data, { type: 'array' })
+        const ws   = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
+
+        const parsed: ImportKomponenRow[] = rows.map((row, i) => {
+          const nama       = String(row['Nama Komponen']  ?? '').trim()
+          const tipeRaw    = String(row['Tipe Pembayaran'] ?? '').trim()
+          const nominal    = String(row['Nominal Default'] ?? '').trim()
+          const keterangan = String(row['Keterangan']     ?? '').trim()
+          const tipeVal    = TIPE_ALIAS_MAP[tipeRaw.toLowerCase()]
+
+          let error: string | undefined
+          if (!nama)    error = 'Nama komponen wajib diisi'
+          else if (!tipeVal) error = `Tipe "${tipeRaw}" tidak dikenali`
+
+          return { no: i + 1, nama, tipeRaw, tipeVal, nominal, keterangan, error }
+        })
+
+        setImportPreviewRows(parsed)
+      } catch {
+        setImportError('Gagal membaca file. Pastikan format sesuai template.')
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const handleKomponenImport = async () => {
+    if (!importPreviewRows) return
+    const valid = importPreviewRows.filter(r => !r.error)
+    if (valid.length === 0) return
+
+    setImporting(true); setImportError('')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setImportError('Sesi tidak ditemukan.'); setImporting(false); return }
+
+    const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
+    if (!profile?.sekolah_id) { setImportError('Data sekolah tidak ditemukan.'); setImporting(false); return }
+
+    const rows = valid.map(r => {
+      const nominalNum = parseInt(r.nominal.replace(/[^0-9]/g, ''), 10) || null
+      return {
+        sekolah_id:      profile.sekolah_id as string,
+        jenis:           r.tipeVal!,
+        nama:            r.nama,
+        kelas_warna:     DEFAULT_IMPORT_WARNA,
+        keterangan:      r.keterangan || null,
+        nominal_default: nominalNum,
+        tahun_ajaran:    tahunAjaran,
+        semester:        autoSemester,
+      }
+    })
+
+    const { error } = await supabase.from('komponen_tagihan').insert(rows)
+    if (error) { setImportError(error.message); setImporting(false); return }
+
+    setImportPreviewRows(null)
+    setShowImportModal(false)
     window.location.reload()
   }
 
@@ -842,14 +977,85 @@ export default function KomponenTagihanPage() {
           </div>
         </div>
         {!showViewForm && (
-          <button
-            onClick={() => { setShowViewForm(true); setViewFormClosing(false) }}
-            style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.875rem', padding: '0.6rem 1.25rem', background: '#1A2C4E' }}
-          >
-            <Plus size={15} /> Komponen Baru
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => { setShowImportModal(true); setPendingImportFile(null); setImportError('') }}
+              style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem' }}
+            >
+              <Upload size={14} /> Import Excel
+            </button>
+            <button
+              onClick={() => { setShowViewForm(true); setViewFormClosing(false) }}
+              style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.875rem', padding: '0.6rem 1.25rem', background: '#1A2C4E' }}
+            >
+              <Plus size={15} /> Komponen Baru
+            </button>
+          </div>
         )}
       </div>
+
+      {/* ── Preview tabel (muncul setelah modal ditutup) ── */}
+      {importPreviewRows && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: '1.5rem' }}>
+          <div style={{ padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <CheckCircle2 size={16} color="#16A34A" />
+              <span style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '0.875rem' }}>
+                Preview — {importPreviewRows.filter(r => !r.error).length} baris valid
+                {importPreviewRows.filter(r => r.error).length > 0 && (
+                  <span style={{ color: '#DC2626', fontWeight: 400 }}>, {importPreviewRows.filter(r => r.error).length} baris error</span>
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button onClick={() => setImportPreviewRows(null)}
+                style={{ ...sBtnSecondary, padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>Batal</button>
+              <button onClick={handleKomponenImport} disabled={importing || importPreviewRows.filter(r => !r.error).length === 0}
+                style={{ ...sBtnPrimary, padding: '0.4rem 1rem', fontSize: '0.8rem', background: '#1A2C4E', opacity: (importing || importPreviewRows.filter(r => !r.error).length === 0) ? 0.6 : 1 }}>
+                {importing ? 'Mengimpor...' : `Import ${importPreviewRows.filter(r => !r.error).length} Komponen →`}
+              </button>
+            </div>
+          </div>
+          {importError && (
+            <div style={{ padding: '0.65rem 1.25rem', background: '#FEF2F2', borderBottom: '1px solid #FECACA', fontSize: '0.8rem', color: '#DC2626', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertCircle size={13} /> {importError}
+            </div>
+          )}
+          <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+              <thead>
+                <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0 }}>
+                  {['No', 'Nama Komponen', 'Tipe Pembayaran', 'Nominal Default', 'Keterangan', 'Status'].map(h => (
+                    <th key={h} style={{ padding: '0.55rem 0.875rem', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {importPreviewRows.map(row => (
+                  <tr key={row.no} style={{ background: row.error ? '#FEF2F2' : 'transparent', borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '0.5rem 0.875rem', color: 'var(--text-muted)', width: 36 }}>{row.no}</td>
+                    <td style={{ padding: '0.5rem 0.875rem', fontWeight: 600, color: 'var(--navy-dark)' }}>{row.nama || '—'}</td>
+                    <td style={{ padding: '0.5rem 0.875rem' }}>
+                      {row.tipeVal
+                        ? <span style={{ background: TIPE_WARNA[row.tipeVal] ?? '#94A3B8', color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>{TIPE_OPTIONS.find(t => t.value === row.tipeVal)?.label}</span>
+                        : <span style={{ color: '#DC2626' }}>{row.tipeRaw || '—'}</span>
+                      }
+                    </td>
+                    <td style={{ padding: '0.5rem 0.875rem', color: 'var(--text-mid)' }}>{row.nominal ? `Rp ${parseInt(row.nominal.replace(/[^0-9]/g, ''), 10).toLocaleString('id-ID')}` : '—'}</td>
+                    <td style={{ padding: '0.5rem 0.875rem', color: 'var(--text-mid)' }}>{row.keterangan || '—'}</td>
+                    <td style={{ padding: '0.5rem 0.875rem' }}>
+                      {row.error
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#FEE2E2', color: '#DC2626', padding: '0.18rem 0.5rem', borderRadius: 5, fontSize: '0.72rem', fontWeight: 600 }}><AlertCircle size={10} /> {row.error}</span>
+                        : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#DCFCE7', color: '#16A34A', padding: '0.18rem 0.5rem', borderRadius: 5, fontSize: '0.72rem', fontWeight: 600 }}><CheckCircle2 size={10} /> Valid</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ── Inline Form Tambah Komponen ── */}
       <div style={{
@@ -1310,6 +1516,88 @@ export default function KomponenTagihanPage() {
           </div>
         </>
       )}
+
+      {/* ── Import Modal ── */}
+      {showImportModal && (
+        <>
+        <style>{`@keyframes ic-in { from{opacity:0;transform:scale(0.94) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)} }`}</style>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => { setShowImportModal(false); setPendingImportFile(null) }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 520, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'ic-in 0.22s cubic-bezier(0.34,1.56,0.64,1)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <Upload size={18} color="#64748B" />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>Import Excel</div>
+                <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Import data komponen tagihan dari file Excel</div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.25rem 1.5rem 1.5rem' }}>
+
+              {/* Info card */}
+              <div style={{ border: '1.5px solid #DBEAFE', borderRadius: 14, padding: '1rem 1.25rem', marginBottom: '1rem', background: '#F8FAFF' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 52, height: 52, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Download size={22} color="#fff" />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1A2C4E' }}>Import via Excel</div>
+                      <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 2 }}>Harus download template *</div>
+                    </div>
+                  </div>
+                  <button onClick={downloadKomponenTemplate}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FBCECE', color: '#C0392B', border: 'none', borderRadius: 20, padding: '0.45rem 1rem', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    <Download size={13} /> Download Template
+                  </button>
+                </div>
+
+                {/* Drop zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setModalDragging(true) }}
+                  onDragLeave={() => setModalDragging(false)}
+                  onDrop={e => { e.preventDefault(); setModalDragging(false); const f = e.dataTransfer.files[0]; if (f) setPendingImportFile(f) }}
+                  onClick={() => importFileRef.current?.click()}
+                  style={{ marginTop: '1rem', border: `2px dashed ${modalDragging ? '#1A2C4E' : '#CBD5E1'}`, borderRadius: 12, padding: '1.75rem 1rem', textAlign: 'center', cursor: 'pointer', background: modalDragging ? '#EFF6FF' : '#fff', transition: 'all 0.15s' }}>
+                  {pendingImportFile ? (
+                    <>
+                      <div style={{ fontSize: '1.75rem', marginBottom: '0.4rem' }}>📄</div>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1A2C4E', marginBottom: 2 }}>{pendingImportFile.name}</div>
+                      <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Klik untuk ganti file</div>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={32} style={{ margin: '0 auto 0.6rem', color: modalDragging ? '#1A2C4E' : '#BDC1C9', display: 'block' }} />
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: modalDragging ? '#1A2C4E' : '#6F788A', marginBottom: 3 }}>
+                        {modalDragging ? 'Lepaskan file di sini' : 'Drag & drop file Excel'}
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>atau klik untuk pilih file</div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end' }}>
+                <button onClick={() => { setShowImportModal(false); setPendingImportFile(null) }} style={{ ...sBtnSecondary, padding: '0.6rem 1.5rem' }}>Batal</button>
+                <button
+                  onClick={() => { if (pendingImportFile) { parseKomponenFile(pendingImportFile); setShowImportModal(false); setPendingImportFile(null) } }}
+                  disabled={!pendingImportFile}
+                  style={{ ...sBtnPrimary, padding: '0.6rem 1.5rem', background: '#1A2C4E', opacity: pendingImportFile ? 1 : 0.45, cursor: pendingImportFile ? 'pointer' : 'not-allowed' }}>
+                  Preview Data
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+
+      <input ref={importFileRef} type="file" accept=".xlsx,.xls" onChange={e => { const f = e.target.files?.[0]; if (f) setPendingImportFile(f); e.target.value = '' }} style={{ display: 'none' }} />
 
     </>
   )
