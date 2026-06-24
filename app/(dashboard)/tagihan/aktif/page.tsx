@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, Zap, AlertTriangle } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { buildWaLink } from '@/lib/templates/waTagihan'
+import { buildPesanTagihanText, formatWaNumber } from '@/lib/templates/waTagihan'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +70,8 @@ export default function TagihanAktifPage() {
   const [namaSekolah,            setNamaSekolah]            = useState('')
   const [showPaketKurangPopup,   setShowPaketKurangPopup]   = useState(false)
   const [showKelasKosongPopup,   setShowKelasKosongPopup]   = useState(false)
+  const [sendingWa,              setSendingWa]              = useState<Set<string>>(new Set())
+  const [waSentSuccess,          setWaSentSuccess]          = useState<Set<string>>(new Set())
 
   // ── Load tagihan ────────────────────────────────────────────────────────────
 
@@ -436,6 +438,36 @@ export default function TagihanAktifPage() {
     }
   }
 
+  // ── Kirim WA via Fonnte ─────────────────────────────────────────────────────
+
+  const kirimWA = async (t: SiswaTagihanRow) => {
+    setSendingWa(prev => new Set(prev).add(t.tagihan_id))
+    try {
+      const pesan = buildPesanTagihanText({
+        namaWali:     t.nama_wali,
+        namaSiswa:    t.nama,
+        kelasNama:    t.kelas_nama,
+        totalNominal: t.total_nominal,
+        bulan:        selectedBulan,
+        tahun:        selectedTahun,
+        namaSekolah,
+      })
+      const res = await fetch('/api/kirim-wa', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ phone_number: formatWaNumber(t.no_wa), content: pesan }),
+      })
+      if (res.ok) {
+        setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
+        setTimeout(() => setWaSentSuccess(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s }), 3000)
+      } else {
+        alert('Gagal kirim WA. Cek koneksi Fonnte.')
+      }
+    } finally {
+      setSendingWa(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s })
+    }
+  }
+
   // ── Derived ─────────────────────────────────────────────────────────────────
 
   const filtered = tagihanList.filter(t => {
@@ -636,14 +668,13 @@ export default function TagihanAktifPage() {
 
                           <td style={{ ...sTd, textAlign: 'center' }}>
                             {hasWa ? (
-                              <a
-                                href={buildWaLink(t.no_wa, { namaWali: t.nama_wali, namaSiswa: t.nama, kelasNama: t.kelas_nama, totalNominal: t.total_nominal, bulan: selectedBulan, tahun: selectedTahun, namaSekolah })}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.35rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none', fontFamily: 'inherit' }}>
+                              <button
+                                onClick={() => kirimWA(t)}
+                                disabled={sendingWa.has(t.tagihan_id)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.35rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: sendingWa.has(t.tagihan_id) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sendingWa.has(t.tagihan_id) ? 0.6 : 1 }}>
                                 <Image src='/icons/IconWA.png' width={18} height={18} alt='WhatsApp'/>
-                                Kirim Pengingat
-                              </a>
+                                {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Kirim Pengingat'}
+                              </button>
                             ) : (
                               <span style={{ fontSize: '0.78rem', color: '#94A3B8', fontWeight: 500 }}>No WA kosong</span>
                             )}

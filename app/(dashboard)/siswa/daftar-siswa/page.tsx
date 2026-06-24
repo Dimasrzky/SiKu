@@ -85,6 +85,9 @@ export default function DaftarSiswaPage() {
   const [beasiswaPrograms, setBeasiswaPrograms] = useState<BeasiswaProgram[]>([])
   const [siswaBeasiswaMap, setSiswaBeasiswaMap] = useState<Map<string, SiswaBeasiswaInfo[]>>(new Map())
 
+  // View detail
+  const [viewSiswa,     setViewSiswa]     = useState<SiswaRow | null>(null)
+
   // Delete
   const [deleteSiswa,   setDeleteSiswa]   = useState<SiswaRow | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
@@ -861,7 +864,7 @@ export default function DaftarSiswaPage() {
                 <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94A3B8' }}>Tidak ada siswa yang sesuai filter.</td></tr>
               ) : filterJenjang ? (
                 filteredList.map(s => (
-                  <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} />
+                  <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} onView={setViewSiswa} />
                 ))
               ) : (
                 uniqueJenjang.flatMap(j => {
@@ -879,7 +882,7 @@ export default function DaftarSiswaPage() {
                       </td>
                     </tr>,
                     ...groupItems.map(s => (
-                      <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} />
+                      <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} onView={setViewSiswa} />
                     ))
                   ]
                 })
@@ -915,6 +918,41 @@ export default function DaftarSiswaPage() {
         } else { setShowSuccessModal(false) }
       }}
     />}
+
+    {viewSiswa && (
+      <div
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+        onClick={() => setViewSiswa(null)}>
+        <div
+          style={{ background: '#fff', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 420, boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}
+          onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E', margin: 0 }}>Detail Siswa</h3>
+            <button onClick={() => setViewSiswa(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: '0.25rem' }}>✕</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.875rem' }}>
+            {[
+              { label: 'Nama Lengkap', value: viewSiswa.nama },
+              { label: 'NIS',          value: viewSiswa.nis ?? '—' },
+              { label: 'Kelas',        value: viewSiswa.kelas?.nama ?? '—' },
+              { label: 'Nama Wali',    value: viewSiswa.nama_wali ?? '—' },
+              { label: 'No. WA Wali',  value: viewSiswa.no_wa ?? '—' },
+              { label: 'Status',       value: viewSiswa.status === 'aktif' ? 'Aktif' : 'Tidak Aktif' },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', gap: '1rem', padding: '0.6rem 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ color: '#64748B', fontWeight: 600, minWidth: 120 }}>{label}</span>
+                <span style={{ color: '#1A2C4E', fontWeight: 500 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setViewSiswa(null)}
+            style={{ marginTop: '1.5rem', width: '100%', padding: '0.65rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Tutup
+          </button>
+        </div>
+      </div>
+    )}
 
     {editSiswa && <EditSiswaModal
       siswa={editSiswa} kelasList={kelasList}
@@ -1039,11 +1077,12 @@ export default function DaftarSiswaPage() {
 
 // ── Siswa table row ───────────────────────────────────────────────────────────
 
-function SiswaTableRow({ s, bsMap, onDelete, onEdit }: {
+function SiswaTableRow({ s, bsMap, onDelete, onEdit, onView }: {
   s:        SiswaRow
   bsMap:    Map<string, SiswaBeasiswaInfo[]>
   onDelete: (s: SiswaRow) => void
   onEdit:   (s: SiswaRow) => void
+  onView:   (s: SiswaRow) => void
 }) {
   const p = s.nama.trim().split(' ').filter(Boolean)
   const inisial = p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : s.nama.slice(0, 2).toUpperCase()
@@ -1078,7 +1117,7 @@ function SiswaTableRow({ s, bsMap, onDelete, onEdit }: {
       </td>
       <td style={{ padding: '0.75rem 1.25rem' }}>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.35rem', display: 'flex' }}><Eye size={16} /></button>
+          <button onClick={() => onView(s)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.35rem', display: 'flex' }}><Eye size={16} /></button>
           <button onClick={() => onEdit(s)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.35rem', display: 'flex' }}>
             <Image src="/icons/IconEdit2.png" width={15} height={15} alt="edit" />
           </button>

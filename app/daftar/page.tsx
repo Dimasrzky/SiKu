@@ -172,6 +172,10 @@ export default function DaftarPage() {
       setNoWaError('Nomor WhatsApp hanya boleh berisi angka.')
       return
     }
+    if (noWaSekolah.trim().startsWith('0')) {
+      setNoWaError('Jangan awali dengan 0. Contoh: 81234567890')
+      return
+    }
     setLoading(true)
 
     const { data: { session } } = await supabase.auth.getSession()
@@ -185,7 +189,7 @@ export default function DaftarPage() {
         nama:          nama.trim(),
         jabatan:       jabatanFinal.trim(),
         namaSekolah:   namaSekolah.trim(),
-        noWaSekolah:   noWaSekolah.trim(),
+        noWaSekolah:   '62' + noWaSekolah.trim(),
         jenjangSekolah,
       }),
     })
@@ -423,17 +427,23 @@ export default function DaftarPage() {
 
             <div className="form-group">
               <label className="form-label" htmlFor="noWa">Nomor WhatsApp Sekolah</label>
-              <input
-                id="noWa" type="tel" className="form-input"
-                placeholder="Masukkan nomor WA aktif"
-                value={noWaSekolah}
-                onChange={(e) => {
-                  setNoWaSekolah(e.target.value)
-                  if (noWaError) setNoWaError('')
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
-                style={noWaError ? { borderColor: '#EF4444' } : undefined}
-              />
+              <div style={{ display: 'flex', alignItems: 'stretch', border: `1.5px solid ${noWaError ? '#EF4444' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+                <span style={{ padding: '0 0.75rem', background: '#F1F5F9', color: '#475569', fontWeight: 600, fontSize: '0.875rem', display: 'flex', alignItems: 'center', borderRight: `1.5px solid ${noWaError ? '#EF4444' : 'var(--border)'}`, whiteSpace: 'nowrap', userSelect: 'none' }}>
+                  +62
+                </span>
+                <input
+                  id="noWa" type="tel"
+                  placeholder="8xxxxxxxxxx"
+                  value={noWaSekolah}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '')
+                    setNoWaSekolah(val)
+                    if (noWaError) setNoWaError('')
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
+                  style={{ flex: 1, border: 'none', outline: 'none', padding: '0.65rem 0.85rem', fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', background: 'transparent' }}
+                />
+              </div>
               {noWaError && (
                 <p style={{ color: '#EF4444', fontSize: '0.78rem', marginTop: 4 }}>{noWaError}</p>
               )}
