@@ -349,7 +349,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   })
 
   const sisa = daysLeftInMonth()
-  if (sisa <= 5 && pctIni < 80) insights.push({
+  if (sisa <= 5 && totalSiswaRef > 0 && pctIni < 80) insights.push({
     id: 'akhir-bulan', level: 'merah',
     judul: 'Akhir bulan kritis',
     desc: `Sisa ${sisa} hari, tingkat pembayaran baru ${Math.round(pctIni)}%.`,
