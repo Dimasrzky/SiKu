@@ -34,8 +34,12 @@ type IndividuRaw = {
 }
 
 async function recalculateAll(sid: string): Promise<number> {
-  // Fetch all tagihan + paket data in parallel
-  const [{ data: tagihanRaw }, { data: paketRaw }] = await Promise.all([
+  const now    = new Date()
+  const bulan  = now.getMonth() + 1
+  const tahun  = now.getFullYear()
+
+  // Fetch tagihan + paket + tahun ajaran aktif in parallel
+  const [{ data: tagihanRaw }, { data: paketRaw }, { data: taData }] = await Promise.all([
     supabaseAdmin
       .from('tagihan')
       .select('id, total_nominal, bulan, tahun, siswa:siswa_id(id, kelas:kelas_id(id))')
@@ -45,7 +49,54 @@ async function recalculateAll(sid: string): Promise<number> {
       .from('paket')
       .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
       .eq('sekolah_id', sid),
+    supabaseAdmin
+      .from('tahun_ajaran')
+      .select('nama')
+      .eq('is_aktif', true)
+      .maybeSingle(),
   ])
+
+  const tahunAjaran = (taData as { nama: string } | null)?.nama ?? ''
+
+  // Insert tagihan bulan berjalan untuk siswa aktif yang belum punya tagihan
+  if (tahunAjaran) {
+    const { data: siswaAktif } = await supabaseAdmin
+      .from('siswa')
+      .select('id, kelas_id')
+      .eq('sekolah_id', sid)
+      .eq('status', 'aktif')
+      .limit(1000)
+
+    const existingSiswaIds = new Set(
+      ((tagihanRaw ?? []) as unknown as TagihanRaw[])
+        .filter(r => r.bulan === bulan && r.tahun === tahun)
+        .map(r => r.siswa?.id)
+        .filter(Boolean) as string[]
+    )
+
+    // Build kelas→total map from paket
+    const kelasNominalTemp = new Map<string, number>()
+    for (const p of ((paketRaw ?? []) as unknown as PaketTotalRaw[])) {
+      const total = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
+      for (const pk of p.paket_kelas) kelasNominalTemp.set(pk.kelas_id, total)
+    }
+
+    const toInsert = ((siswaAktif ?? []) as { id: string; kelas_id: string }[])
+      .filter(s => !existingSiswaIds.has(s.id) && kelasNominalTemp.has(s.kelas_id))
+      .map(s => ({
+        sekolah_id:    sid,
+        siswa_id:      s.id,
+        tahun_ajaran:  tahunAjaran,
+        bulan,
+        tahun,
+        status:        'belum_bayar',
+        total_nominal: kelasNominalTemp.get(s.kelas_id) ?? 0,
+      }))
+
+    if (toInsert.length > 0) {
+      await supabaseAdmin.from('tagihan').insert(toInsert)
+    }
+  }
 
   if (!tagihanRaw || tagihanRaw.length === 0) return 0
 

@@ -2,36 +2,51 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Zap, AlertTriangle } from 'lucide-react'
+import { Search, AlertTriangle, Eye, X, ClipboardList } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { buildPesanTagihanText, formatWaNumber } from '@/lib/templates/waTagihan'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 
-const formatRp = (n: number) =>
-  'Rp ' + n.toLocaleString('id-ID')
+const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getJatuhTempo(bulan: number, tahun: number): string {
+  const d = new Date(tahun, bulan, 0)
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function getInitials(nama: string): string {
+  const parts = nama.trim().split(' ').filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return (nama.slice(0, 2)).toUpperCase()
+}
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface SiswaTagihanRow {
   tagihan_id:    string
   siswa_id:      string
+  nis:           string
   nama:          string
+  kelas_id:      string
   kelas_nama:    string
   kelas_jenjang: string
+  kelas_warna:   string
   total_nominal: number
-  status:        'belum_bayar' | 'lunas' | 'sebagian'
+  status:        'belum_bayar' | 'lunas' | 'cicilan'
   no_wa:         string
   nama_wali:     string
+  has_tunggakan: boolean
 }
 
-// Raw Supabase response types
-type KelasNestedRaw    = { id: string; nama: string; jenjang: string }
-type SiswaNestedRaw    = { id: string; nama: string; no_wa: string | null; nama_wali: string | null; kelas: KelasNestedRaw | null }
+type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: string }
+type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: KelasNestedRaw | null }
 type TagihanRawRow     = { id: string; total_nominal: number; status: string; siswa: SiswaNestedRaw | null }
 type PaketTotalRaw     = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
 type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
@@ -41,47 +56,243 @@ type SiswaForGenerate  = { id: string; nama: string; kelas_id: string }
 type ExistingTagRow    = { siswa_id: string }
 type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; beasiswa_komponen: { komponen_id: string }[] } | null }
 type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
+type CatatSiswaResult  = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: { id: string; nama: string; warna: string } | null }
+type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_bayar: string; catatan: string | null }
+type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
+type DetailKomponenRow = { nama_komponen: string; nominal: number; warna?: string }
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  belum_bayar: { label: 'Belum Bayar', bg: '#FEE2E2', color: '#DC2626' },
+  belum_bayar: { label: 'Belum bayar', bg: '#DBEAFE', color: '#1D4ED8' },
   lunas:       { label: 'Lunas',       bg: '#D1FAE5', color: '#065F46' },
-  sebagian:    { label: 'Sebagian',    bg: '#FEF3C7', color: '#D97706' },
+  cicilan:     { label: 'Cicilan',     bg: '#1A2C4E', color: '#FFFFFF' },
+  menunggak:   { label: 'Menunggak',   bg: '#FEE2E2', color: '#DC2626' },
 } as const
+
+type EffectiveStatus = keyof typeof STATUS_CONFIG
+
+// ── Donut Chart ───────────────────────────────────────────────────────────────
+
+interface DonutSegment { value: number; color: string }
+
+function DonutChart({ segments, total, label }: { segments: DonutSegment[]; total: number; label: string }) {
+  const R = 38; const CX = 50; const CY = 50; const C = 2 * Math.PI * R
+  const totalVal = segments.reduce((s, seg) => s + seg.value, 0) || 1
+
+  type Seg = { i: number; dash: number; offset: number; color: string }
+  const computed = segments.reduce<{ list: Seg[]; cum: number }>(
+    ({ list, cum }, seg, i) => {
+      const dash   = (seg.value / totalVal) * C
+      const offset = C * 0.25 - cum
+      return { list: [...list, { i, dash, offset, color: seg.color }], cum: cum + dash }
+    },
+    { list: [], cum: 0 },
+  ).list
+
+  return (
+    <svg viewBox="0 0 100 100" style={{ width: 110, height: 110, flexShrink: 0 }}>
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={13} />
+      {computed.map(({ i, dash, offset, color }) => (
+        <circle key={i} cx={CX} cy={CY} r={R} fill="none"
+          stroke={color} strokeWidth={13}
+          strokeDasharray={`${dash} ${C - dash}`}
+          strokeDashoffset={offset}
+        />
+      ))}
+      <text x={CX} y={CY - 2} textAnchor="middle" fontSize={14} fontWeight="800" fill="#0F172A">{total}</text>
+      <text x={CX} y={CY + 12} textAnchor="middle" fontSize={7.5} fill="#6B7280">{label}</text>
+    </svg>
+  )
+}
+
+// ── Generate logic (standalone) ───────────────────────────────────────────────
+
+async function runGenerate(
+  sid: string, tahunAjaran: string, bulan: number, tahun: number,
+): Promise<{ success: boolean; error?: string }> {
+  const { data: paketData, error: e1 } = await supabase
+    .from('paket')
+    .select('id, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(nama, jenis))')
+    .eq('sekolah_id', sid)
+    .eq('tahun_ajaran', tahunAjaran)
+  if (e1 || !paketData) return { success: false, error: 'Gagal memuat data paket.' }
+
+  const kelasToKomponen = new Map<string, { komponen_id: string; nominal: number; nama: string; jenis: string }[]>()
+  for (const p of (paketData as unknown as PaketForGenerate[])) {
+    const komps = p.paket_komponen.map(pk => ({
+      komponen_id: pk.komponen_id, nominal: pk.nominal,
+      nama: pk.komponen?.nama ?? '', jenis: pk.komponen?.jenis ?? '',
+    }))
+    for (const pk of p.paket_kelas) kelasToKomponen.set(pk.kelas_id, komps)
+  }
+
+  const { data: allKelasData } = await supabase.from('kelas').select('id').eq('sekolah_id', sid)
+  const missingKelas = (allKelasData ?? []).filter((k: { id: string }) => !kelasToKomponen.has(k.id))
+  if (missingKelas.length > 0)
+    return { success: false, error: 'Beberapa kelas belum memiliki paket. Konfigurasi paket per kelas terlebih dahulu.' }
+
+  const { data: siswaData, error: e2 } = await supabase
+    .from('siswa').select('id, nama, kelas_id').eq('sekolah_id', sid).eq('status', 'aktif').limit(1000)
+  if (e2 || !siswaData) return { success: false, error: 'Gagal memuat data siswa.' }
+
+  const siswaPorKelas = new Set((siswaData as SiswaForGenerate[]).map(s => s.kelas_id))
+  const kelasKosong   = [...kelasToKomponen.keys()].filter(kid => !siswaPorKelas.has(kid))
+  if (kelasKosong.length > 0)
+    return { success: false, error: 'Beberapa kelas yang sudah dipaketkan belum memiliki siswa.' }
+
+  const siswaIds = (siswaData as SiswaForGenerate[]).map(s => s.id)
+  const today    = new Date().toISOString().split('T')[0]
+  const [{ data: bsData }, { data: individuData }] = await Promise.all([
+    supabase
+      .from('beasiswa_siswa')
+      .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
+      .in('siswa_id', siswaIds)
+      .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
+    supabase
+      .from('siswa_komponen_individu')
+      .select('siswa_id, komponen_id, nominal, komponen:komponen_id(nama, jenis)')
+      .in('siswa_id', siswaIds),
+  ])
+
+  const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
+  for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
+    if (!row.beasiswa) continue
+    const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
+    list.push({ jenis_potongan: row.beasiswa.jenis_potongan, persen: row.beasiswa.persen, nominal: row.beasiswa.nominal, komponen_ids: new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)) })
+    siswaBeasiswaMap.set(row.siswa_id, list)
+  }
+
+  const siswaIndividuMap = new Map<string, { komponen_id: string; nama: string; jenis: string; nominal: number }[]>()
+  for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
+    if (!row.komponen) continue
+    const list = siswaIndividuMap.get(row.siswa_id) ?? []
+    list.push({ komponen_id: row.komponen_id, nama: row.komponen.nama, jenis: row.komponen.jenis, nominal: row.nominal })
+    siswaIndividuMap.set(row.siswa_id, list)
+  }
+
+  const { data: existingData } = await supabase
+    .from('tagihan').select('siswa_id').eq('sekolah_id', sid).eq('bulan', bulan).eq('tahun', tahun)
+  const existingIds = new Set(((existingData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
+
+  const { data: prevData } = await supabase
+    .from('tagihan').select('siswa_id').eq('sekolah_id', sid).neq('bulan', bulan)
+  const siswaWithHistory = new Set(((prevData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
+
+  const isSemesterMonth = bulan === 1 || bulan === 7
+  const toInsert: { sekolah_id: string; siswa_id: string; bulan: number; tahun: number; total_nominal: number; status: string }[] = []
+  const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; siswa_id: string }[] = []
+
+  for (const siswa of (siswaData as SiswaForGenerate[])) {
+    if (existingIds.has(siswa.id)) continue
+    const komps = kelasToKomponen.get(siswa.kelas_id)
+    if (!komps || komps.length === 0) continue
+
+    const filtered = komps.filter(k => {
+      if (k.jenis === 'rutin_bulanan') return true
+      if (k.jenis === 'per_semester')  return isSemesterMonth
+      if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
+      return false
+    })
+    const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(k => {
+      if (k.jenis === 'rutin_bulanan') return true
+      if (k.jenis === 'per_semester')  return isSemesterMonth
+      if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
+      return false
+    })
+
+    const allKomps = [...filtered, ...individu]
+    if (allKomps.length === 0) continue
+
+    const tagihanKompIds = new Set(allKomps.map(k => k.komponen_id))
+    let totalPotongan = 0
+    for (const bs of (siswaBeasiswaMap.get(siswa.id) ?? [])) {
+      for (const kid of bs.komponen_ids) {
+        if (!tagihanKompIds.has(kid)) continue
+        const komp = allKomps.find(k => k.komponen_id === kid)
+        if (!komp) continue
+        totalPotongan += bs.jenis_potongan === 'persen'
+          ? Math.round(komp.nominal * (bs.persen ?? 0) / 100)
+          : bs.nominal ?? 0
+      }
+    }
+
+    const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
+    toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
+    for (const k of allKomps) itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
+  }
+
+  if (toInsert.length === 0) return { success: true }
+
+  const { data: inserted, error: e3 } = await supabase.from('tagihan').insert(toInsert).select('id, siswa_id')
+  if (e3 || !inserted) return { success: false, error: 'Gagal menyimpan tagihan.' }
+
+  const siswaToTagihanId = new Map(((inserted) as { id: string; siswa_id: string }[]).map(t => [t.siswa_id, t.id]))
+  const tagItems = itemsByTempId
+    .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal }))
+    .filter(i => i.tagihan_id)
+  if (tagItems.length > 0) await supabase.from('tagihan_item').insert(tagItems)
+
+  return { success: true }
+}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TagihanAktifPage() {
   const router = useRouter()
+  const now      = new Date()
+  const bulanIni = now.getMonth() + 1
+  const tahunIni = now.getFullYear()
 
-  const now = new Date()
-  const [loading,           setLoading]           = useState(true)
-  const [generating,        setGenerating]        = useState(false)
-  const [sekolahId,         setSekolahId]         = useState('')
-  const [activeTahunAjaran, setActiveTahunAjaran] = useState('')
-  const [hasPaket,          setHasPaket]          = useState(false)
-  const [selectedBulan,     setSelectedBulan]     = useState(now.getMonth() + 1)
-  const [selectedTahun,     setSelectedTahun]     = useState(now.getFullYear())
+  const [loading,        setLoading]        = useState(true)
+  const [autoGenerating, setAutoGenerating] = useState(false)
+  const [autoGenError,   setAutoGenError]   = useState('')
+  const [namaSekolah,    setNamaSekolah]    = useState('')
+  const [hasPaket,       setHasPaket]       = useState(false)
+  const [sekolahId,      setSekolahId]      = useState('')
+  const [tahunAjaran,    setTahunAjaran]    = useState('')
+  const [syncing,        setSyncing]        = useState(false)
+  const [filterJenjang,     setFilterJenjang]     = useState('Semua')
   const [filterStatus,      setFilterStatus]      = useState('Semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
-  const [generateError,          setGenerateError]          = useState('')
-  const [namaSekolah,            setNamaSekolah]            = useState('')
-  const [showPaketKurangPopup,   setShowPaketKurangPopup]   = useState(false)
-  const [showKelasKosongPopup,   setShowKelasKosongPopup]   = useState(false)
-  const [sendingWa,              setSendingWa]              = useState<Set<string>>(new Set())
-  const [waSentSuccess,          setWaSentSuccess]          = useState<Set<string>>(new Set())
+  const [sendingWa,         setSendingWa]         = useState<Set<string>>(new Set())
+  const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
 
-  // ── Load tagihan ────────────────────────────────────────────────────────────
+  // Modal state
+  const [showCatatModal,  setShowCatatModal]  = useState(false)
+  const [showDetailModal, setShowDetailModal] = useState(false)
+  const [detailSiswa,     setDetailSiswa]     = useState<SiswaTagihanRow | null>(null)
 
-  const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number) => {
+  // Modal 1 — Catat Pembayaran
+  const [catatQuery,     setCatatQuery]     = useState('')
+  const [catatResults,   setCatatResults]   = useState<CatatSiswaResult[]>([])
+  const [catatSelected,  setCatatSelected]  = useState<CatatSiswaResult | null>(null)
+  const [catatTagihan,   setCatatTagihan]   = useState<{ id: string; total_nominal: number; status: string } | null>(null)
+  const [catatRiwayat,   setCatatRiwayat]   = useState<PembayaranRow[]>([])
+  const [catatJumlah,    setCatatJumlah]    = useState('')
+  const [catatTanggal,   setCatatTanggal]   = useState('')
+  const [catatMetode,    setCatatMetode]    = useState<'tunai' | 'transfer' | 'qris'>('tunai')
+  const [catatCatatan,   setCatatCatatan]   = useState('')
+  const [catatSearching, setCatatSearching] = useState(false)
+  const [catatSaving,    setCatatSaving]    = useState(false)
+
+  // Modal 2/3 — Detail extras
+  const [detailBeasiswa,   setDetailBeasiswa]   = useState<DetailBeasiswaRow[]>([])
+  const [detailKomponen,   setDetailKomponen]   = useState<DetailKomponenRow[]>([])
+  const [detailPembayaran, setDetailPembayaran] = useState<PembayaranRow[]>([])
+  const [detailPaketNama,  setDetailPaketNama]  = useState('')
+  const [detailLoading,    setDetailLoading]    = useState(false)
+
+  // ── loadTagihan ─────────────────────────────────────────────────────────────
+
+  const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> => {
     const isSemesterMonth = bulan === 1 || bulan === 7
 
-    const [{ data: tagihanData }, { data: paketData }] = await Promise.all([
+    const [{ data: tagihanData }, { data: paketData }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('tagihan')
-        .select('id, total_nominal, status, siswa:siswa_id(id, nama, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang))')
+        .select('id, total_nominal, status, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang, warna))')
         .eq('sekolah_id', sid)
         .eq('bulan', bulan)
         .eq('tahun', tahun)
@@ -91,25 +302,28 @@ export default function TagihanAktifPage() {
         .from('paket')
         .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
         .eq('sekolah_id', sid),
+      supabase
+        .from('tagihan')
+        .select('siswa_id')
+        .eq('sekolah_id', sid)
+        .neq('status', 'lunas')
+        .or(`tahun.lt.${tahun},and(tahun.eq.${tahun},bulan.lt.${bulan})`),
     ])
 
-    // kelas_id → total paket & map(komponen_id → nominal) untuk pencocokan beasiswa
+    const tunggakanIds = new Set(((tunggakanData ?? []) as { siswa_id: string }[]).map(t => t.siswa_id))
+
     const kelasTotal = new Map<string, number>()
     const kelasKomps = new Map<string, Map<string, number>>()
     for (const p of ((paketData ?? []) as unknown as PaketTotalRaw[])) {
       const total      = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
       const kompNomMap = new Map(p.paket_komponen.map(k => [k.komponen_id, k.nominal]))
-      for (const pk of p.paket_kelas) {
-        kelasTotal.set(pk.kelas_id, total)
-        kelasKomps.set(pk.kelas_id, kompNomMap)
-      }
+      for (const pk of p.paket_kelas) { kelasTotal.set(pk.kelas_id, total); kelasKomps.set(pk.kelas_id, kompNomMap) }
     }
 
     const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
     const siswaIds = rows.map(r => r.siswa?.id).filter(Boolean) as string[]
+    const today    = new Date().toISOString().split('T')[0]
 
-    // Per-siswa: fetch beasiswa aktif + komponen individu
-    const today = new Date().toISOString().split('T')[0]
     const [{ data: bsData }, { data: individuData }] = siswaIds.length > 0
       ? await Promise.all([
           supabase
@@ -124,21 +338,14 @@ export default function TagihanAktifPage() {
         ])
       : [{ data: [] }, { data: [] }]
 
-    // siswa_id → beasiswa aktif list
     const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
     for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
       if (!row.beasiswa) continue
       const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
-      list.push({
-        jenis_potongan: row.beasiswa.jenis_potongan,
-        persen:         row.beasiswa.persen,
-        nominal:        row.beasiswa.nominal,
-        komponen_ids:   new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)),
-      })
+      list.push({ jenis_potongan: row.beasiswa.jenis_potongan, persen: row.beasiswa.persen, nominal: row.beasiswa.nominal, komponen_ids: new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)) })
       siswaBeasiswaMap.set(row.siswa_id, list)
     }
 
-    // siswa_id → individu list
     type IndividuEntry = { jenis: string; nominal: number }
     const siswaIndividuMap = new Map<string, IndividuEntry[]>()
     for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
@@ -148,297 +355,145 @@ export default function TagihanAktifPage() {
       siswaIndividuMap.set(row.siswa_id, list)
     }
 
-    // Hitung total yang benar per siswa
     const siswaCorrectTotal = new Map<string, number>()
     for (const r of rows) {
-      const siswaId   = r.siswa?.id ?? ''
-      const kelasId   = r.siswa?.kelas?.id ?? ''
-      const paketBase = kelasTotal.get(kelasId) ?? 0
+      const siswaId    = r.siswa?.id ?? ''
+      const kelasId    = r.siswa?.kelas?.id ?? ''
+      const paketBase  = kelasTotal.get(kelasId) ?? 0
       const kompNomMap = kelasKomps.get(kelasId)
-
-      // Individu: rutin selalu, semester hanya jan/jul, sekali_bayar skip (sudah fix saat generate)
       const individuTotal = (siswaIndividuMap.get(siswaId) ?? [])
         .filter(k => k.jenis === 'rutin_bulanan' || (k.jenis === 'per_semester' && isSemesterMonth))
         .reduce((s, k) => s + k.nominal, 0)
-
-      // Beasiswa: hanya berlaku pada komponen paket, tidak menyentuh individu
       let deduction = 0
       if (kompNomMap) {
         for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
           for (const kid of bs.komponen_ids) {
-            const kNominal = kompNomMap.get(kid)
-            if (kNominal === undefined) continue
-            deduction += bs.jenis_potongan === 'persen'
-              ? Math.round(kNominal * (bs.persen ?? 0) / 100)
-              : (bs.nominal ?? 0)
+            const kNom = kompNomMap.get(kid)
+            if (kNom === undefined) continue
+            deduction += bs.jenis_potongan === 'persen' ? Math.round(kNom * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0)
           }
         }
       }
-
       siswaCorrectTotal.set(siswaId, Math.max(0, paketBase + individuTotal - deduction))
     }
 
-    // Update DB untuk tagihan yang totalnya berbeda
     const toUpdate = rows.flatMap(r => {
       const siswaId = r.siswa?.id ?? ''
       const correct = siswaCorrectTotal.get(siswaId)
       return correct !== undefined && correct !== r.total_nominal ? [{ id: r.id, total: correct }] : []
     })
     if (toUpdate.length > 0) {
-      await Promise.all(toUpdate.map(({ id, total }) =>
-        supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)
-      ))
+      await Promise.all(toUpdate.map(({ id, total }) => supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)))
     }
 
-    setTagihanList(rows.map(r => {
+    const result: SiswaTagihanRow[] = rows.map(r => {
       const siswaId = r.siswa?.id ?? ''
+      const kelas   = r.siswa?.kelas
       return {
         tagihan_id:    r.id,
         siswa_id:      siswaId,
+        nis:           r.siswa?.nis ?? '-',
         nama:          r.siswa?.nama ?? '—',
-        kelas_nama:    r.siswa?.kelas?.nama ?? '—',
-        kelas_jenjang: r.siswa?.kelas?.jenjang ?? '',
+        kelas_id:      kelas?.id ?? '',
+        kelas_nama:    kelas?.nama ?? '—',
+        kelas_jenjang: kelas?.jenjang ?? '',
+        kelas_warna:   kelas?.warna ?? '#1A2C4E',
         total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
-        status:        (r.status as SiswaTagihanRow['status']) ?? 'belum_bayar',
+        status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
         no_wa:         r.siswa?.no_wa ?? '',
         nama_wali:     r.siswa?.nama_wali ?? '',
+        has_tunggakan: tunggakanIds.has(siswaId),
       }
-    }))
+    })
+
+    setTagihanList(result)
+    return result
   }, [])
 
-  // ── Init ────────────────────────────────────────────────────────────────────
+  // ── Init ─────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/'); return }
 
-      const { data: profile } = await supabase
-        .from('profiles').select('sekolah_id').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
       const sid = (profile as { sekolah_id: string } | null)?.sekolah_id ?? ''
       if (!sid) return
-      setSekolahId(sid)
 
-      const { data: taData } = await supabase
-        .from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle()
+      const { data: taData } = await supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle()
       const tahun = (taData as { nama: string } | null)?.nama ?? ''
-      setActiveTahunAjaran(tahun)
 
       const [{ data: paketCheck }, { data: sekolahData }] = await Promise.all([
         supabase.from('paket').select('id').eq('sekolah_id', sid).eq('tahun_ajaran', tahun).limit(1),
         supabase.from('sekolah').select('nama').eq('id', sid).maybeSingle(),
       ])
-      setHasPaket((paketCheck ?? []).length > 0)
+      const paketAda = (paketCheck ?? []).length > 0
+      setHasPaket(paketAda)
       setNamaSekolah((sekolahData as { nama?: string } | null)?.nama || '')
+      setSekolahId(sid)
+      setTahunAjaran(tahun)
 
-      await loadTagihan(sid, now.getMonth() + 1, now.getFullYear())
+      if (paketAda) {
+        const rows = await loadTagihan(sid, bulanIni, tahunIni)
+        if (rows.length === 0) {
+          setAutoGenerating(true)
+          const res = await runGenerate(sid, tahun, bulanIni, tahunIni)
+          if (!res.success) {
+            setAutoGenError(res.error ?? 'Terjadi kesalahan saat membuat tagihan.')
+          } else {
+            await loadTagihan(sid, bulanIni, tahunIni)
+          }
+          setAutoGenerating(false)
+        }
+      }
+
       setLoading(false)
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Reload saat filter bulan/tahun berubah
+  // ── Realtime sync ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!sekolahId) return
-    ;(async () => { await loadTagihan(sekolahId, selectedBulan, selectedTahun) })()
-  }, [sekolahId, selectedBulan, selectedTahun, loadTagihan])
-
-  // ── Generate tagihan ────────────────────────────────────────────────────────
-
-  const handleGenerate = async () => {
-    setGenerating(true)
-    setGenerateError('')
-    try {
-      // 1. Ambil semua paket aktif + kelas + komponen
-      const { data: paketData, error: e1 } = await supabase
-        .from('paket')
-        .select('id, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(nama, jenis))')
-        .eq('sekolah_id', sekolahId)
-        .eq('tahun_ajaran', activeTahunAjaran)
-      if (e1 || !paketData) throw new Error(`Gagal memuat data paket: ${e1?.message ?? 'tidak ada data'}`)
-
-      // 2. Map: kelas_id → komponen list
-      const kelasToKomponen = new Map<string, { komponen_id: string; nominal: number; nama: string; jenis: string }[]>()
-      for (const p of (paketData as unknown as PaketForGenerate[])) {
-        const komps = p.paket_komponen.map(pk => ({
-          komponen_id: pk.komponen_id,
-          nominal:     pk.nominal,
-          nama:        pk.komponen?.nama ?? '',
-          jenis:       pk.komponen?.jenis ?? '',
-        }))
-        for (const pk of p.paket_kelas) {
-          kelasToKomponen.set(pk.kelas_id, komps)
+    if (!sekolahId || !tahunAjaran) return
+    const channel = supabase
+      .channel(`tagihan-live-${sekolahId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tagihan', filter: `sekolah_id=eq.${sekolahId}` },
+        () => {
+          setSyncing(true)
+          runGenerate(sekolahId, tahunAjaran, bulanIni, tahunIni)
+            .then(() => loadTagihan(sekolahId, bulanIni, tahunIni))
+            .finally(() => setSyncing(false))
         }
-      }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [sekolahId, tahunAjaran, bulanIni, tahunIni, loadTagihan])
 
-      // 2b. Cek apakah semua kelas sudah punya paket
-      const { data: allKelasData } = await supabase
-        .from('kelas').select('id').eq('sekolah_id', sekolahId)
-      const missingKelas = (allKelasData ?? []).filter((k: { id: string }) => !kelasToKomponen.has(k.id))
-      if (missingKelas.length > 0) {
-        setShowPaketKurangPopup(true)
-        setGenerating(false)
+  // ── Search catat siswa ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!showCatatModal || !catatQuery.trim() || catatSelected) {
+        setCatatResults([])
         return
       }
-
-      // 3. Ambil semua siswa aktif dengan kelas
-      const { data: siswaData, error: e2 } = await supabase
+      setCatatSearching(true)
+      const { data } = await supabase
         .from('siswa')
-        .select('id, nama, kelas_id')
+        .select('id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, warna)')
         .eq('sekolah_id', sekolahId)
         .eq('status', 'aktif')
-        .limit(1000)
-      if (e2 || !siswaData) throw new Error(`Gagal memuat data siswa: ${e2?.message ?? 'tidak ada data'}`)
+        .or(`nama.ilike.%${catatQuery.trim()}%,nis.ilike.%${catatQuery.trim()}%`)
+        .limit(5)
+      setCatatResults((data ?? []) as unknown as CatatSiswaResult[])
+      setCatatSearching(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [catatQuery, catatSelected, showCatatModal, sekolahId])
 
-      // 3b. Cek kelas yang sudah dipaketkan tapi belum ada siswanya
-      const siswaPorKelas = new Set((siswaData as SiswaForGenerate[]).map(s => s.kelas_id))
-      const kelasKosong = [...kelasToKomponen.keys()].filter(kid => !siswaPorKelas.has(kid))
-      if (kelasKosong.length > 0) {
-        setShowKelasKosongPopup(true)
-        setGenerating(false)
-        return
-      }
-
-      // 3c. Fetch beasiswa aktif + komponen individu untuk semua siswa (parallel)
-      const siswaIds = (siswaData as SiswaForGenerate[]).map(s => s.id)
-      const today    = new Date().toISOString().split('T')[0]
-      const [{ data: bsData }, { data: individuData }] = await Promise.all([
-        supabase
-          .from('beasiswa_siswa')
-          .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
-          .in('siswa_id', siswaIds)
-          .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
-        supabase
-          .from('siswa_komponen_individu')
-          .select('siswa_id, komponen_id, nominal, komponen:komponen_id(nama, jenis)')
-          .in('siswa_id', siswaIds),
-      ])
-
-      // Map: siswa_id → beasiswa aktif
-      const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
-      for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
-        if (!row.beasiswa) continue
-        const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
-        list.push({
-          jenis_potongan: row.beasiswa.jenis_potongan,
-          persen:         row.beasiswa.persen,
-          nominal:        row.beasiswa.nominal,
-          komponen_ids:   new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)),
-        })
-        siswaBeasiswaMap.set(row.siswa_id, list)
-      }
-
-      // Map: siswa_id → komponen individu
-      const siswaIndividuMap = new Map<string, { komponen_id: string; nama: string; jenis: string; nominal: number }[]>()
-      for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
-        if (!row.komponen) continue
-        const list = siswaIndividuMap.get(row.siswa_id) ?? []
-        list.push({ komponen_id: row.komponen_id, nama: row.komponen.nama, jenis: row.komponen.jenis, nominal: row.nominal })
-        siswaIndividuMap.set(row.siswa_id, list)
-      }
-
-      // 4. Tagihan yang sudah ada bulan ini (skip jika sudah ada)
-      const { data: existingData } = await supabase
-        .from('tagihan').select('siswa_id')
-        .eq('sekolah_id', sekolahId)
-        .eq('bulan', selectedBulan).eq('tahun', selectedTahun)
-      const existingIds = new Set(((existingData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
-
-      // 5. Siswa yang pernah punya tagihan sebelumnya (untuk sekali_bayar)
-      const { data: prevData } = await supabase
-        .from('tagihan').select('siswa_id')
-        .eq('sekolah_id', sekolahId)
-        .neq('bulan', selectedBulan)
-      const siswaWithHistory = new Set(((prevData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
-
-      const isSemesterMonth = selectedBulan === 1 || selectedBulan === 7
-
-      // 6. Build tagihan records
-      const toInsert: { sekolah_id: string; siswa_id: string; bulan: number; tahun: number; total_nominal: number; status: string }[] = []
-      const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; siswa_id: string }[] = []
-
-      for (const siswa of (siswaData as SiswaForGenerate[])) {
-        if (existingIds.has(siswa.id)) continue
-        const komps = kelasToKomponen.get(siswa.kelas_id)
-        if (!komps || komps.length === 0) continue
-
-        const filtered = komps.filter(k => {
-          if (k.jenis === 'rutin_bulanan') return true
-          if (k.jenis === 'per_semester')  return isSemesterMonth
-          if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
-          return false
-        })
-
-        // Komponen individu — ikut aturan jenis yang sama
-        const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(k => {
-          if (k.jenis === 'rutin_bulanan') return true
-          if (k.jenis === 'per_semester')  return isSemesterMonth
-          if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
-          return false
-        })
-
-        const allKomps = [...filtered, ...individu]
-        if (allKomps.length === 0) continue
-
-        // Potongan beasiswa — hanya berlaku jika komponen-nya masuk tagihan bulan ini
-        const tagihanKompIds = new Set(allKomps.map(k => k.komponen_id))
-        let totalPotongan = 0
-        for (const bs of (siswaBeasiswaMap.get(siswa.id) ?? [])) {
-          for (const kid of bs.komponen_ids) {
-            if (!tagihanKompIds.has(kid)) continue
-            const komp = allKomps.find(k => k.komponen_id === kid)
-            if (!komp) continue
-            if (bs.jenis_potongan === 'persen') {
-              totalPotongan += Math.round(komp.nominal * (bs.persen ?? 0) / 100)
-            } else {
-              totalPotongan += bs.nominal ?? 0
-            }
-          }
-        }
-
-        const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
-
-        toInsert.push({
-          sekolah_id:    sekolahId,
-          siswa_id:      siswa.id,
-          bulan:         selectedBulan,
-          tahun:         selectedTahun,
-          total_nominal: total,
-          status:        'belum_bayar',
-        })
-        for (const k of allKomps) {
-          itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
-        }
-      }
-
-      if (toInsert.length === 0) {
-        setGenerateError('Semua siswa sudah memiliki tagihan untuk bulan ini.')
-        return
-      }
-
-      // 7. Insert tagihan
-      const { data: inserted, error: e3 } = await supabase
-        .from('tagihan').insert(toInsert).select('id, siswa_id')
-      if (e3 || !inserted) throw new Error(`Gagal menyimpan tagihan: ${e3?.message ?? 'tidak ada response'}`)
-
-      // 8. Insert tagihan_item
-      const siswaToTagihanId = new Map(((inserted) as { id: string; siswa_id: string }[]).map(t => [t.siswa_id, t.id]))
-      const tagItems = itemsByTempId
-        .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal }))
-        .filter(i => i.tagihan_id)
-      if (tagItems.length > 0) {
-        await supabase.from('tagihan_item').insert(tagItems)
-      }
-
-      await loadTagihan(sekolahId, selectedBulan, selectedTahun)
-    } catch (err) {
-      setGenerateError(err instanceof Error ? err.message : 'Terjadi kesalahan')
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  // ── Kirim WA via Fonnte ─────────────────────────────────────────────────────
+  // ── Kirim WA ──────────────────────────────────────────────────────────────────
 
   const kirimWA = async (t: SiswaTagihanRow) => {
     setSendingWa(prev => new Set(prev).add(t.tagihan_id))
@@ -448,14 +503,13 @@ export default function TagihanAktifPage() {
         namaSiswa:    t.nama,
         kelasNama:    t.kelas_nama,
         totalNominal: t.total_nominal,
-        bulan:        selectedBulan,
-        tahun:        selectedTahun,
+        bulan:        bulanIni,
+        tahun:        tahunIni,
         namaSekolah,
       })
       const res = await fetch('/api/kirim-wa', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ phone_number: formatWaNumber(t.no_wa), content: pesan }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: formatWaNumber(t.no_wa), content: pesan }),
       })
       if (res.ok) {
         setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
@@ -468,304 +522,811 @@ export default function TagihanAktifPage() {
     }
   }
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────────
+
+  const jatuhTempo = getJatuhTempo(bulanIni, tahunIni)
+
+  const getEffStatus = (t: SiswaTagihanRow): EffectiveStatus =>
+    t.has_tunggakan && t.status === 'belum_bayar' ? 'menunggak' : t.status
+
+  const uniqueJenjang = ['Semua', ...Array.from(new Set(tagihanList.map(t => t.kelas_jenjang).filter(Boolean)))]
 
   const filtered = tagihanList.filter(t => {
-    const matchStatus = filterStatus === 'Semua' || t.status === filterStatus
-    const matchSearch = !searchQuery || t.nama.toLowerCase().includes(searchQuery.toLowerCase()) || t.kelas_nama.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchStatus && matchSearch
+    const eff = getEffStatus(t)
+    const matchJenjang = filterJenjang === 'Semua' || t.kelas_jenjang === filterJenjang
+    const matchStatus  = filterStatus  === 'Semua' || eff === filterStatus
+    const matchSearch  = !searchQuery  || t.nama.toLowerCase().includes(searchQuery.toLowerCase()) || t.nis.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchJenjang && matchStatus && matchSearch
   })
 
-  const totalNominal  = tagihanList.reduce((s, t) => s + t.total_nominal, 0)
-  const countLunas    = tagihanList.filter(t => t.status === 'lunas').length
-  const countBelum    = tagihanList.filter(t => t.status === 'belum_bayar').length
+  const countLunas     = tagihanList.filter(t => t.status === 'lunas').length
+  const countCicilan   = tagihanList.filter(t => t.status === 'cicilan').length
+  const countBelum     = tagihanList.filter(t => t.status === 'belum_bayar' && !t.has_tunggakan).length
+  const countMenunggak = tagihanList.filter(t => t.has_tunggakan && t.status === 'belum_bayar').length
+  const totalNominal   = tagihanList.reduce((s, t) => s + t.total_nominal, 0)
+  const sudahMasuk     = tagihanList.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
+  const belumMasuk     = totalNominal - sudahMasuk
 
-  // ── Loading ─────────────────────────────────────────────────────────────────
+  const anyModalOpen = showCatatModal || showDetailModal
+
+  // ── Countdown to end of month ─────────────────────────────────────────────────
+
+  const endOfMonth = new Date(tahunIni, bulanIni, 0)
+  const hDays = Math.max(0, Math.floor((endOfMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+
+  // ── Detail modal computed values ──────────────────────────────────────────────
+
+  const detailEffStatus: EffectiveStatus = detailSiswa ? getEffStatus(detailSiswa) : 'belum_bayar'
+  const detailBadge  = STATUS_CONFIG[detailEffStatus]
+  const detailAvatar = detailSiswa?.kelas_warna || '#1A2C4E'
+
+  // ── Modal 1 handlers ─────────────────────────────────────────────────────────
+
+  const resetCatatModal = () => {
+    setCatatQuery('')
+    setCatatResults([])
+    setCatatSelected(null)
+    setCatatTagihan(null)
+    setCatatRiwayat([])
+    setCatatJumlah('')
+    setCatatTanggal('')
+    setCatatMetode('tunai')
+    setCatatCatatan('')
+  }
+
+  const selectCatatSiswa = async (siswa: CatatSiswaResult) => {
+    setCatatSelected(siswa)
+    setCatatResults([])
+    setCatatQuery(siswa.nama)
+    setCatatTanggal(new Date().toISOString().split('T')[0])
+    const { data: tRow } = await supabase
+      .from('tagihan')
+      .select('id, total_nominal, status')
+      .eq('siswa_id', siswa.id)
+      .eq('bulan', bulanIni)
+      .eq('tahun', tahunIni)
+      .maybeSingle()
+    if (tRow) {
+      const t = tRow as { id: string; total_nominal: number; status: string }
+      setCatatTagihan(t)
+      const { data: riwayatData } = await supabase
+        .from('pembayaran')
+        .select('id, jumlah, metode, tanggal_bayar, catatan')
+        .eq('tagihan_id', t.id)
+        .order('created_at', { ascending: true })
+        .limit(20)
+      const riwayat = (riwayatData ?? []) as PembayaranRow[]
+      setCatatRiwayat(riwayat)
+      setCatatJumlah(String(Math.max(0, t.total_nominal - riwayat.reduce((s, r) => s + r.jumlah, 0))))
+    }
+  }
+
+  const simpanPembayaran = async () => {
+    if (!catatSelected || !catatTagihan || !catatJumlah || !catatTanggal || !sekolahId) return
+    const jumlah = parseInt(catatJumlah, 10)
+    if (!jumlah || jumlah <= 0) return
+    setCatatSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('pembayaran').insert({
+      sekolah_id:       sekolahId,
+      tagihan_siswa_id: catatTagihan.id,
+      tagihan_id:       catatTagihan.id,
+      siswa_id:         catatSelected.id,
+      jumlah,
+      metode:           catatMetode,
+      tanggal_bayar:    new Date(catatTanggal).toISOString(),
+      catatan:          catatCatatan || null,
+      status:           'terkonfirmasi',
+      created_by:       user?.id ?? null,
+    })
+    if (error) { alert('Gagal menyimpan: ' + error.message); setCatatSaving(false); return }
+    const sudah = catatRiwayat.reduce((s, r) => s + r.jumlah, 0) + jumlah
+    await supabase.from('tagihan').update({ status: sudah >= catatTagihan.total_nominal ? 'lunas' : 'cicilan' }).eq('id', catatTagihan.id)
+    resetCatatModal()
+    setShowCatatModal(false)
+    setCatatSaving(false)
+    loadTagihan(sekolahId, bulanIni, tahunIni)
+  }
+
+  // ── Modal 2/3 handlers ───────────────────────────────────────────────────────
+
+  const openDetailModal = async (t: SiswaTagihanRow) => {
+    setDetailSiswa(t)
+    setDetailBeasiswa([])
+    setDetailKomponen([])
+    setDetailPembayaran([])
+    setDetailPaketNama('')
+    setDetailLoading(true)
+    setShowDetailModal(true)
+    const today = new Date().toISOString().split('T')[0]
+    const [{ data: bsData }, { data: itemData }, { data: paketData }] = await Promise.all([
+      supabase
+        .from('beasiswa_siswa')
+        .select('beasiswa:beasiswa_id(nama, jenis_potongan, persen, nominal)')
+        .eq('siswa_id', t.siswa_id)
+        .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
+      supabase
+        .from('tagihan_item')
+        .select('komponen_id, nama_komponen, nominal, komponen:komponen_id(kelas_warna)')
+        .eq('tagihan_id', t.tagihan_id)
+        .order('nominal', { ascending: false }),
+      supabase
+        .from('paket')
+        .select('nama, paket_kelas(kelas_id)')
+        .eq('sekolah_id', sekolahId)
+        .eq('tahun_ajaran', tahunAjaran),
+    ])
+    type BsRaw = { beasiswa: DetailBeasiswaRow | null }
+    setDetailBeasiswa(((bsData ?? []) as unknown as BsRaw[]).map(r => r.beasiswa).filter((b): b is DetailBeasiswaRow => b !== null))
+
+    // Merge tagihan_item snapshot + komponen individu yang ditambah belakangan
+    type ItemRaw = { komponen_id: string | null; nama_komponen: string; nominal: number; komponen: { kelas_warna: string } | null }
+    const snapshotItems = (itemData ?? []) as ItemRaw[]
+    const snapshotKompIds = new Set(snapshotItems.map(i => i.komponen_id).filter(Boolean) as string[])
+    const { data: individuData } = await supabase
+      .from('siswa_komponen_individu')
+      .select('komponen_id, nominal, komponen:komponen_id(nama, kelas_warna)')
+      .eq('siswa_id', t.siswa_id)
+    type IndivRaw = { komponen_id: string; nominal: number; komponen: { nama: string; kelas_warna: string } | null }
+    const extraItems: DetailKomponenRow[] = ((individuData ?? []) as unknown as IndivRaw[])
+      .filter(i => i.komponen && !snapshotKompIds.has(i.komponen_id))
+      .map(i => ({ nama_komponen: i.komponen!.nama, nominal: i.nominal, warna: i.komponen!.kelas_warna }))
+    setDetailKomponen([...snapshotItems.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, warna: i.komponen?.kelas_warna })), ...extraItems])
+
+    type PaketRaw = { nama: string; paket_kelas: { kelas_id: string }[] }
+    const paketForKelas = ((paketData ?? []) as unknown as PaketRaw[]).find(p => p.paket_kelas?.some(pk => pk.kelas_id === t.kelas_id))
+    setDetailPaketNama(paketForKelas?.nama ?? '—')
+    if (t.status === 'cicilan' || t.status === 'lunas') {
+      const { data: pembData } = await supabase
+        .from('pembayaran')
+        .select('id, jumlah, metode, tanggal_bayar, catatan')
+        .eq('tagihan_id', t.tagihan_id)
+        .order('created_at', { ascending: true })
+        .limit(20)
+      setDetailPembayaran((pembData ?? []) as PembayaranRow[])
+    }
+    setDetailLoading(false)
+  }
+
+  const openCatatFromDetail = async () => {
+    if (!detailSiswa) return
+    const siswa: CatatSiswaResult = {
+      id: detailSiswa.siswa_id, nama: detailSiswa.nama, nis: detailSiswa.nis,
+      no_wa: detailSiswa.no_wa, nama_wali: detailSiswa.nama_wali,
+      kelas: { id: detailSiswa.kelas_id, nama: detailSiswa.kelas_nama, warna: detailSiswa.kelas_warna },
+    }
+    resetCatatModal()
+    setShowDetailModal(false)
+    setShowCatatModal(true)
+    await selectCatatSiswa(siswa)
+  }
+
+  const catatSudah = catatRiwayat.reduce((s, r) => s + r.jumlah, 0)
+  const catatSisa  = catatTagihan ? Math.max(0, catatTagihan.total_nominal - catatSudah) : 0
+
+  // ── Loading ───────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Memuat data...
-        </div>
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
       </div>
     )
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div className="dashboard-content">
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Tagihan Aktif</h1>
-          <p className="dashboard-subtitle">
-            {activeTahunAjaran ? `Tahun Ajaran ${activeTahunAjaran}` : 'Kelola tagihan siswa per bulan'}
-          </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 56, height: 56, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 8px 16px rgba(26,44,78,0.3)' }}>
+            <Image src="/icons/IconMoney.png" width={30} height={30} alt="Tagihan Aktif" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--navy-dark)', margin: 0, lineHeight: 1.1, fontFamily: 'var(--font-dm-sans), sans-serif' }}>
+              Tagihan Aktif
+            </h1>
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.15rem 0 0' }}>
+              Ringkasan tagihan dan status pembayaran siswa saat ini
+            </p>
+          </div>
         </div>
+
+        {tagihanList.length > 0 && (
+          <button
+            onClick={() => { if (!anyModalOpen) setShowCatatModal(true) }}
+            disabled={anyModalOpen}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.2rem', fontSize: '0.82rem', fontWeight: 700, cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+            <ClipboardList size={15} />
+            Catat Pembayaran Manual
+          </button>
+        )}
       </div>
 
-      {/* ── No paket state ──────────────────────────────────────────────────── */}
+      {/* ── States: no paket / auto-generating / error / empty ───────────── */}
       {!hasPaket ? (
-        <div style={{ ...sCard, textAlign: 'center', padding: '4rem 2rem' }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📦</div>
-          <div style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--navy-dark)', marginBottom: '0.4rem' }}>
-            Paket komponen per kelas belum dikonfigurasi
+        <div style={sCard}>
+          <div style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+            <div style={{ width: 64, height: 64, background: '#F1F5F9', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <ClipboardList size={30} color="#94A3B8" />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
+            <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+              Tagihan akan muncul otomatis setelah paket per kelas dan data siswa sudah diatur
+            </div>
           </div>
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-            Tagihan siswa baru bisa di-generate setelah paket per kelas selesai dibuat.
+        </div>
+      ) : autoGenerating ? (
+        <div style={sCard}>
+          <div style={{ textAlign: 'center', padding: '3rem 2rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+            Membuat tagihan otomatis untuk {BULAN_NAMES[bulanIni]} {tahunIni}...
           </div>
-          <button
-            onClick={() => router.push('/tagihan/paket-kelas')}
-            style={{ background: '#F7DD7D', color: '#1A2C4E', border: 'none', borderRadius: 10, padding: '0.65rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(18,47,102,0.2)' }}>
-            Konfigurasi Paket Per Kelas
-          </button>
+        </div>
+      ) : autoGenError ? (
+        <div style={{ ...sCard, border: '1.5px solid #FCA5A5', background: '#FFF5F5' }}>
+          <div style={{ textAlign: 'center', padding: '2.5rem 2rem' }}>
+            <div style={{ width: 52, height: 52, background: '#FEE2E2', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <AlertTriangle size={24} color="#DC2626" />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#DC2626', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
+            <div style={{ fontSize: '0.84rem', color: '#374151', marginBottom: '1.25rem', maxWidth: 380, margin: '0 auto 1.25rem' }}>
+              {autoGenError}
+            </div>
+            <button onClick={() => router.push('/tagihan/paket-kelas')}
+              style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Konfigurasi Paket Per Kelas
+            </button>
+          </div>
+        </div>
+      ) : tagihanList.length === 0 ? (
+        <div style={sCard}>
+          <div style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+            <div style={{ width: 64, height: 64, background: '#F1F5F9', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <ClipboardList size={30} color="#94A3B8" />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
+            <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+              Tagihan akan muncul otomatis setelah paket per kelas dan data siswa sudah diatur
+            </div>
+          </div>
         </div>
       ) : (
         <>
-          {/* ── Filter bar ───────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* ── Stat Card Gabungan ─────────────────────────────────────────────── */}
+          <div style={{ ...sCard, marginBottom: '1.25rem', padding: 0, overflow: 'hidden', borderLeft: '28px solid #1A2C4E' }}>
 
-            {/* Pilih bulan */}
-            <select value={selectedBulan} onChange={e => setSelectedBulan(Number(e.target.value))}
-              style={{ ...sSelect }}>
-              {BULAN_NAMES.slice(1).map((nama, i) => (
-                <option key={i + 1} value={i + 1}>{nama}</option>
-              ))}
-            </select>
+            {/* Header outer card */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '1.1rem 1.5rem' }}>
+              <div style={{ width: 40, height: 40, background: '#1A2C4E', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ClipboardList size={20} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.975rem', fontWeight: 700, color: '#1A2C4E', lineHeight: 1.2 }}>Ringkasan status pembayaran</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>Sebaran dan nilai tagihan saat ini</div>
+              </div>
+              {syncing && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#64748B', background: '#F1F5F9', borderRadius: 20, padding: '0.3rem 0.75rem' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', border: '2px solid #94A3B8', borderTopColor: '#1A2C4E', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                  Memperbarui...
+                </div>
+              )}
+            </div>
 
-            {/* Pilih tahun */}
-            <select value={selectedTahun} onChange={e => setSelectedTahun(Number(e.target.value))}
-              style={{ ...sSelect }}>
-              {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+            {/* Inner cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '1.25rem 1.5rem' }}>
 
-            {/* Filter status */}
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              style={{ ...sSelect }}>
-              <option value="Semua">Semua Status</option>
-              <option value="belum_bayar">Belum Bayar</option>
-              <option value="sebagian">Sebagian</option>
-              <option value="lunas">Lunas</option>
-            </select>
+              {/* Inner card 1 — Donut */}
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
+                  <Image src="/icons/IconDollar.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                  <DonutChart
+                    total={tagihanList.length}
+                    label="Siswa"
+                    segments={[
+                      { value: countLunas,     color: '#1A2C4E' },
+                      { value: countCicilan,   color: '#3B82F6' },
+                      { value: countBelum,     color: '#BFDBFE' },
+                      { value: countMenunggak, color: '#EF4444' },
+                    ]}
+                  />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {([
+                      { label: 'Lunas',       count: countLunas,     color: '#1A2C4E' },
+                      { label: 'Cicilan',     count: countCicilan,   color: '#3B82F6' },
+                      { label: 'Belum bayar', count: countBelum,     color: '#BFDBFE' },
+                      { label: 'Menunggak',   count: countMenunggak, color: '#EF4444' },
+                    ] as const).map(item => (
+                      <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0, border: item.color === '#BFDBFE' ? '1px solid #93C5FD' : 'none' }} />
+                          <span style={{ fontSize: '0.8rem', color: '#374151' }}>{item.label}</span>
+                        </div>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: item.label === 'Menunggak' ? '#EF4444' : '#1A2C4E' }}>{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-            {/* Search */}
-            <div style={{ position: 'relative', marginLeft: 'auto' }}>
-              <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-              <input
-                placeholder="Cari nama / kelas..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ ...sInput, paddingLeft: '2.25rem', width: 240 }}
-              />
+              {/* Inner card 2 — Total nominal */}
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
+                  <Image src="/icons/IconKomponen.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
+                </div>
+                <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E', letterSpacing: '-0.02em', paddingBottom: '0.75rem', borderBottom: '3px solid #DADBDE', marginBottom: '0.875rem' }}>
+                  {formatRp(totalNominal)}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ background: '#F7DD7D', borderRadius: 10, padding: '0.45rem 0.75rem', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.4rem' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A2C4E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/><path d="M5 5v14"/></svg>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A2C4E' }}>Sudah masuk</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(sudahMasuk)}</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ background: '#F7DD7D', borderRadius: 10, padding: '0.45rem 0.75rem', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.4rem' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A2C4E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/><path d="M19 5v14"/></svg>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A2C4E' }}>Belum masuk</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(belumMasuk)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
 
-          {/* ── Summary cards ───────────────────────────────────────────────── */}
-          {tagihanList.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.25rem' }}>
-              {[
-                { label: 'Total Siswa',    value: tagihanList.length,      sub: 'Memiliki tagihan bulan ini',    border: 'var(--navy)' },
-                { label: 'Total Nominal',  value: formatRp(totalNominal),  sub: 'Seluruh tagihan bulan ini',     border: '#2563EB'     },
-                { label: 'Sudah Lunas',    value: countLunas,              sub: `dari ${tagihanList.length} siswa`,  border: '#16A34A' },
-                { label: 'Belum Bayar',    value: countBelum,              sub: `dari ${tagihanList.length} siswa`,  border: '#DC2626' },
-              ].map(card => (
-                <div key={card.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1rem 1.25rem', borderLeft: `4px solid ${card.border}` }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: '0.35rem', textTransform: 'uppercase' }}>{card.label}</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.2 }}>{card.value}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>{card.sub}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* ── Filter + Tabel ──────────────────────────────────────────────── */}
+          <div style={{ ...sCard, padding: 0, overflow: 'hidden', borderLeft: 'none' }}>
 
-          {/* ── Generate prompt ──────────────────────────────────────────────── */}
-          {tagihanList.length === 0 && (
-            <div style={{ ...sCard, display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Zap size={24} color="#2563EB" />
+            {/* Filter bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.25rem', borderBottom: '1px solid #F1F5F9', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <select value={filterJenjang} onChange={e => setFilterJenjang(e.target.value)} style={sSelect}>
+                  {uniqueJenjang.map(j => <option key={j} value={j}>{j === 'Semua' ? 'Semua tingkat' : j}</option>)}
+                </select>
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={sSelect}>
+                  <option value="Semua">Semua status</option>
+                  <option value="lunas">Lunas</option>
+                  <option value="cicilan">Cicilan</option>
+                  <option value="belum_bayar">Belum bayar</option>
+                  <option value="menunggak">Menunggak</option>
+                </select>
               </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.2rem' }}>
-                  Tagihan {BULAN_NAMES[selectedBulan]} {selectedTahun} belum di-generate
-                </div>
-                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  Klik tombol untuk membuat tagihan otomatis berdasarkan paket per kelas yang sudah dikonfigurasi.
-                </div>
-                {generateError && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#DC2626', fontWeight: 600 }}>{generateError}</div>
-                )}
+              <div style={{ position: 'relative' }}>
+                <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input
+                  placeholder="Cari nama siswa"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{ ...sInput, paddingLeft: '2.25rem', width: 220 }}
+                />
               </div>
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.7rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: generating ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: generating ? 0.7 : 1, flexShrink: 0 }}>
-                {generating ? 'Membuat tagihan...' : `Generate Tagihan ${BULAN_NAMES[selectedBulan]}`}
-              </button>
             </div>
-          )}
 
-          {/* ── Table ────────────────────────────────────────────────────────── */}
-          {tagihanList.length > 0 && (
-            <div style={{ ...sCard, padding: 0, overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                  <thead>
-                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
-                      <th style={{ ...sTh, width: 40 }}>#</th>
-                      <th style={sTh}>Nama Lengkap</th>
-                      <th style={sTh}>Kelas</th>
-                      <th style={{ ...sTh, textAlign: 'right' }}>Total Tagihan</th>
-                      <th style={{ ...sTh, textAlign: 'center' }}>Status</th>
-                      <th style={{ ...sTh, textAlign: 'center' }}>Aksi</th>
+            {/* Table */}
+            <div style={{ overflowX: 'auto', padding: '0 1rem 0' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ background: '#1A2C4E' }}>
+                    {(['Nama', 'Kelas', 'Total tagihan', 'Status', 'Jatuh tempo', 'Aksi'] as const).map(col => (
+                      <th key={col} style={{ padding: '0.45rem 1rem', textAlign: 'left', fontSize: '0.82rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', borderRadius: col === 'Nama' ? '8px 0 0 8px' : col === 'Aksi' ? '0 8px 8px 0' : undefined }}>
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                        Tidak ada data yang sesuai filter
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                          Tidak ada tagihan yang sesuai filter
-                        </td>
-                      </tr>
-                    ) : filtered.map((t, idx) => {
-                      const badge   = STATUS_CONFIG[t.status] ?? STATUS_CONFIG.belum_bayar
-                      const hasWa   = !!t.no_wa
-                      return (
-                        <tr key={t.tagihan_id} style={{ borderBottom: '1px solid #F1F5F9', transition: 'background 0.1s' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#FAFBFC')}
-                          onMouseLeave={e => (e.currentTarget.style.background = '')}>
+                  ) : filtered.map(t => {
+                    const eff          = getEffStatus(t)
+                    const badge        = STATUS_CONFIG[eff]
+                    const avatarColor  = t.kelas_warna || '#1A2C4E'
+                    const hasWa        = !!t.no_wa
+                    return (
+                      <tr key={t.tagihan_id}
+                        style={{ borderBottom: '1px solid #F1F5F9' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#FAFBFC')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}>
 
-                          <td style={{ ...sTd, color: 'var(--text-muted)', fontWeight: 600, textAlign: 'center' }}>{idx + 1}</td>
-
-                          <td style={sTd}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#E0E7FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', color: '#3730A3', flexShrink: 0 }}>
-                                {t.nama.charAt(0).toUpperCase()}
-                              </div>
-                              <span style={{ fontWeight: 600, color: 'var(--navy-dark)' }}>{t.nama}</span>
+                        {/* Nama */}
+                        <td style={sTd}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.76rem', color: '#fff', flexShrink: 0 }}>
+                              {getInitials(t.nama)}
                             </div>
-                          </td>
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#1A2C4E', fontSize: '0.875rem' }}>{t.nama}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.kelas_nama} • NIS {t.nis}</div>
+                            </div>
+                          </div>
+                        </td>
 
-                          <td style={sTd}>
-                            <span style={{ background: '#EFF6FF', color: '#1D4ED8', fontSize: '0.78rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
-                              {t.kelas_nama}
-                            </span>
-                          </td>
+                        {/* Kelas */}
+                        <td style={sTd}>
+                          <span style={{ background: `${avatarColor}20`, color: avatarColor, border: `1.5px solid ${avatarColor}55`, borderRadius: 8, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700 }}>
+                            {t.kelas_nama}
+                          </span>
+                        </td>
 
-                          <td style={{ ...sTd, textAlign: 'right', fontWeight: 700, color: 'var(--navy-dark)', fontVariantNumeric: 'tabular-nums' }}>
-                            {formatRp(t.total_nominal)}
-                          </td>
+                        {/* Total */}
+                        <td style={{ ...sTd, fontWeight: 700, color: '#1A2C4E', fontVariantNumeric: 'tabular-nums' }}>
+                          {formatRp(t.total_nominal)}
+                        </td>
 
-                          <td style={{ ...sTd, textAlign: 'center' }}>
-                            <span style={{ background: badge.bg, color: badge.color, fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20 }}>
-                              {badge.label}
-                            </span>
-                          </td>
+                        {/* Status */}
+                        <td style={sTd}>
+                          <span style={{ background: badge.bg, color: badge.color, fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                            {badge.label}
+                          </span>
+                        </td>
 
-                          <td style={{ ...sTd, textAlign: 'center' }}>
-                            {hasWa ? (
+                        {/* Jatuh tempo */}
+                        <td style={{ ...sTd, color: '#374151', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                          {jatuhTempo}
+                        </td>
+
+                        {/* Aksi */}
+                        <td style={sTd}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {eff === 'cicilan' ? (
+                              <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                H-{hDays}
+                              </span>
+                            ) : eff === 'belum_bayar' ? (
+                              <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
+                            ) : hasWa ? (
                               <button
-                                onClick={() => kirimWA(t)}
-                                disabled={sendingWa.has(t.tagihan_id)}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.35rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: sendingWa.has(t.tagihan_id) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sendingWa.has(t.tagihan_id) ? 0.6 : 1 }}>
-                                <Image src='/icons/IconWA.png' width={18} height={18} alt='WhatsApp'/>
-                                {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Kirim Pengingat'}
+                                onClick={() => { if (!anyModalOpen) kirimWA(t) }}
+                                disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
+                                {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
                               </button>
                             ) : (
-                              <span style={{ fontSize: '0.78rem', color: '#94A3B8', fontWeight: 500 }}>No WA kosong</span>
+                              <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
                             )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
 
-              {/* Footer count */}
-              <div style={{ padding: '0.75rem 1.5rem', borderTop: '1px solid #E2E8F0', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                Menampilkan {filtered.length} dari {tagihanList.length} siswa
-              </div>
+                            <button
+                              onClick={() => { if (!anyModalOpen) openDetailModal(t) }}
+                              disabled={anyModalOpen}
+                              title="Lihat detail"
+                              style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, cursor: anyModalOpen ? 'not-allowed' : 'pointer', color: '#64748B', flexShrink: 0, opacity: anyModalOpen ? 0.4 : 0.8 }}>
+                              <Eye size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </>
-      )}
-      {/* ── Popup: paket belum lengkap ───────────────────────────────────────── */}
-      {showPaketKurangPopup && (
-        <>
-          <style>{`
-            @keyframes popupBackdropIn { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes popupCardIn     { from { opacity: 0; transform: scale(0.88) translateY(24px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-          `}</style>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(18,47,102,0.38)', backdropFilter: 'blur(3px)', animation: 'popupBackdropIn 0.22s ease' }}
-            onClick={() => setShowPaketKurangPopup(false)}>
-            <div
-              style={{ background: '#fff', borderRadius: 18, padding: '2rem 2rem 1.75rem', maxWidth: 420, width: '90%', boxShadow: '0 24px 64px rgba(18,47,102,0.26)', animation: 'popupCardIn 0.32s cubic-bezier(0.22,1,0.36,1)' }}
-              onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ background: '#FEF3C7', borderRadius: 10, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <AlertTriangle size={21} color="#D97706" strokeWidth={2.5} />
-                </div>
-                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1A2C4E' }}>Paket Belum Lengkap</span>
-              </div>
-              <p style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, lineHeight: 1.65, marginBottom: '1.5rem', paddingLeft: '0.1rem' }}>
-                Paket per kelas untuk beberapa kelas belum dibuat.<br />Segera buat semua paket kelas terlebih dahulu!
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowPaketKurangPopup(false)}
-                  style={{ padding: '0.6rem 1.2rem', borderRadius: 10, border: '2px solid #E5E7EB', background: '#fff', color: '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' }}>
-                  Tutup
-                </button>
-                <button onClick={() => { setShowPaketKurangPopup(false); router.push('/tagihan/paket-kelas') }}
-                  style={{ padding: '0.6rem 1.4rem', borderRadius: 10, border: 'none', background: '#F7DD7D', color: '#1A2C4E', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(18,47,102,0.2)', transition: 'opacity 0.15s' }}>
-                  Buat Paket Kelas
-                </button>
-              </div>
+
+            <div style={{ padding: '0.65rem 1.25rem', borderTop: '1px solid #F1F5F9', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Menampilkan {filtered.length} dari {tagihanList.length} siswa
             </div>
           </div>
         </>
       )}
 
-      {/* ── Popup: kelas sudah dipaketkan tapi belum ada siswa ───────────────── */}
-      {showKelasKosongPopup && (
-        <>
-          <style>{`
-            @keyframes popupBackdropIn { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes popupCardIn     { from { opacity: 0; transform: scale(0.88) translateY(24px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-          `}</style>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(18,47,102,0.38)', backdropFilter: 'blur(3px)', animation: 'popupBackdropIn 0.22s ease' }}
-            onClick={() => setShowKelasKosongPopup(false)}>
-            <div
-              style={{ background: '#fff', borderRadius: 18, padding: '2rem 2rem 1.75rem', maxWidth: 420, width: '90%', boxShadow: '0 24px 64px rgba(18,47,102,0.26)', animation: 'popupCardIn 0.32s cubic-bezier(0.22,1,0.36,1)' }}
-              onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ background: '#FEE2E2', borderRadius: 10, width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <AlertTriangle size={21} color="#DC2626" strokeWidth={2.5} />
+      {/* ── Modal 1: Catat Pembayaran Manual ──────────────────────────────── */}
+      {showCatatModal && (
+        <div style={sBackdrop} onClick={() => { resetCatatModal(); setShowCatatModal(false) }}>
+          <div style={{ ...sModalCard, maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <span style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E' }}>Catat Pembayaran Manual</span>
+              <button onClick={() => { resetCatatModal(); setShowCatatModal(false) }} style={sBtnClose}><X size={17} /></button>
+            </div>
+
+            {/* Cari siswa */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.5rem' }}>Cari siswa</div>
+              {catatSelected ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: '#F8FAFC', border: '1.5px solid #1A2C4E', borderRadius: 10 }}>
+                  <div style={{ width: 38, height: 38, borderRadius: '50%', background: catatSelected.kelas?.warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', color: '#fff', flexShrink: 0 }}>
+                    {getInitials(catatSelected.nama)}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.875rem', color: '#1A2C4E' }}>{catatSelected.nama}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{catatSelected.kelas?.nama ?? '—'} &bull; NIS {catatSelected.nis ?? '-'}</div>
+                  </div>
+                  <button onClick={() => { setCatatSelected(null); setCatatTagihan(null); setCatatRiwayat([]); setCatatJumlah(''); setCatatQuery('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 4, display: 'flex' }}><X size={15} /></button>
                 </div>
-                <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#1A2C4E' }}>Kelas Belum Ada Siswa</span>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input
+                    autoFocus
+                    placeholder="Cari nama atau nomor induk siswa"
+                    value={catatQuery}
+                    onChange={e => setCatatQuery(e.target.value)}
+                    style={{ ...sInput, paddingLeft: '2.4rem', width: '100%', boxSizing: 'border-box' as const, border: '1.5px solid #E2E8F0', borderRadius: 10, fontSize: '0.875rem' }}
+                  />
+                  {(catatResults.length > 0 || catatSearching) && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 10, marginTop: 4, overflow: 'hidden', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                      {catatSearching && <div style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Mencari...</div>}
+                      {catatResults.map(s => (
+                        <div key={s.id} onClick={() => selectCatatSiswa(s)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid #F8FAFC', background: '#fff', transition: 'background 0.1s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#F8FAFC')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: s.kelas?.warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.78rem', color: '#fff', flexShrink: 0 }}>
+                            {getInitials(s.nama)}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '0.875rem', color: '#1A2C4E' }}>{s.nama}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.kelas?.nama ?? '—'} &bull; NIS {s.nis ?? '-'}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {catatSelected && catatTagihan && (
+              <>
+                {/* Riwayat pembayaran */}
+                {catatRiwayat.length > 0 && (
+                  <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.7rem 1rem', borderBottom: '1px solid #F1F5F9' }}>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E' }}>Riwayat pembayaran</span>
+                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1A2C4E', cursor: 'pointer', opacity: 0.75 }}
+                        onClick={() => { resetCatatModal(); setShowCatatModal(false); router.push(`/dashboard/pembayaran?siswa_id=${catatSelected.id}`) }}>
+                        Lihat semua →
+                      </span>
+                    </div>
+                    {catatRiwayat.map((r, i) => (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 1rem', borderBottom: i < catatRiwayat.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
+                        <div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E' }}>Pembayaran ke-{i + 1}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            {new Date(r.tanggal_bayar).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} &bull; {r.metode.charAt(0).toUpperCase() + r.metode.slice(1)}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(r.jumlah)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Summary */}
+                <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, padding: '0.875rem 1rem', marginBottom: '1.25rem' }}>
+                  {([
+                    { label: 'Total tagihan',  val: formatRp(catatTagihan.total_nominal) },
+                    { label: 'Sudah dibayar', val: formatRp(catatSudah) },
+                  ] as const).map(row => (
+                    <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem', fontSize: '0.875rem', color: '#374151' }}>
+                      <span>{row.label}</span><span>{row.val}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px solid #E2E8F0', fontSize: '0.95rem', fontWeight: 800, color: '#1A2C4E' }}>
+                    <span>Sisa tagihan</span>
+                    <span style={{ color: catatSisa === 0 ? '#22C55E' : '#1A2C4E' }}>{formatRp(catatSisa)}</span>
+                  </div>
+                </div>
+
+                {/* Form */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem', marginBottom: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>Jumlah dibayar</div>
+                    <input
+                      type="number"
+                      value={catatJumlah}
+                      onChange={e => setCatatJumlah(e.target.value)}
+                      placeholder="0"
+                      style={{ ...sInput, width: '100%', boxSizing: 'border-box' as const, border: '1.5px solid #E2E8F0', borderRadius: 10 }}
+                    />
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>ⓘ Isi jumlah yang dibayar</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>Tanggal bayar</div>
+                    <input
+                      type="date"
+                      value={catatTanggal}
+                      onChange={e => setCatatTanggal(e.target.value)}
+                      style={{ ...sInput, width: '100%', boxSizing: 'border-box' as const, border: '1.5px solid #E2E8F0', borderRadius: 10 }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>Metode</div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {(['tunai', 'transfer', 'qris'] as const).map(m => (
+                      <button key={m} onClick={() => setCatatMetode(m)}
+                        style={{ padding: '0.45rem 1rem', borderRadius: 8, border: catatMetode === m ? 'none' : '1.5px solid #E2E8F0', background: catatMetode === m ? '#1A2C4E' : '#fff', color: catatMetode === m ? '#fff' : '#374151', fontSize: '0.82rem', fontWeight: catatMetode === m ? 700 : 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' as const }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>
+                    Keterangan <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span>
+                  </div>
+                  <textarea
+                    placeholder="Contoh: Bayar langsung ke Bu Siti bendahara"
+                    rows={2}
+                    value={catatCatatan}
+                    onChange={e => setCatatCatatan(e.target.value)}
+                    style={{ ...sInput, width: '100%', boxSizing: 'border-box' as const, border: '1.5px solid #E2E8F0', borderRadius: 10, resize: 'none', fontFamily: 'inherit' }}
+                  />
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>ⓘ Catatan tambahan seperti metode pembayaran atau siapa penerima pembayaran</div>
+                </div>
+              </>
+            )}
+
+            {catatSelected && !catatTagihan && (
+              <div style={{ padding: '1rem', textAlign: 'center', color: '#92400E', fontSize: '0.82rem', marginBottom: '1rem', background: '#FEF9C3', borderRadius: 10 }}>
+                Siswa ini belum memiliki tagihan untuk bulan ini.
               </div>
-              <p style={{ fontSize: '0.9rem', color: '#374151', fontWeight: 500, lineHeight: 1.65, marginBottom: '1.5rem' }}>
-                Beberapa kelas yang sudah dipaketkan belum memiliki siswa.<br />Segera isi data siswa terlebih dahulu!
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowKelasKosongPopup(false)}
-                  style={{ padding: '0.6rem 1.2rem', borderRadius: 10, border: '2px solid #E5E7EB', background: '#fff', color: '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' }}>
-                  Tutup
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => { resetCatatModal(); setShowCatatModal(false) }} style={sBtnSecondary}>Tutup</button>
+              {catatSelected && catatTagihan && (
+                <button onClick={simpanPembayaran} disabled={catatSaving || !catatJumlah || !catatTanggal}
+                  style={{ ...sBtnPrimary, opacity: (catatSaving || !catatJumlah || !catatTanggal) ? 0.6 : 1, cursor: (catatSaving || !catatJumlah || !catatTanggal) ? 'not-allowed' : 'pointer' }}>
+                  {catatSaving ? 'Menyimpan...' : 'Simpan Pembayaran'}
                 </button>
-                <button onClick={() => { setShowKelasKosongPopup(false); router.push('/siswa') }}
-                  style={{ padding: '0.6rem 1.4rem', borderRadius: 10, border: 'none', background: '#F7DD7D', color: '#1A2C4E', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(18,47,102,0.2)', transition: 'opacity 0.15s' }}>
-                  Isi Data Siswa
-                </button>
-              </div>
+              )}
             </div>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* ── Modal 2/3: Detail Siswa ────────────────────────────────────────── */}
+      {showDetailModal && detailSiswa && (
+        <div style={sBackdrop} onClick={() => setShowDetailModal(false)}>
+          <div style={{ ...sModalCard, maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+
+            {/* Close */}
+            <button onClick={() => setShowDetailModal(false)} style={{ ...sBtnClose, position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+              <X size={17} />
+            </button>
+
+            {/* Student header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #F1F5F9', paddingRight: '2.5rem' }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: detailAvatar, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.88rem', color: '#fff', flexShrink: 0 }}>
+                {getInitials(detailSiswa.nama)}
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E' }}>{detailSiswa.nama}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{detailSiswa.kelas_nama} • NIS {detailSiswa.nis}</div>
+              </div>
+            </div>
+
+            {/* Status + badge row */}
+            <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <span style={{ background: detailBadge.bg, color: detailBadge.color, fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20 }}>
+                {detailBadge.label}
+              </span>
+              {detailLoading
+                ? <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 0' }}>Memuat...</span>
+                : detailBeasiswa.map((bs, i) => (
+                    <span key={i} style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20 }}>
+                      🎗 {bs.nama}
+                    </span>
+                  ))
+              }
+            </div>
+
+            {/* Info rows */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #F1F5F9' }}>
+              {[
+                { label: 'Paket berlaku', val: detailLoading ? '...' : detailPaketNama },
+                { label: 'Jatuh tempo',   val: jatuhTempo },
+                { label: 'Orang tua',     val: detailSiswa.nama_wali || '—' },
+                { label: 'No WA',         val: detailSiswa.no_wa || '—' },
+              ].map(row => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', gap: '1rem' }}>
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{row.label}</span>
+                  <span style={{ fontWeight: 700, color: '#1A2C4E', textAlign: 'right' }}>{row.val}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Riwayat pembayaran */}
+            {detailPembayaran.length > 0 && (
+              <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.7rem 1rem', borderBottom: '1px solid #F1F5F9' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E' }}>Riwayat pembayaran</span>
+                  <span
+                    onClick={() => { setShowDetailModal(false); router.push(`/dashboard/pembayaran?siswa_id=${detailSiswa.siswa_id}`) }}
+                    style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1A2C4E', cursor: 'pointer', opacity: 0.75 }}>
+                    Lihat semua →
+                  </span>
+                </div>
+                {detailPembayaran.map((r, i) => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 1rem', borderBottom: i < detailPembayaran.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
+                    <div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E' }}>Pembayaran ke-{i + 1}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {new Date(r.tanggal_bayar).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} &bull; {r.metode.charAt(0).toUpperCase() + r.metode.slice(1)}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(r.jumlah)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Rincian komponen */}
+            <div style={{ marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E', marginBottom: '0.5rem' }}>Rincian komponen</div>
+              <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                {detailLoading ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Memuat rincian...</div>
+                ) : detailKomponen.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Belum ada rincian komponen.</div>
+                ) : (
+                  <>
+                    {detailKomponen.map((k, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: k.warna ?? '#3B82F6', flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{k.nama_komponen}</span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E' }}>{formatRp(k.nominal)}</span>
+                      </div>
+                    ))}
+                    {detailBeasiswa.map((bs, i) => (
+                      <div key={`bs-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
+                        <span style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>🎗 {bs.nama}</span>
+                        <span style={{ flex: 1 }} />
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#065F46' }}>
+                          {bs.jenis_potongan === 'persen' ? `– ${bs.persen}%` : `– ${formatRp(bs.nominal ?? 0)}`}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+              {detailKomponen.length > 3 && (
+                <div style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>∨ Scroll untuk lihat komponen lain</div>
+              )}
+            </div>
+
+            {/* Total */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.875rem', borderTop: '1.5px solid #E2E8F0', marginTop: '0.75rem', marginBottom: '1.25rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>Total tagihan</span>
+              <span style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1A2C4E' }}>{formatRp(detailSiswa.total_nominal)}</span>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowDetailModal(false)} style={sBtnSecondary}>Tutup</button>
+              {detailSiswa.status !== 'lunas' && (
+                <button onClick={openCatatFromDetail} style={{ ...sBtnPrimary, gap: 6 }}>
+                  <ClipboardList size={14} /> Catat Pembayaran
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
@@ -776,10 +1337,11 @@ export default function TagihanAktifPage() {
 
 const sCard: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid var(--border)',
   borderRadius: 12,
-  padding: '1.25rem 1.5rem',
+  padding: '6rem 2rem',
   marginBottom: '1rem',
+  borderLeft: '28px solid #1A2C4E',
+  boxShadow: '0 0 10px #1a2c4e6e',
 }
 
 const sSelect: React.CSSProperties = {
@@ -787,7 +1349,7 @@ const sSelect: React.CSSProperties = {
   border: '1.5px solid var(--border)',
   borderRadius: 8,
   fontFamily: 'inherit',
-  fontSize: '0.875rem',
+  fontSize: '0.82rem',
   color: 'var(--text-dark)',
   outline: 'none',
   background: '#fff',
@@ -796,7 +1358,7 @@ const sSelect: React.CSSProperties = {
 }
 
 const sInput: React.CSSProperties = {
-  padding: '0.45rem 0.85rem',
+  padding: '0.55rem 0.85rem',
   border: '1.5px solid var(--border)',
   borderRadius: 8,
   fontFamily: 'inherit',
@@ -806,18 +1368,48 @@ const sInput: React.CSSProperties = {
   background: '#fff',
 }
 
-const sTh: React.CSSProperties = {
-  padding: '0.75rem 1rem',
-  fontSize: '0.75rem',
-  fontWeight: 700,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  textAlign: 'left',
-  whiteSpace: 'nowrap',
-}
-
 const sTd: React.CSSProperties = {
   padding: '0.875rem 1rem',
   verticalAlign: 'middle',
+}
+
+const sBackdrop: React.CSSProperties = {
+  position: 'fixed', inset: 0, zIndex: 9999,
+  background: 'rgba(18,47,102,0.45)',
+  backdropFilter: 'blur(4px)',
+  WebkitBackdropFilter: 'blur(4px)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: '1rem',
+}
+
+const sModalCard: React.CSSProperties = {
+  background: '#fff',
+  borderRadius: 16,
+  padding: '1.5rem',
+  width: '100%',
+  boxShadow: '0 24px 64px rgba(18,47,102,0.22)',
+  position: 'relative',
+  maxHeight: '90vh',
+  overflowY: 'auto',
+}
+
+const sBtnClose: React.CSSProperties = {
+  background: '#F1F5F9', border: 'none', borderRadius: 8,
+  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer', color: '#64748B', flexShrink: 0,
+}
+
+const sBtnSecondary: React.CSSProperties = {
+  padding: '0.6rem 1.4rem', borderRadius: 10,
+  border: '2px solid #E2E8F0', background: '#fff',
+  color: '#374151', fontWeight: 700, fontSize: '0.875rem',
+  cursor: 'pointer', fontFamily: 'inherit',
+}
+
+const sBtnPrimary: React.CSSProperties = {
+  padding: '0.6rem 1.4rem', borderRadius: 10,
+  border: 'none', background: '#1A2C4E',
+  color: '#fff', fontWeight: 700, fontSize: '0.875rem',
+  cursor: 'pointer', fontFamily: 'inherit',
+  display: 'inline-flex', alignItems: 'center',
 }

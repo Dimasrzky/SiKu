@@ -1332,23 +1332,23 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
           onClick={() => setKelasOpen(false)}
         >
           <div
-            style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, boxShadow: '0 24px 64px rgba(64, 132, 234, 0.28)', animation: 'kelas-popup-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
+            style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, maxHeight: 'calc(100vh - 4rem)', boxShadow: '0 24px 64px rgba(64, 132, 234, 0.28)', animation: 'kelas-popup-in 0.22s cubic-bezier(0.34,1.56,0.64,1)', display: 'flex', flexDirection: 'column' }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem', flexShrink: 0 }}>
               <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Pilih Kelas</span>
               <button onClick={() => setKelasOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: 4 }}>
                 <X size={28} />
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', overflowY: 'auto' }}>
               {kelasList.map(k => {
                 const active = mKelasId === k.id
                 return (
                   <button key={k.id} type="button"
                     onClick={() => { setMKelasId(k.id); setKelasOpen(false) }}
                     style={{
-                      padding: '0.65rem 0.4rem', borderRadius: 8, fontSize: '0.83rem', fontWeight: 700,
+                      padding: '0.45rem 0.25rem', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700,
                       cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s',
                       background: k.warna,
                       color:      '#fff',
@@ -1475,21 +1475,21 @@ function EditSiswaModal({ siswa, kelasList, editNama, setEditNama, editNis, setE
         `}</style>
         <div style={{ position: 'fixed', inset: 0, zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
           onClick={() => setKelasOpen(false)}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, boxShadow: '0 24px 64px rgba(64,132,234,0.28)', animation: 'kelas-edit-in 0.22s cubic-bezier(0.34,1.56,0.64,1)' }}
+          <div style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', width: '100%', maxWidth: 360, maxHeight: 'calc(100vh - 4rem)', boxShadow: '0 24px 64px rgba(64,132,234,0.28)', animation: 'kelas-edit-in 0.22s cubic-bezier(0.34,1.56,0.64,1)', display: 'flex', flexDirection: 'column' }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.8rem', flexShrink: 0 }}>
               <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--navy-dark)' }}>Pilih Kelas</span>
               <button onClick={() => setKelasOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: 4 }}>
                 <X size={28} />
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', overflowY: 'auto' }}>
               {kelasList.map(k => {
                 const active = editKelasId === k.id
                 return (
                   <button key={k.id} type="button"
                     onClick={() => { setEditKelasId(k.id); setKelasOpen(false) }}
-                    style={{ padding: '0.65rem 0.4rem', borderRadius: 8, fontSize: '0.83rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', background: k.warna, color: '#fff', border: active ? '3px solid #fff' : '2px solid transparent', outline: active ? `3px solid ${k.warna}` : 'none', boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`, transform: active ? 'scale(1.07)' : 'scale(1)' }}>
+                    style={{ padding: '0.45rem 0.25rem', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', background: k.warna, color: '#fff', border: active ? '3px solid #fff' : '2px solid transparent', outline: active ? `3px solid ${k.warna}` : 'none', boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`, transform: active ? 'scale(1.07)' : 'scale(1)' }}>
                     {k.nama}
                   </button>
                 )

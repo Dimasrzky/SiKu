@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight } from 'lucide-react'
+import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const JENJANG_MAP: Record<string, string[]> = {
@@ -52,9 +52,10 @@ interface PaketKelasData {
 }
 
 interface PaketKomponenData {
-  id:       string
-  nominal:  number
-  komponen: { nama: string; kelas_warna: string | null } | null
+  id:          string
+  komponen_id: string
+  nominal:     number
+  komponen:    { nama: string; kelas_warna: string | null } | null
 }
 
 interface PaketItem {
@@ -78,7 +79,7 @@ type SiswaCountRow     = { count: number }
 type KelasNested       = { id: string; nama: string; jenjang: string; siswa: SiswaCountRow[] }
 type PaketKelasNested  = { kelas: KelasNested | null }
 type KomponenNested    = { nama: string; kelas_warna: string | null }
-type PaketKomponenNested = { id: string; nominal: number; komponen: KomponenNested | null }
+type PaketKomponenNested = { id: string; komponen_id: string; nominal: number; komponen: KomponenNested | null }
 type PaketRawFull = {
   id:            string
   nama:          string
@@ -122,14 +123,17 @@ export default function PaketPerKelasPage() {
   const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Edit modal
-  const [editTarget,         setEditTarget]         = useState<PaketItem | null>(null)
-  const [editNama,           setEditNama]           = useState('')
-  const [editJatuhTempo,     setEditJatuhTempo]     = useState('')
-  const [editNominalMap,     setEditNominalMap]     = useState<Record<string, number>>({})
-  const [editingKompId,      setEditingKompId]      = useState<string | null>(null)
-  const [editingKompVal,     setEditingKompVal]     = useState('')
-  const [editSaving,         setEditSaving]         = useState(false)
-  const [editError,          setEditError]          = useState('')
+  const [editTarget,              setEditTarget]              = useState<PaketItem | null>(null)
+  const [editNama,                setEditNama]                = useState('')
+  const [editJatuhTempo,          setEditJatuhTempo]          = useState('')
+  const [editNominalMap,          setEditNominalMap]          = useState<Record<string, number>>({})
+  const [editingKompId,           setEditingKompId]           = useState<string | null>(null)
+  const [editingKompVal,          setEditingKompVal]          = useState('')
+  const [editSelectedKomponenIds, setEditSelectedKomponenIds] = useState<string[]>([])
+  const [editNewNominalMap,       setEditNewNominalMap]       = useState<Record<string, number>>({})
+  const [editSelectedKelasIds,    setEditSelectedKelasIds]    = useState<string[]>([])
+  const [editSaving,              setEditSaving]              = useState(false)
+  const [editError,               setEditError]               = useState('')
 
   // Popup kelas belum lengkap
   const [jenjangOptions,         setJenjangOptions]         = useState<string[]>([])
@@ -143,7 +147,7 @@ export default function PaketPerKelasPage() {
       .select(`
         id, nama, tahun_ajaran, jatuh_tempo,
         paket_kelas(kelas_id, kelas:kelas_id(id, nama, jenjang, siswa(count))),
-        paket_komponen(id, nominal, komponen:komponen_id(nama, kelas_warna))
+        paket_komponen(id, komponen_id, nominal, komponen:komponen_id(nama, kelas_warna))
       `)
       .eq('sekolah_id', sid)
       .order('created_at', { ascending: false })
@@ -164,9 +168,10 @@ export default function PaketPerKelasPage() {
           }))
           .filter(k => k.id !== ''),
         komponen_list: p.paket_komponen.map(pk => ({
-          id:      pk.id,
-          nominal: pk.nominal,
-          komponen: pk.komponen,
+          id:          pk.id,
+          komponen_id: pk.komponen_id,
+          nominal:     pk.nominal,
+          komponen:    pk.komponen,
         })),
       })))
     }
@@ -360,6 +365,9 @@ export default function PaketPerKelasPage() {
     const map: Record<string, number> = {}
     p.komponen_list.forEach(kp => { map[kp.id] = kp.nominal })
     setEditNominalMap(map)
+    setEditSelectedKomponenIds(p.komponen_list.map(kp => kp.komponen_id))
+    setEditNewNominalMap({})
+    setEditSelectedKelasIds(p.kelas_list.map(k => k.id))
     setEditingKompId(null)
     setEditError('')
   }
@@ -373,21 +381,52 @@ export default function PaketPerKelasPage() {
   const handleEditSimpan = async () => {
     if (!editTarget) return
     if (!editNama.trim()) { setEditError('Nama paket harus diisi.'); return }
+    if (editSelectedKelasIds.length === 0) { setEditError('Pilih minimal satu kelas.'); return }
+    if (editSelectedKomponenIds.length === 0) { setEditError('Pilih minimal satu komponen tagihan.'); return }
     setEditSaving(true)
     setEditError('')
 
+    // Update nama & jatuh tempo
     const { error: e1 } = await supabase
       .from('paket')
       .update({ nama: editNama.trim(), jatuh_tempo: editJatuhTempo || null })
       .eq('id', editTarget.id)
     if (e1) { setEditError(e1.message); setEditSaving(false); return }
 
-    const updates = editTarget.komponen_list.map(kp =>
-      supabase.from('paket_komponen')
-        .update({ nominal: editNominalMap[kp.id] ?? kp.nominal })
-        .eq('id', kp.id)
-    )
-    await Promise.all(updates)
+    // Komponen: existing ones — update nominal, removed ones — delete
+    const existingKompIds = new Set(editTarget.komponen_list.map(kp => kp.komponen_id))
+    const removedKomps    = editTarget.komponen_list.filter(kp => !editSelectedKomponenIds.includes(kp.komponen_id))
+    const addedKompIds    = editSelectedKomponenIds.filter(kid => !existingKompIds.has(kid))
+
+    await Promise.all([
+      ...editTarget.komponen_list
+        .filter(kp => editSelectedKomponenIds.includes(kp.komponen_id))
+        .map(kp => supabase.from('paket_komponen').update({ nominal: editNominalMap[kp.id] ?? kp.nominal }).eq('id', kp.id)),
+      ...removedKomps.map(kp => supabase.from('paket_komponen').delete().eq('id', kp.id)),
+      addedKompIds.length > 0
+        ? supabase.from('paket_komponen').insert(
+            addedKompIds.map(kid => ({
+              paket_id:    editTarget.id,
+              komponen_id: kid,
+              nominal:     editNewNominalMap[kid] ?? (komponenList.find(k => k.id === kid)?.nominal_default ?? 0),
+            }))
+          )
+        : Promise.resolve(),
+    ])
+
+    // Kelas: removed ones — delete, added ones — insert
+    const existingKelasIds = new Set(editTarget.kelas_list.map(k => k.id))
+    const removedKelasIds  = editTarget.kelas_list.filter(k => !editSelectedKelasIds.includes(k.id)).map(k => k.id)
+    const addedKelasIds    = editSelectedKelasIds.filter(kid => !existingKelasIds.has(kid))
+
+    await Promise.all([
+      removedKelasIds.length > 0
+        ? supabase.from('paket_kelas').delete().eq('paket_id', editTarget.id).in('kelas_id', removedKelasIds)
+        : Promise.resolve(),
+      addedKelasIds.length > 0
+        ? supabase.from('paket_kelas').insert(addedKelasIds.map(kid => ({ paket_id: editTarget.id, kelas_id: kid })))
+        : Promise.resolve(),
+    ])
 
     await loadPaket(sekolahId, activeTahunAjaran)
     setEditTarget(null)
@@ -858,51 +897,106 @@ export default function PaketPerKelasPage() {
               </div>
             </div>
 
-            {/* Info kelas */}
-            <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '0.65rem 1rem', marginBottom: '1.25rem', fontSize: '0.875rem', color: '#64748B', fontWeight: 500 }}>
-              Berlaku untuk kelas: <strong style={{ color: 'var(--navy-dark)' }}>{editTarget.kelas_list.map(k => k.nama).join(', ')}</strong>
+            {/* Kelas yang dituju */}
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)', marginBottom: '0.6rem' }}>Kelas yang dituju</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {kelasList.map(k => {
+                const isSelected  = editSelectedKelasIds.includes(k.id)
+                const inOtherPaket = assignedKelasIds.has(k.id) && !editTarget.kelas_list.some(ek => ek.id === k.id)
+                return (
+                  <button
+                    key={k.id}
+                    disabled={inOtherPaket}
+                    onClick={() => {
+                      if (inOtherPaket) return
+                      setEditSelectedKelasIds(prev =>
+                        prev.includes(k.id) ? prev.filter(id => id !== k.id) : [...prev, k.id]
+                      )
+                    }}
+                    style={{
+                      padding: '0.4rem 0.85rem', borderRadius: 999, fontSize: '0.82rem', fontWeight: 600,
+                      border: isSelected ? '1.5px solid #1A2C4E' : '1.5px solid #E2E8F0',
+                      background: isSelected ? '#1A2C4E' : inOtherPaket ? '#F8FAFC' : '#fff',
+                      color: isSelected ? '#fff' : inOtherPaket ? '#CBD5E1' : '#64748B',
+                      cursor: inOtherPaket ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    {k.nama}
+                    {inOtherPaket && <span style={{ fontSize: '0.7rem', marginLeft: 4 }}>· dipakai</span>}
+                  </button>
+                )
+              })}
             </div>
 
-            <div style={{ height: 2, background: '#E2E8F0', margin: '0 0 1.25rem' }} />
+            <div style={{ height: 1, background: '#E2E8F0', margin: '0 0 1.25rem' }} />
 
-            {/* Komponen nominals */}
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)', marginBottom: '0.75rem' }}>Nominal Komponen</div>
+            {/* Komponen tagihan */}
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--navy-dark)', marginBottom: '0.6rem' }}>Komponen tagihan</div>
             <div style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', marginBottom: '1.5rem' }}>
-              {editTarget.komponen_list.map((kp, i) => {
-                const isEditingThis = editingKompId === kp.id
-                const inisial = (kp.komponen?.nama ?? '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+              {komponenList.map((km, i) => {
+                const isChecked     = editSelectedKomponenIds.includes(km.id)
+                const existingKp    = editTarget.komponen_list.find(kp => kp.komponen_id === km.id)
+                const isEditingThis = editingKompId === (existingKp?.id ?? '')
+                const inisial       = km.nama.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
                 return (
-                  <div key={kp.id}>
+                  <div key={km.id}>
                     {i > 0 && <div style={{ height: 1, background: '#E2E8F0' }} />}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, background: kp.komponen?.kelas_warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.8rem' }}>{inisial}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: isChecked ? '#fff' : '#FAFAFA', transition: 'background 0.15s' }}>
+                      {/* Checkbox */}
+                      <button
+                        onClick={() => {
+                          setEditSelectedKomponenIds(prev =>
+                            prev.includes(km.id) ? prev.filter(id => id !== km.id) : [...prev, km.id]
+                          )
+                          if (editingKompId === existingKp?.id) setEditingKompId(null)
+                        }}
+                        style={{ width: 20, height: 20, borderRadius: 5, border: isChecked ? '2px solid #1A2C4E' : '2px solid #CBD5E1', background: isChecked ? '#1A2C4E' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', padding: 0 }}
+                      >
+                        {isChecked && <svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </button>
+                      {/* Avatar */}
+                      <div style={{ width: 34, height: 34, borderRadius: 8, background: km.kelas_warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: isChecked ? 1 : 0.4 }}>
+                        <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.75rem' }}>{inisial}</span>
                       </div>
-                      <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: 'var(--navy-dark)' }}>{kp.komponen?.nama ?? '—'}</span>
-                      <div style={{ flexShrink: 0 }}>
-                        {isEditingThis ? (
+                      {/* Nama */}
+                      <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: isChecked ? 'var(--navy-dark)' : '#94A3B8' }}>{km.nama}</span>
+                      {/* Nominal */}
+                      {isChecked && (
+                        existingKp ? (
+                          isEditingThis ? (
+                            <input
+                              type="number"
+                              value={editingKompVal}
+                              onChange={e => setEditingKompVal(e.target.value)}
+                              onBlur={() => commitEditNominal(existingKp.id)}
+                              onKeyDown={e => { if (e.key === 'Enter') commitEditNominal(existingKp.id) }}
+                              style={{ ...sInput, width: 150, padding: '0.4rem 0.75rem', fontSize: '0.875rem', boxShadow: 'none', borderRadius: 999 }}
+                              autoFocus
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: 999, padding: '0.35rem 0.5rem 0.35rem 0.875rem', gap: '0.3rem', minWidth: 148 }}>
+                              <span style={{ flex: 1, fontWeight: 600, fontSize: '0.82rem', color: '#64748B', whiteSpace: 'nowrap' }}>
+                                {formatRupiah(editNominalMap[existingKp.id] ?? existingKp.nominal)}
+                              </span>
+                              <button
+                                onClick={() => { setEditingKompId(existingKp.id); setEditingKompVal(String(editNominalMap[existingKp.id] ?? existingKp.nominal)) }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem 0.35rem', color: '#94A3B8', display: 'flex', alignItems: 'center' }}>
+                                <Pencil size={12} />
+                              </button>
+                            </div>
+                          )
+                        ) : (
+                          // Komponen baru — input nominal langsung
                           <input
                             type="number"
-                            value={editingKompVal}
-                            onChange={e => setEditingKompVal(e.target.value)}
-                            onBlur={() => commitEditNominal(kp.id)}
-                            onKeyDown={e => { if (e.key === 'Enter') commitEditNominal(kp.id) }}
-                            style={{ ...sInput, width: 150, padding: '0.4rem 0.75rem', fontSize: '0.875rem', boxShadow: 'none', borderRadius: 999 }}
-                            autoFocus
+                            placeholder={String(km.nominal_default ?? 0)}
+                            value={editNewNominalMap[km.id] ?? ''}
+                            onChange={e => setEditNewNominalMap(prev => ({ ...prev, [km.id]: parseInt(e.target.value.replace(/\D/g, ''), 10) || 0 }))}
+                            style={{ ...sInput, width: 150, padding: '0.4rem 0.75rem', fontSize: '0.82rem', boxShadow: 'none', borderRadius: 999 }}
                           />
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: 999, padding: '0.35rem 0.5rem 0.35rem 0.875rem', gap: '0.3rem', minWidth: 160 }}>
-                            <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: '#64748B', whiteSpace: 'nowrap' }}>
-                              {formatRupiah(editNominalMap[kp.id] ?? kp.nominal)}
-                            </span>
-                            <button
-                              onClick={() => { setEditingKompId(kp.id); setEditingKompVal(String(editNominalMap[kp.id] ?? kp.nominal)) }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem 0.35rem', color: '#94A3B8', display: 'flex', alignItems: 'center' }}>
-                              <Pencil size={13} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                        )
+                      )}
                     </div>
                   </div>
                 )
@@ -950,7 +1044,13 @@ export default function PaketPerKelasPage() {
 
       {showKelasKurangPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
-          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+          <div style={{ position: 'relative', background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+            <button
+              onClick={() => setShowKelasKurangPopup(false)}
+              style={{ position: 'absolute', top: 14, right: 14, width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
+            >
+              <X size={15} />
+            </button>
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
               <AlertTriangle size={28} color="#D97706" />
             </div>
@@ -968,10 +1068,18 @@ export default function PaketPerKelasPage() {
             </p>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button
-                onClick={() => setShowKelasKurangPopup(false)}
+                onClick={() => {
+                  setShowKelasKurangPopup(false)
+                  setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
+                  setSelectedJenjang(''); setSelectedKelasIds([])
+                  setCheckedKomponenIds([]); setNominalMap({})
+                  setEditingNominalId(null)
+                  setShowForm(true)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
                 style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}
               >
-                Nanti
+                Tetap Buat
               </button>
               <button
                 onClick={() => { setShowKelasKurangPopup(false); router.push('/siswa/manajemen-kelas') }}
