@@ -91,7 +91,7 @@ function DonutChart({ segments, total, label }: { segments: DonutSegment[]; tota
   ).list
 
   return (
-    <svg viewBox="0 0 100 100" style={{ width: 110, height: 110, flexShrink: 0 }}>
+    <svg viewBox="0 0 100 100" style={{ width: 140, height: 140, flexShrink: 0 }}>
       <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={13} />
       {computed.map(({ i, dash, offset, color }) => (
         <circle key={i} cx={CX} cy={CY} r={R} fill="none"
@@ -225,7 +225,12 @@ async function runGenerate(
   if (toInsert.length === 0) return { success: true }
 
   const { data: inserted, error: e3 } = await supabase.from('tagihan').insert(toInsert).select('id, siswa_id')
-  if (e3 || !inserted) return { success: false, error: 'Gagal menyimpan tagihan.' }
+  if (e3) {
+    // 23505 = unique violation: tagihan sudah ada dari concurrent call sebelumnya, anggap sukses
+    if (e3.code === '23505') return { success: true }
+    return { success: false, error: 'Gagal menyimpan tagihan.' }
+  }
+  if (!inserted) return { success: false, error: 'Gagal menyimpan tagihan.' }
 
   const siswaToTagihanId = new Map(((inserted) as { id: string; siswa_id: string }[]).map(t => [t.siswa_id, t.id]))
   const tagItems = itemsByTempId
@@ -413,13 +418,14 @@ export default function TagihanAktifPage() {
   // ── Init ─────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    let cancelled = false
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.replace('/'); return }
+      if (cancelled || !user) { if (!user) router.replace('/'); return }
 
       const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
       const sid = (profile as { sekolah_id: string } | null)?.sekolah_id ?? ''
-      if (!sid) return
+      if (cancelled || !sid) return
 
       const { data: taData } = await supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle()
       const tahun = (taData as { nama: string } | null)?.nama ?? ''
@@ -428,6 +434,7 @@ export default function TagihanAktifPage() {
         supabase.from('paket').select('id').eq('sekolah_id', sid).eq('tahun_ajaran', tahun).limit(1),
         supabase.from('sekolah').select('nama').eq('id', sid).maybeSingle(),
       ])
+      if (cancelled) return
       const paketAda = (paketCheck ?? []).length > 0
       setHasPaket(paketAda)
       setNamaSekolah((sekolahData as { nama?: string } | null)?.nama || '')
@@ -436,9 +443,10 @@ export default function TagihanAktifPage() {
 
       if (paketAda) {
         const rows = await loadTagihan(sid, bulanIni, tahunIni)
-        if (rows.length === 0) {
+        if (!cancelled && rows.length === 0) {
           setAutoGenerating(true)
           const res = await runGenerate(sid, tahun, bulanIni, tahunIni)
+          if (cancelled) return
           if (!res.success) {
             setAutoGenError(res.error ?? 'Terjadi kesalahan saat membuat tagihan.')
           } else {
@@ -448,8 +456,9 @@ export default function TagihanAktifPage() {
         }
       }
 
-      setLoading(false)
+      if (!cancelled) setLoading(false)
     })()
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -805,8 +814,8 @@ export default function TagihanAktifPage() {
                 <ClipboardList size={20} color="#fff" />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.975rem', fontWeight: 700, color: '#1A2C4E', lineHeight: 1.2 }}>Ringkasan status pembayaran</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>Sebaran dan nilai tagihan saat ini</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1A2C4E', lineHeight: 1.2 }}>Ringkasan status pembayaran</div>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: 2 }}>Sebaran dan nilai tagihan saat ini</div>
               </div>
               {syncing && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: '#64748B', background: '#F1F5F9', borderRadius: 20, padding: '0.3rem 0.75rem' }}>
@@ -822,10 +831,10 @@ export default function TagihanAktifPage() {
               {/* Inner card 1 — Donut */}
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
                   <Image src="/icons/IconDollar.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8rem' }}>
                   <DonutChart
                     total={tagihanList.length}
                     label="Siswa"
@@ -858,7 +867,7 @@ export default function TagihanAktifPage() {
               {/* Inner card 2 — Total nominal */}
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
                   <Image src="/icons/IconKomponen.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E', letterSpacing: '-0.02em', paddingBottom: '0.75rem', borderBottom: '3px solid #DADBDE', marginBottom: '0.875rem' }}>
@@ -990,11 +999,32 @@ export default function TagihanAktifPage() {
                         <td style={sTd}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             {eff === 'cicilan' ? (
-                              <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                                H-{hDays}
-                              </span>
+                              <>
+                                <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                  H-{hDays}
+                                </span>
+                                {hasWa && (
+                                  <button
+                                    onClick={() => { if (!anyModalOpen) kirimWA(t) }}
+                                    disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                    <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
+                                    {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+                                  </button>
+                                )}
+                              </>
                             ) : eff === 'belum_bayar' ? (
-                              <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
+                              hasWa ? (
+                                <button
+                                  onClick={() => { if (!anyModalOpen) kirimWA(t) }}
+                                  disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                  <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
+                                  {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+                                </button>
+                              ) : (
+                                <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
+                              )
                             ) : hasWa ? (
                               <button
                                 onClick={() => { if (!anyModalOpen) kirimWA(t) }}

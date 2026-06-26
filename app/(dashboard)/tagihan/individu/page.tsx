@@ -73,15 +73,26 @@ export default function IndividuPage() {
   const [tabelSearch,       setTabelSearch]       = useState('')
 
   // Form states
-  const [showForm,    setShowForm]    = useState(false)
-  const [formClosing, setFormClosing] = useState(false)
-  const [formSaving,  setFormSaving]  = useState(false)
-  const [fKomponen,   setFKomponen]   = useState<Set<string>>(new Set())
-  const [fJenjang,    setFJenjang]    = useState('')
+  const [showForm,       setShowForm]       = useState(false)
+  const [formClosing,    setFormClosing]    = useState(false)
+  const [formSaving,     setFormSaving]     = useState(false)
+  const [editKomponenId, setEditKomponenId] = useState<string | null>(null)
+  const [fKomponen,      setFKomponen]      = useState<Set<string>>(new Set())
+  const [fJenjang,       setFJenjang]       = useState('')
   const [fSearch,     setFSearch]     = useState('')
   const [fResults,    setFResults]    = useState<SiswaResult[]>([])
   const [fRows,       setFRows]       = useState<AssignRow[]>([])
   const [editingIdx,  setEditingIdx]  = useState<number | null>(null)
+
+  // Popup/action states
+  const [viewKomponenItem, setViewKomponenItem] = useState<KomponenGrouped | null>(null)
+  const [viewSiswaItem,    setViewSiswaItem]    = useState<SiswaAssignRow | null>(null)
+  const [editSiswaItem,    setEditSiswaItem]    = useState<SiswaAssignRow | null>(null)
+  const [editNominal,      setEditNominal]      = useState('')
+  const [editSaving,       setEditSaving]       = useState(false)
+  const [deleteKompItem,   setDeleteKompItem]   = useState<KomponenGrouped | null>(null)
+  const [deleteSiswaItem,  setDeleteSiswaItem]  = useState<SiswaAssignRow | null>(null)
+  const [deleteSaving,     setDeleteSaving]     = useState(false)
 
   // ── Load ─────────────────────────────────────────────────────────────────
 
@@ -198,16 +209,31 @@ export default function IndividuPage() {
   const uniqueJenjang = [...new Set(kelasList.map(k => k.jenjang).filter(Boolean))]
 
   const openForm = () => {
+    setEditKomponenId(null)
     setFormClosing(false); setShowForm(true)
     setFKomponen(new Set(komponenList.map(k => k.id)))
     setFJenjang(uniqueJenjang[0] ?? '')
     setFSearch(''); setFResults([]); setFRows([]); setEditingIdx(null)
   }
 
+  const openFormForKomponen = (k: KomponenGrouped) => {
+    setEditKomponenId(k.komponen_id)
+    setFormClosing(false); setShowForm(true)
+    setFKomponen(new Set([k.komponen_id]))
+    setFJenjang(uniqueJenjang[0] ?? '')
+    setFSearch(''); setFResults([]); setEditingIdx(null)
+    const existing = siswaList.filter(r => r.komponen_id === k.komponen_id)
+    setFRows(existing.map(s => ({
+      siswa_id: s.siswa_id, nama: s.siswa_nama,
+      kelas_nama: s.kelas_nama, kelas_warna: s.kelas_warna,
+      nominal: String(s.nominal),
+    })))
+  }
+
   const closeForm = () => {
     setFormClosing(true)
     setTimeout(() => {
-      setShowForm(false); setFormClosing(false)
+      setShowForm(false); setFormClosing(false); setEditKomponenId(null)
       setFKomponen(new Set()); setFJenjang(''); setFSearch(''); setFResults([]); setFRows([]); setEditingIdx(null)
     }, 320)
   }
@@ -243,17 +269,74 @@ export default function IndividuPage() {
     if (fRows.length === 0 || fKomponen.size === 0) return
     setFormSaving(true)
     try {
-      const inserts: { sekolah_id: string; komponen_id: string; siswa_id: string; nominal: number }[] = []
-      for (const kompId of fKomponen) {
-        for (const row of fRows) {
-          inserts.push({ sekolah_id: sekolahId, komponen_id: kompId, siswa_id: row.siswa_id, nominal: Number(row.nominal) || 0 })
+      if (editKomponenId) {
+        // Edit mode: hapus siswa yang dihapus dari form, upsert sisanya
+        const newSiswaIds = new Set(fRows.map(r => r.siswa_id))
+        const toDelete = siswaList
+          .filter(r => r.komponen_id === editKomponenId && !newSiswaIds.has(r.siswa_id))
+          .map(r => r.siswa_id)
+        if (toDelete.length > 0) {
+          await supabase
+            .from('siswa_komponen_individu')
+            .delete()
+            .eq('komponen_id', editKomponenId)
+            .eq('sekolah_id', sekolahId)
+            .in('siswa_id', toDelete)
         }
+        const inserts = fRows.map(r => ({
+          sekolah_id: sekolahId, komponen_id: editKomponenId,
+          siswa_id: r.siswa_id, nominal: Number(r.nominal) || 0,
+        }))
+        await supabase.from('siswa_komponen_individu').upsert(inserts, { onConflict: 'komponen_id,siswa_id' })
+      } else {
+        const inserts: { sekolah_id: string; komponen_id: string; siswa_id: string; nominal: number }[] = []
+        for (const kompId of fKomponen) {
+          for (const row of fRows) {
+            inserts.push({ sekolah_id: sekolahId, komponen_id: kompId, siswa_id: row.siswa_id, nominal: Number(row.nominal) || 0 })
+          }
+        }
+        await supabase.from('siswa_komponen_individu').upsert(inserts, { onConflict: 'komponen_id,siswa_id' })
       }
-      await supabase.from('siswa_komponen_individu').upsert(inserts, { onConflict: 'komponen_id,siswa_id' })
       await loadData(sekolahId)
       closeForm()
       triggerRecalculate()
     } finally { setFormSaving(false) }
+  }
+
+  const handleSaveNominal = async () => {
+    if (!editSiswaItem) return
+    const val = Number(editNominal)
+    if (isNaN(val) || val < 0) return
+    setEditSaving(true)
+    await supabase.from('siswa_komponen_individu').update({ nominal: val }).eq('id', editSiswaItem.id)
+    await loadData(sekolahId)
+    triggerRecalculate()
+    setEditSiswaItem(null)
+    setEditSaving(false)
+  }
+
+  const handleDeleteSiswaConfirm = async () => {
+    if (!deleteSiswaItem) return
+    setDeleteSaving(true)
+    await supabase.from('siswa_komponen_individu').delete().eq('id', deleteSiswaItem.id)
+    await loadData(sekolahId)
+    triggerRecalculate()
+    setDeleteSiswaItem(null)
+    setDeleteSaving(false)
+  }
+
+  const handleDeleteKomponenConfirm = async () => {
+    if (!deleteKompItem || !sekolahId) return
+    setDeleteSaving(true)
+    await supabase
+      .from('siswa_komponen_individu')
+      .delete()
+      .eq('komponen_id', deleteKompItem.komponen_id)
+      .eq('sekolah_id', sekolahId)
+    await loadData(sekolahId)
+    triggerRecalculate()
+    setDeleteKompItem(null)
+    setDeleteSaving(false)
   }
 
   const triggerRecalculate = async () => {
@@ -292,8 +375,24 @@ export default function IndividuPage() {
           {showForm && (
             <div style={sCard}>
 
-              {/* Pilih komponen */}
-              <div style={{ marginBottom: '1.25rem' }}>
+              {/* Banner mode edit komponen */}
+              {editKomponenId && (() => {
+                const k = assignedList.find(x => x.komponen_id === editKomponenId)
+                return k ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '0.65rem 1rem', marginBottom: '1.25rem' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: k.warna, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.72rem' }}>{k.inisial}</span>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1E40AF' }}>Mode edit: {k.nama}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#3B82F6' }}>Tambah atau hapus siswa dari komponen ini. Perubahan langsung disimpan saat klik Simpan.</div>
+                    </div>
+                  </div>
+                ) : null
+              })()}
+
+              {/* Pilih komponen — sembunyikan saat mode edit */}
+              {!editKomponenId && <div style={{ marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E' }}>Pilih komponen</div>
@@ -320,7 +419,7 @@ export default function IndividuPage() {
                   }
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>ⓘ {fKomponen.size} dari {komponenList.length} komponen terpilih</div>
-              </div>
+              </div>}
               <div style={sDivider} />
 
               {/* Filter jenjang + search */}
@@ -518,13 +617,13 @@ export default function IndividuPage() {
                     </div>
                     <div style={{ flex: 1 }} />
                     <div style={{ display: 'flex', gap: '1.5rem', flexShrink: 0, position: 'relative', right: 20 }}>
-                      <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                      <button onClick={() => setViewKomponenItem(k)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
                         <Eye size={18} />
                       </button>
-                      <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
+                      <button onClick={() => openFormForKomponen(k)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.45rem', display: 'flex', alignItems: 'center' }}>
                         <Pencil size={16} />
                       </button>
-                      <button style={{ background: '#DA8181', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff', padding: '0.45rem', display: 'flex', alignItems: 'center', boxShadow: '2px 4px 4px #a8a8a88c' }}>
+                      <button onClick={() => setDeleteKompItem(k)} style={{ background: '#DA8181', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff', padding: '0.45rem', display: 'flex', alignItems: 'center', boxShadow: '2px 4px 4px #a8a8a88c' }}>
                         <Trash2 size={18} />
                       </button>
                     </div>
@@ -622,9 +721,9 @@ export default function IndividuPage() {
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-                          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.3rem', display: 'flex' }}><Eye size={17} /></button>
-                          <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.3rem', display: 'flex' }}><Pencil size={15} /></button>
-                          <button style={{ background: '#DA8181', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff', padding: '0.3rem', display: 'flex', boxShadow: '2px 4px 4px #a8a8a88c' }}><Trash2 size={17} /></button>
+                          <button onClick={() => setViewSiswaItem(r)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.3rem', display: 'flex' }}><Eye size={17} /></button>
+                          <button onClick={() => { setEditSiswaItem(r); setEditNominal(String(r.nominal)) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1A2C4E', padding: '0.3rem', display: 'flex' }}><Pencil size={15} /></button>
+                          <button onClick={() => setDeleteSiswaItem(r)} style={{ background: '#DA8181', border: 'none', borderRadius: 4, cursor: 'pointer', color: '#fff', padding: '0.3rem', display: 'flex', boxShadow: '2px 4px 4px #a8a8a88c' }}><Trash2 size={17} /></button>
                         </div>
                       </td>
                     </tr>
@@ -635,6 +734,161 @@ export default function IndividuPage() {
           </div>
         )
       })()}
+
+      {/* ── Overlay shared style ────────────────────────────────────────────── */}
+      {(viewKomponenItem || viewSiswaItem || editSiswaItem || deleteKompItem || deleteSiswaItem) && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => { setViewKomponenItem(null); setViewSiswaItem(null); setEditSiswaItem(null); setDeleteKompItem(null); setDeleteSiswaItem(null) }}
+        >
+
+          {/* ── View komponen popup ──────────────────────────────────────────── */}
+          {viewKomponenItem && (() => {
+            const siswaDiKomp = siswaList.filter(r => r.komponen_id === viewKomponenItem.komponen_id)
+            return (
+              <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '85vh', boxShadow: '0 24px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div style={{ background: '#1A2C4E', padding: '1.1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.875rem', flexShrink: 0 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: viewKomponenItem.warna, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.82rem' }}>{viewKomponenItem.inisial}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff' }}>{viewKomponenItem.nama}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                      {viewKomponenItem.siswa_count} siswa · {viewKomponenItem.kelas_list || '—'}
+                    </div>
+                  </div>
+                  <button onClick={() => setViewKomponenItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', padding: 4, display: 'flex' }}><X size={18} /></button>
+                </div>
+                {/* Info bar */}
+                <div style={{ padding: '0.7rem 1.5rem', background: '#F8FAFC', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '1.5rem', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 500 }}>Nominal default: <span style={{ fontWeight: 700, color: '#1A2C4E' }}>{viewKomponenItem.nominal_default != null ? fRp(viewKomponenItem.nominal_default) : '—'}</span></div>
+                </div>
+                {/* List siswa */}
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                  {siswaDiKomp.length === 0 ? (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.85rem' }}>Tidak ada siswa</div>
+                  ) : siswaDiKomp.map((r, i) => (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.7rem 1.5rem', borderTop: i > 0 ? '1px solid #F8FAFC' : undefined }}>
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: r.kelas_warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.72rem', color: '#fff', flexShrink: 0 }}>
+                        {r.inisial}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#1A2C4E' }}>{r.siswa_nama}</span>
+                          {r.disesuaikan && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 20, border: '1px solid #FDE68A' }}>Disesuaikan</span>}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 1 }}>{r.kelas_nama}</div>
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1A2C4E', flexShrink: 0 }}>{fRp(r.nominal)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: '0.875rem 1.5rem', borderTop: '1.5px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+                  <button onClick={() => setViewKomponenItem(null)} style={sBtnClose}>Tutup</button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* ── View siswa popup ─────────────────────────────────────────────── */}
+          {viewSiswaItem && (
+            <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 400, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+              <div style={{ background: '#1A2C4E', padding: '1.1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: viewSiswaItem.kelas_warna ?? '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.82rem', color: '#fff', flexShrink: 0 }}>
+                  {viewSiswaItem.inisial}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff' }}>{viewSiswaItem.siswa_nama}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>{viewSiswaItem.kelas_nama}</div>
+                </div>
+                <button onClick={() => setViewSiswaItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', padding: 4, display: 'flex' }}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '0 1.5rem' }}>
+                {[
+                  { label: 'Komponen',       value: viewSiswaItem.komponen_nama },
+                  { label: 'Nominal',        value: fRp(viewSiswaItem.nominal) },
+                  { label: 'Nominal default', value: viewSiswaItem.nominal_default != null ? fRp(viewSiswaItem.nominal_default) : '—' },
+                  { label: 'Status',         value: viewSiswaItem.disesuaikan ? 'Disesuaikan' : 'Default' },
+                  { label: 'Kelas',          value: viewSiswaItem.kelas_nama },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: '1px solid #F8FAFC', fontSize: '0.82rem' }}>
+                    <span style={{ color: '#64748B', fontWeight: 500 }}>{label}</span>
+                    <span style={{ color: '#1A2C4E', fontWeight: 700 }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: '0.875rem 1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setViewSiswaItem(null)} style={sBtnClose}>Tutup</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Edit nominal popup ───────────────────────────────────────────── */}
+          {editSiswaItem && (
+            <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+              <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1.5px solid #F1F5F9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E', marginBottom: 4 }}>Edit Nominal</div>
+                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>{editSiswaItem.siswa_nama} · {editSiswaItem.komponen_nama}</div>
+              </div>
+              <div style={{ padding: '1.25rem 1.5rem' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#475569', marginBottom: '0.4rem' }}>Nominal baru</div>
+                <input
+                  type="number" autoFocus value={editNominal}
+                  onChange={e => setEditNominal(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveNominal()}
+                  style={{ ...sInp, fontSize: '1rem', fontWeight: 700 }}
+                  placeholder="0"
+                />
+                {editSiswaItem.nominal_default != null && (
+                  <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '0.35rem' }}>
+                    Nominal default: {fRp(editSiswaItem.nominal_default)}
+                    <button onClick={() => setEditNominal(String(editSiswaItem.nominal_default))} style={{ marginLeft: '0.4rem', background: 'none', border: 'none', color: '#3B82F6', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Gunakan default</button>
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: '0.875rem 1.5rem', borderTop: '1.5px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                <button onClick={() => setEditSiswaItem(null)} style={sBtnClose}>Batal</button>
+                <button onClick={handleSaveNominal} disabled={editSaving} style={{ padding: '0.55rem 1.5rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: editSaving ? 0.7 : 1 }}>
+                  {editSaving ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Delete confirmation popup ────────────────────────────────────── */}
+          {(deleteKompItem || deleteSiswaItem) && (
+            <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+              <div style={{ padding: '1.5rem', textAlign: 'center' }}>
+                <div style={{ width: 52, height: 52, background: '#FEE2E2', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <Trash2 size={24} color="#DC2626" />
+                </div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E', marginBottom: '0.4rem' }}>
+                  {deleteKompItem ? 'Hapus semua siswa dari komponen ini?' : 'Hapus komponen dari siswa ini?'}
+                </div>
+                <div style={{ fontSize: '0.83rem', color: '#64748B', lineHeight: 1.6 }}>
+                  {deleteKompItem
+                    ? <><strong>{deleteKompItem.nama}</strong> akan dihapus dari <strong>{deleteKompItem.siswa_count} siswa</strong>. Tindakan ini tidak dapat dibatalkan.</>
+                    : <>Komponen <strong>{deleteSiswaItem!.komponen_nama}</strong> akan dihapus dari <strong>{deleteSiswaItem!.siswa_nama}</strong>.</>
+                  }
+                </div>
+              </div>
+              <div style={{ padding: '0 1.5rem 1.25rem', display: 'flex', gap: '0.6rem', justifyContent: 'center' }}>
+                <button onClick={() => { setDeleteKompItem(null); setDeleteSiswaItem(null) }} style={sBtnClose}>Batal</button>
+                <button
+                  onClick={deleteKompItem ? handleDeleteKomponenConfirm : handleDeleteSiswaConfirm}
+                  disabled={deleteSaving}
+                  style={{ padding: '0.55rem 1.5rem', borderRadius: 10, border: 'none', background: '#DC2626', color: '#fff', fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: deleteSaving ? 0.7 : 1 }}
+                >
+                  {deleteSaving ? 'Menghapus...' : 'Ya, Hapus'}
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
     </div>
   )
 }
@@ -646,3 +900,4 @@ const sInp:        CSSProperties = { width: '100%', border: '1px solid #E2E8F0',
 const sDivider:    CSSProperties = { height: 1, background: '#F1F5F9', margin: '0 0 1.25rem' }
 const sBtnOutline: CSSProperties = { background: '#fff', border: '1.5px solid #CBD5E1', color: '#475569', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnYellow:  CSSProperties = { background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.55rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }
+const sBtnClose:   CSSProperties = { padding: '0.55rem 1.25rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontSize: '0.875rem', fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: 'inherit' }

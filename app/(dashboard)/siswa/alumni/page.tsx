@@ -4,24 +4,58 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   GraduationCap, Search, Users, CheckCircle2, X,
-  AlertTriangle, Plus, Eye, ChevronDown,
+  AlertTriangle, Plus, Eye, ChevronDown, ChevronRight, CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AlumniRow {
-  id:           string
-  nama:         string
-  nis:          string | null
-  nisn:         string | null
-  kelas:        string | null
-  tahun_lulus:  string | null
-  jenis_alumni: string | null   // 'lulus' | 'pindah' | 'keluar'
-  nama_wali:    string | null
+  id:            string
+  nama:          string
+  nis:           string | null
+  nisn:          string | null
+  kelas:         string | null
+  tahun_lulus:   string | null
+  jenis_alumni:  string | null   // 'lulus' | 'pindah' | 'keluar'
+  nama_wali:     string | null
+  no_wa:         string | null
+  tanggal_lulus: string | null   // DATE "YYYY-MM-DD"
 }
 
+interface TagihanDetailItem {
+  id:            string
+  bulan:         number
+  tahun:         number
+  status:        string
+  nominal:       number
+  hasPembayaran: boolean
+}
+
+interface TagihanGroupItem {
+  tahun_ajaran_id:   string
+  tahun_ajaran_nama: string
+  kelas_nama:        string | null
+  tagihan:           TagihanDetailItem[]
+  totalNominal:      number
+}
+
+type TagihanRaw = {
+  id: string; total_nominal: number; status: string; bulan: number; tahun: number
+  tahun_ajaran_id: string | null
+  tahun_ajaran: { nama: string } | null
+  kelas: { nama: string } | null
+}
+type PembTagihanRaw = { id: string; tagihan_id: string }
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const BULAN_NAMES = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+const formatRp   = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+const formatDate = (iso: string) => {
+  const d = new Date(iso)
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
 
 const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#DC2626', '#D97706', '#0891B2', '#1A2C4E']
 
@@ -77,6 +111,10 @@ export default function AlumniPage() {
   const [showAngkatanDrop, setShowAngkatanDrop] = useState(false)
   const [showStatusDrop,   setShowStatusDrop]   = useState(false)
   const [viewAlumni,       setViewAlumni]       = useState<AlumniRow | null>(null)
+  const [viewLoading,      setViewLoading]      = useState(false)
+  const [tagihanGroups,    setTagihanGroups]    = useState<TagihanGroupItem[]>([])
+  const [expandedGroups,   setExpandedGroups]   = useState<Set<string>>(new Set())
+  const [totalTagihan,     setTotalTagihan]     = useState(0)
 
   // Click outside untuk tutup dropdown
   useEffect(() => {
@@ -96,10 +134,10 @@ export default function AlumniPage() {
       const steps = (pData as { setup_steps?: Record<string, boolean> } | null)?.setup_steps ?? {}
       if (!steps['komponen_tagihan']) { router.replace('/tagihan/komponen'); return }
 
-      // Query dengan jenis_alumni (fallback jika kolom belum ada)
+      // Query dengan jenis_alumni + no_wa + tanggal_lulus (fallback jika kolom belum ada)
       let result = await supabase
         .from('siswa')
-        .select('id, nama, nis, nisn, kelas, tahun_lulus, jenis_alumni, nama_wali, status')
+        .select('id, nama, nis, nisn, kelas, tahun_lulus, jenis_alumni, nama_wali, no_wa, tanggal_lulus, status')
         .eq('status', 'alumni')
         .order('tahun_lulus', { ascending: false })
         .order('nama')
@@ -108,7 +146,7 @@ export default function AlumniPage() {
       if (result.error) {
         result = await supabase
           .from('siswa')
-          .select('id, nama, nis, nisn, kelas, tahun_lulus, nama_wali, status')
+          .select('id, nama, nis, nisn, kelas, tahun_lulus, nama_wali, no_wa, status')
           .eq('status', 'alumni')
           .order('tahun_lulus', { ascending: false })
           .order('nama')
@@ -132,6 +170,68 @@ export default function AlumniPage() {
       setLoading(false)
     })()
   }, [router])
+
+  // ── Open detail popup ────────────────────────────────────────────────────────
+
+  const openView = async (alumni: AlumniRow) => {
+    setViewAlumni(alumni)
+    setViewLoading(true)
+    setTagihanGroups([])
+    setExpandedGroups(new Set())
+    setTotalTagihan(0)
+
+    const { data: tagihanRaw } = await supabase
+      .from('tagihan')
+      .select('id, total_nominal, status, bulan, tahun, tahun_ajaran_id, tahun_ajaran:tahun_ajaran_id(nama), kelas:kelas_id(nama)')
+      .eq('siswa_id', alumni.id)
+      .order('tahun', { ascending: false })
+      .order('bulan', { ascending: true })
+      .limit(200)
+
+    const tagihan = (tagihanRaw ?? []) as TagihanRaw[]
+    const tagihanIds = tagihan.map(t => t.id)
+
+    const pembByTag = new Map<string, number>()
+    if (tagihanIds.length > 0) {
+      const { data: pembRaw } = await supabase
+        .from('pembayaran')
+        .select('id, tagihan_id')
+        .in('tagihan_id', tagihanIds)
+        .limit(1000)
+      for (const p of (pembRaw ?? []) as PembTagihanRaw[]) {
+        pembByTag.set(p.tagihan_id, (pembByTag.get(p.tagihan_id) ?? 0) + 1)
+      }
+    }
+
+    const groupMap = new Map<string, TagihanGroupItem>()
+    for (const t of tagihan) {
+      const key = t.tahun_ajaran_id ?? `year-${t.tahun}`
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          tahun_ajaran_id:   key,
+          tahun_ajaran_nama: t.tahun_ajaran?.nama ?? String(t.tahun),
+          kelas_nama:        t.kelas?.nama ?? null,
+          tagihan:           [],
+          totalNominal:      0,
+        })
+      }
+      const grp = groupMap.get(key)!
+      grp.tagihan.push({
+        id: t.id, bulan: t.bulan, tahun: t.tahun,
+        status: t.status, nominal: t.total_nominal,
+        hasPembayaran: (pembByTag.get(t.id) ?? 0) > 0,
+      })
+      grp.totalNominal += t.total_nominal
+    }
+
+    const groups = [...groupMap.values()]
+      .sort((a, b) => b.tahun_ajaran_nama.localeCompare(a.tahun_ajaran_nama))
+
+    setTagihanGroups(groups)
+    setTotalTagihan(groups.reduce((s, g) => s + g.totalNominal, 0))
+    if (groups.length > 0) setExpandedGroups(new Set([groups[0].tahun_ajaran_id]))
+    setViewLoading(false)
+  }
 
   // ── Derived stats ───────────────────────────────────────────────────────────
 
@@ -415,7 +515,7 @@ export default function AlumniPage() {
                   {/* Action */}
                   <td style={{ padding: '0.7rem 0.875rem' }}>
                     <button
-                      onClick={() => setViewAlumni(a)}
+                      onClick={() => openView(a)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#CBD5E1', padding: 4, display: 'flex', alignItems: 'center', borderRadius: 6 }}
                       onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = '#1A2C4E'}
                       onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = '#CBD5E1'}
@@ -443,38 +543,161 @@ export default function AlumniPage() {
           onClick={() => setViewAlumni(null)}
         >
           <div
-            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.22)', overflow: 'hidden' }}
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 460, maxHeight: '90vh', boxShadow: '0 24px 60px rgba(0,0,0,0.22)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Popup header */}
-            <div style={{ background: '#1A2C4E', padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-              <div style={{ width: 44, height: 44, borderRadius: '50%', background: avatarColor(viewAlumni.nama), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
-                {getInitials(viewAlumni.nama)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#fff' }}>{viewAlumni.nama}</div>
-                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>Detail alumni</div>
-              </div>
-              <button onClick={() => setViewAlumni(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', padding: 4 }}>
-                <X size={18} />
-              </button>
-            </div>
-            {/* Popup body */}
-            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {[
-                { label: 'NIS',            value: viewAlumni.nis ?? '—' },
-                { label: 'NISN',           value: viewAlumni.nisn ?? '—' },
-                { label: 'Kelas terakhir', value: viewAlumni.kelas ?? '—' },
-                { label: 'Angkatan',       value: viewAlumni.tahun_lulus ?? '—' },
-                { label: 'Status kelulusan', value: viewAlumni.jenis_alumni ?? 'lulus' },
-                { label: 'Orang Tua',      value: viewAlumni.nama_wali ?? '—' },
-                { label: 'Pelunasan',      value: menunggakIds.has(viewAlumni.id) ? 'Menunggak' : 'Lunas' },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid #F8FAFC', fontSize: '0.82rem' }}>
-                  <span style={{ color: '#64748B', fontWeight: 600 }}>{label}</span>
-                  <span style={{ color: '#0F172A', fontWeight: 700 }}>{value}</span>
+            {/* ── Header: avatar + nama + badges ── */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1.5px solid #F1F5F9', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: avatarColor(viewAlumni.nama), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+                  {getInitials(viewAlumni.nama)}
                 </div>
-              ))}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{viewAlumni.nama}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.375rem', flexWrap: 'wrap' }}>
+                    {/* Lulus/Pindah/Keluar + tahun */}
+                    {(() => {
+                      const j = viewAlumni.jenis_alumni ?? 'lulus'
+                      const yr = viewAlumni.tahun_lulus ? ` ${viewAlumni.tahun_lulus}` : ''
+                      if (j === 'pindah') return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#FEF3C7', color: '#92400E', borderRadius: 20, padding: '0.22rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>
+                          <Plus size={10} /> Pindah{yr}
+                        </span>
+                      )
+                      if (j === 'keluar') return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '0.22rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>
+                          <X size={10} /> Keluar{yr}
+                        </span>
+                      )
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EDE9FE', color: '#5B21B6', borderRadius: 20, padding: '0.22rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>
+                          <CheckCircle2 size={10} /> Lulus{yr}
+                        </span>
+                      )
+                    })()}
+                    {/* Pelunasan badge */}
+                    {menunggakIds.has(viewAlumni.id) ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#FEF3C7', color: '#92400E', borderRadius: 20, padding: '0.22rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>
+                        <AlertTriangle size={10} /> Menunggak
+                      </span>
+                    ) : (
+                      <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 20, padding: '0.22rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Lunas</span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setViewAlumni(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', padding: 4, flexShrink: 0 }}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* ── Scrollable body ── */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+
+              {/* Info rows */}
+              <div style={{ padding: '0 1.5rem' }}>
+                {[
+                  { label: 'NIS',            value: viewAlumni.nis ?? viewAlumni.nisn ?? '—' },
+                  { label: 'Angkatan',       value: viewAlumni.tahun_lulus ?? '—' },
+                  { label: 'Kelas terakhir', value: viewAlumni.kelas ?? '—' },
+                  { label: 'Orang tua',      value: viewAlumni.nama_wali ?? '—' },
+                  { label: 'Nomor WhatsApp', value: viewAlumni.no_wa ?? '—' },
+                  { label: 'Tanggal lulus',  value: viewAlumni.tanggal_lulus ? formatDate(viewAlumni.tanggal_lulus) : '—' },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: '1px solid #F8FAFC', fontSize: '0.82rem' }}>
+                    <span style={{ color: '#64748B', fontWeight: 500 }}>{label}</span>
+                    <span style={{ color: '#0F172A', fontWeight: 700, textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Riwayat pembayaran */}
+              <div style={{ padding: '1rem 1.5rem 1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0F172A' }}>Riwayat pembayaran</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#1A2C4E' }}>Total: {formatRp(totalTagihan)}</span>
+                </div>
+
+                {viewLoading ? (
+                  <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.8rem' }}>Memuat riwayat...</div>
+                ) : tagihanGroups.length === 0 ? (
+                  <div style={{ padding: '1.25rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.8rem', background: '#F8FAFC', borderRadius: 10, border: '1px solid #F1F5F9' }}>Belum ada riwayat pembayaran</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {tagihanGroups.map(grp => {
+                      const isExpanded = expandedGroups.has(grp.tahun_ajaran_id)
+                      return (
+                        <div key={grp.tahun_ajaran_id} style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+                          {/* Group header - toggle */}
+                          <button
+                            onClick={() => setExpandedGroups(prev => {
+                              const next = new Set(prev)
+                              if (isExpanded) next.delete(grp.tahun_ajaran_id)
+                              else next.add(grp.tahun_ajaran_id)
+                              return next
+                            })}
+                            style={{ width: '100%', background: '#F8FAFC', border: 'none', padding: '0.65rem 0.875rem', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                {isExpanded
+                                  ? <ChevronDown size={14} color="#64748B" />
+                                  : <ChevronRight size={14} color="#64748B" />
+                                }
+                                <div>
+                                  <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0F172A' }}>{grp.tahun_ajaran_nama}</div>
+                                  {grp.kelas_nama && (
+                                    <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 500, marginTop: 1 }}>Kelas {grp.kelas_nama}</div>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <CreditCard size={13} color="#94A3B8" />
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(grp.totalNominal)}</span>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded rows */}
+                          {isExpanded && (
+                            <div>
+                              {grp.tagihan.map((t, idx) => (
+                                <div key={t.id} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem 0.875rem 0.5rem 2.25rem', borderTop: '1px solid #F1F5F9', background: idx % 2 === 0 ? '#fff' : '#FAFBFF' }}>
+                                  <span style={{ flex: 1, fontSize: '0.78rem', color: '#475569', fontWeight: 500 }}>
+                                    {BULAN_NAMES[t.bulan - 1]} {t.tahun}
+                                  </span>
+                                  <span style={{ fontSize: '0.78rem', color: '#0F172A', fontWeight: 600, marginRight: '0.75rem' }}>
+                                    {formatRp(t.nominal)}
+                                  </span>
+                                  {t.status === 'lunas' ? (
+                                    <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 20, padding: '0.15rem 0.55rem', fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Lunas</span>
+                                  ) : t.hasPembayaran ? (
+                                    <span style={{ background: '#1A2C4E', color: '#fff', borderRadius: 20, padding: '0.15rem 0.55rem', fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Cicilan</span>
+                                  ) : (
+                                    <span style={{ background: '#F1F5F9', color: '#94A3B8', borderRadius: 20, padding: '0.15rem 0.55rem', fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap' }}>Belum</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Footer ── */}
+            <div style={{ padding: '0.875rem 1.5rem', borderTop: '1.5px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+              <button
+                onClick={() => setViewAlumni(null)}
+                style={{ padding: '0.55rem 1.5rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontSize: '0.875rem', fontWeight: 600, color: '#475569', cursor: 'pointer', fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#F8FAFC'}
+                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#fff'}
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>
