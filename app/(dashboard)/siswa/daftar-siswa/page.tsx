@@ -133,6 +133,7 @@ export default function DaftarSiswaPage() {
       .from('siswa')
       .select('id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang), nama_wali, no_wa, status')
       .eq('sekolah_id', sid)
+      .neq('status', 'alumni')
       .order('nama')
       .limit(500)
     setSiswaList((data ?? []) as unknown as SiswaRow[])
@@ -1348,14 +1349,16 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
                   <button key={k.id} type="button"
                     onClick={() => { setMKelasId(k.id); setKelasOpen(false) }}
                     style={{
-                      padding: '0.45rem 0.25rem', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700,
+                      minHeight: 56, padding: '0.4rem 0.3rem', borderRadius: 7,
+                      fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.25,
                       cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s',
-                      background: k.warna,
-                      color:      '#fff',
-                      border:     active ? '3px solid #fff' : '2px solid transparent',
-                      outline:    active ? `3px solid ${k.warna}` : 'none',
-                      boxShadow:  active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`,
-                      transform:  active ? 'scale(1.07)' : 'scale(1)',
+                      background: k.warna, color: '#fff', whiteSpace: 'normal',
+                      wordBreak: 'break-word', textAlign: 'center',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border:    active ? '3px solid #fff' : '2px solid transparent',
+                      outline:   active ? `3px solid ${k.warna}` : 'none',
+                      boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`,
+                      transform: active ? 'scale(1.07)' : 'scale(1)',
                     }}
                   >
                     {k.nama}
@@ -1489,7 +1492,19 @@ function EditSiswaModal({ siswa, kelasList, editNama, setEditNama, editNis, setE
                 return (
                   <button key={k.id} type="button"
                     onClick={() => { setEditKelasId(k.id); setKelasOpen(false) }}
-                    style={{ padding: '0.45rem 0.25rem', borderRadius: 7, fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', background: k.warna, color: '#fff', border: active ? '3px solid #fff' : '2px solid transparent', outline: active ? `3px solid ${k.warna}` : 'none', boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`, transform: active ? 'scale(1.07)' : 'scale(1)' }}>
+                    style={{
+                      minHeight: 56, padding: '0.4rem 0.3rem', borderRadius: 7,
+                      fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.25,
+                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s',
+                      background: k.warna, color: '#fff', whiteSpace: 'normal',
+                      wordBreak: 'break-word', textAlign: 'center',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border:    active ? '3px solid #fff' : '2px solid transparent',
+                      outline:   active ? `3px solid ${k.warna}` : 'none',
+                      boxShadow: active ? `0 4px 14px ${k.warna}88` : `0 2px 6px ${k.warna}44`,
+                      transform: active ? 'scale(1.07)' : 'scale(1)',
+                    }}
+                  >
                     {k.nama}
                   </button>
                 )

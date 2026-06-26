@@ -3,9 +3,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ChevronsUp, Clock, GraduationCap, AlertTriangle, Users,
-  Calendar, Upload, ArrowRight, X, CheckCircle2, Info,
+  Calendar, Upload, ArrowRight, X, CheckCircle2, Info, Search, Move,
 } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 
@@ -48,11 +49,14 @@ interface KelasDB {
   id: string; nama: string; warna: string; jenjang: string
 }
 
+interface SiswaInfo { id: string; nama: string; nis: string | null }
+
 interface KelasMapping {
   dari:        KelasDB
   ke:          KelasDB | null   // null = alumni
   jumlahSiswa: number
   siswaIds:    string[]
+  siswa:       SiswaInfo[]
 }
 
 interface PemetaanGroup {
@@ -67,7 +71,7 @@ interface ReshuffleRow {
   nis:           string
   dariNama:      string
   keNama:        string
-  keterangan:    'Reshuffle' | 'Tinggal Kelas'
+  keterangan:    'Reshuffle' | 'Tinggal Kelas' | 'Lulus'
   dariKelasId?:  string
   keKelasId?:    string
   error?:        string
@@ -97,9 +101,13 @@ export default function NaikKelasPage() {
   // Reshuffle
   const [reshuffleRows,      setReshuffleRows]      = useState<ReshuffleRow[]>([])
   const [showReshuffleTable, setShowReshuffleTable] = useState(false)
-  const [showReshuffleModal, setShowReshuffleModal] = useState(false)
-  const [pendingFile,        setPendingFile]        = useState<File | null>(null)
-  const [isDragging,         setIsDragging]         = useState(false)
+  const [showReshuffleModal,   setShowReshuffleModal]   = useState(false)
+  const [pendingFile,          setPendingFile]          = useState<File | null>(null)
+  const [isDragging,           setIsDragging]           = useState(false)
+  const [reshuffleFileName,    setReshuffleFileName]    = useState('')
+  const [reshuffleSearchQuery, setReshuffleSearchQuery] = useState('')
+  const [showAllReshufflePopup,setShowAllReshufflePopup]= useState(false)
+  const [showConfirmPopup,     setShowConfirmPopup]     = useState(false)
   const [uploadError,        setUploadError]        = useState('')
   const [uploadProcessing,   setUploadProcessing]   = useState(false)
 
@@ -196,12 +204,13 @@ export default function NaikKelasPage() {
     // Siswa aktif
     const { data: siswaData } = await supabase
       .from('siswa')
-      .select('id, kelas_id')
+      .select('id, nama, nis, kelas_id')
       .eq('sekolah_id', sekolahId)
       .eq('status', 'aktif')
+      .order('nama')
       .limit(2000)
 
-    const siswaList = (siswaData ?? []) as { id: string; kelas_id: string }[]
+    const siswaList = (siswaData ?? []) as { id: string; nama: string; nis: string | null; kelas_id: string }[]
     setTotalAktif(siswaList.length)
 
     // Menunggak: tagihan belum_bayar yang sudah lewat bulannya
@@ -221,11 +230,11 @@ export default function NaikKelasPage() {
     )
     setMenunggak(menunggakIds.size)
 
-    // Kelompokkan siswa per kelas
-    const siswaByKelas = new Map<string, string[]>()
+    // Kelompokkan siswa per kelas (dengan detail)
+    const siswaByKelas = new Map<string, SiswaInfo[]>()
     for (const s of siswaList) {
       const list = siswaByKelas.get(s.kelas_id) ?? []
-      list.push(s.id)
+      list.push({ id: s.id, nama: s.nama, nis: s.nis })
       siswaByKelas.set(s.kelas_id, list)
     }
 
@@ -234,17 +243,18 @@ export default function NaikKelasPage() {
     let alumniCount = 0
 
     for (const kelas of kelasList) {
-      const siswaIds = siswaByKelas.get(kelas.id) ?? []
-      if (siswaIds.length === 0) continue
+      const siswa    = siswaByKelas.get(kelas.id) ?? []
+      const siswaIds = siswa.map(s => s.id)
+      if (siswa.length === 0) continue
 
       if (kelas.jenjang === maxLevel) {
         // Kelas tertinggi → alumni
-        alumniCount += siswaIds.length
+        alumniCount += siswa.length
         const key = `${kelas.jenjang}-alumni`
         if (!groupMap.has(key)) groupMap.set(key, { fromJenjang: kelas.jenjang, toJenjang: null, kelas: [], totalSiswa: 0 })
         const grp = groupMap.get(key)!
-        grp.kelas.push({ dari: kelas, ke: null, jumlahSiswa: siswaIds.length, siswaIds })
-        grp.totalSiswa += siswaIds.length
+        grp.kelas.push({ dari: kelas, ke: null, jumlahSiswa: siswa.length, siswaIds, siswa })
+        grp.totalSiswa += siswa.length
       } else {
         const currentIdx = jenjangLevels.indexOf(kelas.jenjang)
         const nextLevel  = currentIdx >= 0 ? jenjangLevels[currentIdx + 1] : null
@@ -257,8 +267,8 @@ export default function NaikKelasPage() {
         const key = `${kelas.jenjang}-${nextLevel}`
         if (!groupMap.has(key)) groupMap.set(key, { fromJenjang: kelas.jenjang, toJenjang: nextLevel, kelas: [], totalSiswa: 0 })
         const grp = groupMap.get(key)!
-        grp.kelas.push({ dari: kelas, ke: targetKelas, jumlahSiswa: siswaIds.length, siswaIds })
-        grp.totalSiswa += siswaIds.length
+        grp.kelas.push({ dari: kelas, ke: targetKelas, jumlahSiswa: siswa.length, siswaIds, siswa })
+        grp.totalSiswa += siswa.length
       }
     }
 
@@ -309,23 +319,26 @@ export default function NaikKelasPage() {
         const nis       = String(row['NIS']       ?? row['nis']        ?? '').trim()
         const kelasBaru = String(row['Kelas Baru'] ?? row['kelas_baru'] ?? row['Kelas baru'] ?? row['KELAS BARU'] ?? '').trim()
 
+        const isAlumni = ['lulus', 'alumni', 'tamat', 'graduated'].includes(kelasBaru.toLowerCase())
+
         const siswa        = siswaByNis.get(nis)
-        const targetKelas  = kelasNamaMap.get(kelasBaru.toUpperCase())
+        const targetKelas  = isAlumni ? undefined : kelasNamaMap.get(kelasBaru.toUpperCase())
         const currentKelas = siswa ? kelasById.get(siswa.kelas_id) : undefined
 
         let error: string | undefined
-        if (!siswa)        error = `Siswa NIS "${nis}" tidak ditemukan`
-        else if (!targetKelas) error = `Kelas "${kelasBaru}" tidak ditemukan`
+        if (!siswa) error = `Siswa NIS "${nis}" tidak ditemukan`
+        else if (!isAlumni && !targetKelas) error = `Kelas "${kelasBaru}" tidak ditemukan`
 
-        const keterangan: 'Reshuffle' | 'Tinggal Kelas' =
-          currentKelas && targetKelas && currentKelas.id === targetKelas.id
+        const keterangan: 'Reshuffle' | 'Tinggal Kelas' | 'Lulus' = isAlumni
+          ? 'Lulus'
+          : currentKelas && targetKelas && currentKelas.id === targetKelas.id
             ? 'Tinggal Kelas'
             : 'Reshuffle'
 
         return {
           nama, nis,
           dariNama:    currentKelas?.nama ?? '—',
-          keNama:      kelasBaru,
+          keNama:      isAlumni ? 'Lulus' : kelasBaru,
           keterangan,
           dariKelasId: siswa?.kelas_id,
           keKelasId:   targetKelas?.id,
@@ -339,6 +352,7 @@ export default function NaikKelasPage() {
         return
       }
 
+      setReshuffleFileName(file.name)
       setReshuffleRows(parsed)
       setShowReshuffleTable(true)
       setShowReshuffleModal(false)
@@ -358,12 +372,18 @@ export default function NaikKelasPage() {
 
     try {
       // Bangun map siswaId → kelas tujuan dari pemetaan otomatis
-      const siswaToKelas = new Map<string, string | 'alumni'>()
+      const siswaToKelas     = new Map<string, string | 'alumni'>()
+      const alumniKelasNama  = new Map<string, string>() // siswaId → nama kelas terakhir
 
       for (const grp of pemetaan) {
         for (const m of grp.kelas) {
           for (const sid of m.siswaIds) {
-            siswaToKelas.set(sid, m.ke ? m.ke.id : 'alumni')
+            if (m.ke) {
+              siswaToKelas.set(sid, m.ke.id)
+            } else {
+              siswaToKelas.set(sid, 'alumni')
+              alumniKelasNama.set(sid, m.dari.nama)
+            }
           }
         }
       }
@@ -384,47 +404,63 @@ export default function NaikKelasPage() {
           const siswaId = siswaByNis.get(row.nis.trim())
           if (!siswaId) continue
 
-          if (row.keterangan === 'Tinggal Kelas') {
-            // Tetap di kelas yang sama — ambil kelas asal
+          if (row.keterangan === 'Lulus') {
+            siswaToKelas.set(siswaId, 'alumni')
+            alumniKelasNama.set(siswaId, row.dariNama)
+          } else if (row.keterangan === 'Tinggal Kelas') {
             if (row.dariKelasId) siswaToKelas.set(siswaId, row.dariKelasId)
           } else {
-            // Reshuffle — pindah ke kelas tujuan
             if (row.keKelasId) siswaToKelas.set(siswaId, row.keKelasId)
           }
         }
       }
 
-      // Update siswa naik kelas
-      const siswaAktif   = [...siswaToKelas.entries()].filter(([, v]) => v !== 'alumni')
-      const siswaAlumni  = [...siswaToKelas.entries()].filter(([, v]) => v === 'alumni')
+      // Tahun lulus dari tanggal selesai tahun ajaran
+      const tahunLulus = String(new Date(tahunAjaran.tanggal_selesai).getFullYear())
 
       // Batch update siswa naik kelas (per kelas tujuan)
       const byKelas = new Map<string, string[]>()
-      for (const [siswaId, kelasId] of siswaAktif) {
-        const list = byKelas.get(kelasId as string) ?? []
+      for (const [siswaId, kelasId] of siswaToKelas) {
+        if (kelasId === 'alumni') continue
+        const list = byKelas.get(kelasId) ?? []
         list.push(siswaId)
-        byKelas.set(kelasId as string, list)
+        byKelas.set(kelasId, list)
       }
 
       for (const [kelasId, siswaIds] of byKelas) {
-        await supabase.from('siswa').update({ kelas_id: kelasId }).in('id', siswaIds)
+        const { error } = await supabase.from('siswa')
+          .update({ kelas_id: kelasId })
+          .eq('sekolah_id', sekolahId)
+          .in('id', siswaIds)
+        if (error) throw new Error(`Gagal update kelas: ${error.message}`)
       }
 
-      // Update siswa → alumni
-      if (siswaAlumni.length > 0) {
-        const alumniIds = siswaAlumni.map(([id]) => id)
-        await supabase.from('siswa').update({ status: 'alumni' }).in('id', alumniIds)
+      // Update siswa → alumni (set status, kelas snapshot, tahun_lulus, clear kelas_id)
+      const byKelasNamaAlumni = new Map<string, string[]>()
+      for (const [siswaId, kelasNama] of alumniKelasNama) {
+        const list = byKelasNamaAlumni.get(kelasNama) ?? []
+        list.push(siswaId)
+        byKelasNamaAlumni.set(kelasNama, list)
+      }
+
+      for (const [kelasNama, ids] of byKelasNamaAlumni) {
+        const { error } = await supabase.from('siswa')
+          .update({ status: 'alumni', jenis_alumni: 'lulus', kelas: kelasNama, tahun_lulus: tahunLulus, kelas_id: null })
+          .eq('sekolah_id', sekolahId)
+          .in('id', ids)
+        if (error) throw new Error(`Gagal update alumni: ${error.message}`)
       }
 
       // Arsip tahun ajaran
-      await supabase.from('tahun_ajaran')
+      const { error: taError } = await supabase.from('tahun_ajaran')
         .update({ is_aktif: false })
         .eq('id', tahunAjaran.id)
+      if (taError) throw new Error(`Gagal arsip tahun ajaran: ${taError.message}`)
 
       setExecuteDone(true)
     } catch (err) {
-      setExecuteError('Terjadi kesalahan saat menjalankan proses. Coba lagi.')
-      console.error(err)
+      setExecuteError(`Terjadi kesalahan: ${(err as Error).message}`)
+      console.error('[handleExecute]', err)
     } finally {
       setExecuting(false)
     }
@@ -500,102 +536,117 @@ export default function NaikKelasPage() {
       {/* ── State 2 — Proses kenaikan ─────────────────────────────────────────── */}
       {pageState === 'state2' && (
         <>
-          {/* Done state */}
-          {executeDone && (
-            <div style={{ background: '#D1FAE5', border: '1px solid #6EE7B7', borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <CheckCircle2 size={22} color="#059669" />
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#065F46' }}>Kenaikan kelas berhasil dijalankan!</div>
-                <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: 2 }}>Data siswa, status alumni, dan tahun ajaran telah diperbarui.</div>
+          {/* ── Layout default (tanpa reshuffle Excel) ──────────────────────── */}
+          {!showReshuffleTable && (<>
+            {/* Done state */}
+            {executeDone && (
+              <div style={{ background: '#fff', border: '1.5px solid #6EE7B7', borderRadius: 16, overflow: 'hidden', marginBottom: '1.5rem', boxShadow: '0 4px 20px rgba(5,150,105,0.1)' }}>
+                {/* Green strip */}
+                <div style={{ background: 'linear-gradient(135deg, #059669, #10B981)', padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <div style={{ width: 48, height: 48, background: 'rgba(255,255,255,0.2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <CheckCircle2 size={26} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff', lineHeight: 1.2 }}>Kenaikan kelas berhasil dijalankan!</div>
+                    <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.8)', marginTop: 3 }}>Data siswa, status alumni, dan tahun ajaran telah diperbarui.</div>
+                  </div>
+                </div>
+                {/* Stats + actions */}
+                <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ width: 32, height: 32, background: '#F0FDF4', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <GraduationCap size={16} color="#059669" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 600 }}>Menjadi alumni</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#059669', lineHeight: 1 }}>{akanAlumni} siswa</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ width: 32, height: 32, background: '#EFF6FF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ChevronsUp size={16} color="#2563EB" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.68rem', color: '#94A3B8', fontWeight: 600 }}>Naik kelas</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#2563EB', lineHeight: 1 }}>{totalAktif - akanAlumni} siswa</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.625rem' }}>
+                    <Link href="/siswa/alumni"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#059669', color: '#fff', borderRadius: 10, padding: '0.6rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none' }}>
+                      <GraduationCap size={15} /> Lihat Halaman Alumni
+                    </Link>
+                    <Link href="/tagihan/tahun-ajaran"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1A2C4E', color: '#fff', borderRadius: 10, padding: '0.6rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none' }}>
+                      <Calendar size={15} /> Atur Tahun Ajaran Baru
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Warning tunggakan */}
+            {menunggak > 0 && !executeDone && (
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '0.875rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertTriangle size={20} color="#DC2626" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991B1B' }}>{menunggak} siswa masih memiliki tunggakan</div>
+                  <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: 2 }}>Sebaiknya selesaikan tunggakan sebelum menjalankan proses kenaikan kelas.</div>
+                </div>
+                <a href="/tagihan/aktif" style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>Lihat Daftar</a>
+              </div>
+            )}
+
+            {/* Kondisi siswa */}
+            <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem 1.5rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1.25rem' }}>
+                <div style={{ width: 48, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <GraduationCap size={22} color="#fff" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A', lineHeight: 1.2 }}>Kondisi siswa saat ini</div>
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', fontWeight: 500, marginTop: 2 }}>Pastikan semua data sudah siap sebelum menjalankan kenaikan kelas</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.875rem' }}>
+                <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #F1F5F9' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>Total siswa aktif</span>
+                    <Users size={18} color="#94A3B8" />
+                  </div>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>{totalAktif}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, marginTop: 4 }}>Akan diproses</div>
+                </div>
+                <div style={{ background: '#FEF2F2', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #FECACA' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#B91C1C' }}>Menunggak</span>
+                    <AlertTriangle size={18} color="#DC2626" />
+                  </div>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#DC2626', lineHeight: 1 }}>{menunggak}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#B91C1C', fontWeight: 600, marginTop: 4 }}>Siswa perlu diselesaikan</div>
+                </div>
+                <div style={{ background: '#F0FDF4', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #BBF7D0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#065F46' }}>Akan jadi alumni</span>
+                    <GraduationCap size={18} color="#16A34A" />
+                  </div>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16A34A', lineHeight: 1 }}>{akanAlumni}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 600, marginTop: 4 }}>Siswa kelas tertinggi akan lulus</div>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Warning tunggakan */}
-          {menunggak > 0 && !executeDone && (
-            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '0.875rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <AlertTriangle size={20} color="#DC2626" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991B1B' }}>
-                  {menunggak} siswa masih memiliki tunggakan
+            {/* Pemetaan otomatis */}
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A' }}>Pemetaan kelas</div>
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', fontWeight: 500, marginTop: 2 }}>Siswa naik satu tingkat dengan kelas yang sama</div>
                 </div>
-                <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: 2 }}>
-                  Sebaiknya selesaikan tunggakan sebelum menjalankan proses kenaikan kelas.
-                </div>
-              </div>
-              <a href="/tagihan/aktif" style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                Lihat Daftar
-              </a>
-            </div>
-          )}
-
-          {/* Kondisi siswa — wrapper card */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem 1.5rem', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1.25rem' }}>
-              <div style={{ width: 48, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <GraduationCap size={22} color="#fff" />
-              </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A', lineHeight: 1.2 }}>Kondisi siswa saat ini</div>
-                <div style={{ fontSize: '0.8rem', color: '#94A3B8', fontWeight: 500, marginTop: 2 }}>Pastikan semua data sudah siap sebelum menjalankan kenaikan kelas</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.875rem' }}>
-              {/* Total siswa aktif */}
-              <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #F1F5F9' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>Total siswa aktif</span>
-                  <Users size={18} color="#94A3B8" />
-                </div>
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>{totalAktif}</div>
-                <div style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, marginTop: 4 }}>Akan diproses</div>
-              </div>
-
-              {/* Menunggak */}
-              <div style={{ background: '#FEF2F2', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #FECACA' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#B91C1C' }}>Menunggak</span>
-                  <AlertTriangle size={18} color="#DC2626" />
-                </div>
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#DC2626', lineHeight: 1 }}>{menunggak}</div>
-                <div style={{ fontSize: '0.72rem', color: '#B91C1C', fontWeight: 600, marginTop: 4 }}>Siswa perlu diselesaikan</div>
-              </div>
-
-              {/* Akan jadi alumni */}
-              <div style={{ background: '#F0FDF4', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #BBF7D0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#065F46' }}>Akan jadi alumni</span>
-                  <GraduationCap size={18} color="#16A34A" />
-                </div>
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16A34A', lineHeight: 1 }}>{akanAlumni}</div>
-                <div style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 600, marginTop: 4 }}>
-                  Siswa kelas tertinggi akan lulus
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Pemetaan kelas */}
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A' }}>Pemetaan kelas</div>
-                <div style={{ fontSize: '0.8rem', color: '#94A3B8', fontWeight: 500, marginTop: 2 }}>
-                  {showReshuffleTable ? 'Pemetaan dengan data reshuffle dari Excel' : 'Siswa naik satu tingkat dengan kelas yang sama'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {showReshuffleTable && (
-                  <button
-                    onClick={() => { setShowReshuffleTable(false); setReshuffleRows([]) }}
-                    style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
-                  >
-                    <X size={13} /> Hapus Reshuffle
-                  </button>
-                )}
                 <button
                   onClick={() => { setShowReshuffleModal(true); setUploadError('') }}
                   style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
@@ -605,144 +656,297 @@ export default function NaikKelasPage() {
                   <Upload size={13} /> Ada reshuffle? Upload Excel
                 </button>
               </div>
-            </div>
-
-            {uploadError && (
-              <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.6rem 0.875rem', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.875rem' }}>
-                {uploadError}
-              </div>
-            )}
-
-            {/* Tabel reshuffle */}
-            {showReshuffleTable ? (
-              <div style={{ border: '1px solid #F1F5F9', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto', padding: '0 1rem' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                    <thead>
-                      <tr style={{ background: '#1A2C4E' }}>
-                        {(['Nama', 'NIS', 'Dari', 'Ke', 'Keterangan'] as const).map((h, i, arr) => (
-                          <th key={h} style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', borderRadius: i === 0 ? '8px 0 0 8px' : i === arr.length - 1 ? '0 8px 8px 0' : undefined }}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reshuffleRows.map((row, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}
-                          onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#FAFBFF'}
-                          onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = ''}
-                        >
-                          <td style={{ padding: '0.7rem 1rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.62rem', fontWeight: 800, color: '#fff' }}>
-                                {getInitials(row.nama)}
+              <div style={{ border: '1px solid #F1F5F9', borderRadius: 10, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
+                {pemetaan.map((grp, gi) => (
+                  <div key={gi} style={{ borderBottom: gi < pemetaan.length - 1 ? '2px solid #F1F5F9' : undefined }}>
+                    {/* Group header */}
+                    <div style={{ background: '#EEF4FF', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                      <Image src="/icons/IconLayer.png" width={14} height={14} alt="" />
+                      <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#1A2C4E', flex: 1 }}>
+                        {grp.toJenjang === null ? `Kelas ${grp.fromJenjang} → Alumni` : `Kelas ${grp.fromJenjang} → Kelas ${grp.toJenjang}`}
+                      </span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748B' }}>{grp.kelas.length} kelas · {grp.totalSiswa} siswa</span>
+                    </div>
+                    {/* Per-kelas rows with per-siswa detail */}
+                    {grp.kelas.map((m, mi) => (
+                      <div key={mi} style={{ borderBottom: mi < grp.kelas.length - 1 ? '1px solid #F8FAFC' : undefined }}>
+                        {/* Kelas summary row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem 0.35rem', background: '#FAFBFF' }}>
+                          <span style={{ background: m.dari.warna + '22', color: m.dari.warna, borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.dari.nama}</span>
+                          <ArrowRight size={13} color="#94A3B8" style={{ flexShrink: 0 }} />
+                          {m.ke ? (
+                            <span style={{ background: m.ke.warna + '22', color: m.ke.warna, borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.ke.nama}</span>
+                          ) : (
+                            <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700 }}>Alumni</span>
+                          )}
+                          <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, marginLeft: 'auto' }}>{m.jumlahSiswa} siswa</span>
+                        </div>
+                        {/* Per-siswa list */}
+                        <div style={{ padding: '0 1rem 0.6rem 1.5rem', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {m.siswa.map(s => (
+                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderRadius: 6, background: '#F8FAFC' }}>
+                              <div style={{ width: 22, height: 22, borderRadius: '50%', background: m.dari.warna, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+                                {getInitials(s.nama)}
                               </div>
-                              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A' }}>{row.nama}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.7rem 1rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 600 }}>{row.nis}</td>
-                          <td style={{ padding: '0.7rem 1rem' }}>
-                            {row.error ? (
-                              <span style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600 }}>{row.dariNama}</span>
-                            ) : (
-                              <span style={{ background: '#EEF2FF', color: '#4F46E5', borderRadius: 6, padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: 700 }}>{row.dariNama}</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '0.7rem 1rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              <ArrowRight size={13} color="#94A3B8" />
-                              {row.error ? (
-                                <span style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600 }}>{row.keNama}</span>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0F172A', flex: 1 }}>{s.nama}</span>
+                              {s.nis && <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontFamily: 'monospace', fontWeight: 500 }}>{s.nis}</span>}
+                              <ArrowRight size={10} color="#CBD5E1" style={{ flexShrink: 0 }} />
+                              {m.ke ? (
+                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: m.ke.warna }}>{m.ke.nama}</span>
                               ) : (
-                                <span style={{ background: '#DCFCE7', color: '#16A34A', borderRadius: 6, padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: 700 }}>{row.keNama}</span>
+                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>Alumni</span>
                               )}
                             </div>
-                          </td>
-                          <td style={{ padding: '0.7rem 1rem' }}>
-                            {row.error ? (
-                              <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Error: {row.error}</span>
-                            ) : row.keterangan === 'Tinggal Kelas' ? (
-                              <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Tinggal Kelas</span>
-                            ) : (
-                              <span style={{ background: '#DCFCE7', color: '#16A34A', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Reshuffle</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              /* Pemetaan otomatis */
-              <div style={{ border: '1px solid #F1F5F9', borderRadius: 10, overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
-                {pemetaan.map((grp, gi) => (
-                  <div key={gi}>
-                    {/* Group header — sama persis dengan manajemen kelas */}
-                    <div style={{ background: '#A3CDFE', width: '94%', borderRadius: 6, marginLeft: 20, padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Image src="/icons/IconLayer.png" width={16} height={16} alt="" />
-                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', position: 'relative', right: '37%' }}>
-                        {grp.toJenjang === null
-                          ? `Kelas ${grp.fromJenjang} → Alumni`
-                          : `Kelas ${grp.fromJenjang} → Kelas ${grp.toJenjang}`}
-                      </span>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', opacity: 0.75 }}>
-                        {grp.kelas.length} kelas · {grp.totalSiswa} siswa
-                      </span>
-                    </div>
-
-                    {/* Individual kelas rows */}
-                    {grp.kelas.map((m, mi) => (
-                      <div key={mi} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.65rem 1rem', borderBottom: mi < grp.kelas.length - 1 ? '1px solid #F8FAFC' : undefined }}>
-                        <span style={{ background: m.dari.warna + '22', color: m.dari.warna, borderRadius: 6, padding: '0.2rem 0.55rem', fontSize: '0.8rem', fontWeight: 700, minWidth: 36, textAlign: 'center' }}>
-                          {m.dari.nama}
-                        </span>
-                        <span style={{ background: m.dari.warna + '22', color: m.dari.warna, borderRadius: 20, padding: '0.2rem 0.75rem', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {m.dari.nama} · {m.jumlahSiswa} siswa
-                        </span>
-                        <ArrowRight size={14} color="#94A3B8" style={{ flexShrink: 0 }} />
-                        {m.ke ? (
-                          <span style={{ background: m.ke.warna + '22', color: m.ke.warna, borderRadius: 20, padding: '0.2rem 0.75rem', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                            {m.ke.nama} · {m.jumlahSiswa} siswa
-                          </span>
-                        ) : (
-                          <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 20, padding: '0.2rem 0.75rem', fontSize: '0.75rem', fontWeight: 600 }}>
-                            Alumni ({m.jumlahSiswa} siswa)
-                          </span>
-                        )}
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
                 ))}
-                <div style={{ padding: '0.6rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.75rem', fontWeight: 600, background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
-                  ↓ Scroll untuk lihat semua kelas
-                </div>
+              </div>
+            </div>
+
+            {executeError && (
+              <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 600, marginBottom: '1rem' }}>{executeError}</div>
+            )}
+            {!executeDone && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowConfirmPopup(true)}
+                  disabled={executing}
+                  style={{ background: executing ? '#94A3B8' : '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0.8rem 1.75rem', fontSize: '0.95rem', fontWeight: 800, cursor: executing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: executing ? 'none' : '0 4px 16px rgba(245,158,11,0.35)' }}
+                  onMouseEnter={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#D97706' }}
+                  onMouseLeave={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#F59E0B' }}
+                >
+                  {executing ? 'Memproses...' : <>Jalankan Kenaikan Kelas <ArrowRight size={16} /></>}
+                </button>
               </div>
             )}
-          </div>
+          </>)}
 
-          {/* Execute error */}
-          {executeError && (
-            <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 600, marginBottom: '1rem' }}>
-              {executeError}
-            </div>
-          )}
+          {/* ── Layout preview reshuffle Excel ──────────────────────────────── */}
+          {showReshuffleTable && (() => {
+            const validRows    = reshuffleRows.filter(r => !r.error)
+            const validCount   = validRows.length
+            const searchLower  = reshuffleSearchQuery.toLowerCase()
+            const filteredRows = reshuffleRows.filter(r =>
+              r.nama.toLowerCase().includes(searchLower) || r.nis.includes(reshuffleSearchQuery)
+            )
 
-          {/* Tombol jalankan */}
-          {!executeDone && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleExecute}
-                disabled={executing}
-                style={{ background: executing ? '#94A3B8' : '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0.8rem 1.75rem', fontSize: '0.95rem', fontWeight: 800, cursor: executing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: executing ? 'none' : '0 4px 16px rgba(245,158,11,0.35)' }}
-                onMouseEnter={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#D97706' }}
-                onMouseLeave={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#F59E0B' }}
-              >
-                {executing ? 'Memproses...' : <>Jalankan Kenaikan Kelas <ArrowRight size={16} /></>}
-              </button>
-            </div>
-          )}
+            const ReshuffleTableBody = ({ rows }: { rows: typeof reshuffleRows }) => (
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #F8FAFC' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#FAFBFF'}
+                    onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = ''}
+                  >
+                    <td style={{ padding: '0.65rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#1A2C4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '0.62rem', fontWeight: 800, color: '#fff' }}>{getInitials(row.nama)}</div>
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A' }}>{row.nama}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '0.65rem 1rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 600 }}>{row.nis}</td>
+                    <td style={{ padding: '0.65rem 1rem' }}>
+                      {row.error
+                        ? <span style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600 }}>{row.dariNama}</span>
+                        : <span style={{ background: '#EEF2FF', color: '#4F46E5', borderRadius: 6, padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: 700 }}>{row.dariNama}</span>}
+                    </td>
+                    <td style={{ padding: '0.65rem 1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <ArrowRight size={13} color="#94A3B8" />
+                        {row.error
+                          ? <span style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600 }}>{row.keNama}</span>
+                          : <span style={{ background: '#DCFCE7', color: '#16A34A', borderRadius: 6, padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: 700 }}>{row.keNama}</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: '0.65rem 1rem' }}>
+                      {row.error
+                        ? <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Error: {row.error}</span>
+                        : row.keterangan === 'Lulus'
+                          ? <span style={{ background: '#EDE9FE', color: '#6D28D9', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Lulus</span>
+                          : row.keterangan === 'Tinggal Kelas'
+                            ? <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Tinggal Kelas</span>
+                            : <span style={{ background: '#DCFCE7', color: '#16A34A', borderRadius: 20, padding: '0.2rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>Reshuffle</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            )
+
+            return (<>
+              {/* Done state reshuffle */}
+              {executeDone && (
+                <div style={{ background: '#D1FAE5', border: '1px solid #6EE7B7', borderRadius: 12, padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <CheckCircle2 size={20} color="#059669" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.875rem', color: '#065F46' }}>Kenaikan kelas berhasil dijalankan!</div>
+                    <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: 1 }}>{akanAlumni} siswa → Alumni · {totalAktif - akanAlumni} siswa naik kelas</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Header preview */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                  <div style={{ width: 48, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <ChevronsUp size={22} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0F172A' }}>Preview kenaikan kelas</div>
+                    <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 2 }}>Verifikasi sebelum menjalankan proses</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setShowReshuffleTable(false); setReshuffleRows([]); setReshuffleSearchQuery('') }}
+                  style={{ background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: 8, padding: '0.5rem 1rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                >
+                  <X size={13} /> Batalkan Reshuffle
+                </button>
+              </div>
+
+              {/* File status banner */}
+              <div style={{ background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: 12, padding: '0.875rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1.25rem' }}>
+                <div style={{ width: 36, height: 36, background: '#16A34A', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <CheckCircle2 size={18} color="#fff" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#065F46' }}>File Excel valid – {validCount} pengecualian terdeteksi</div>
+                  <div style={{ fontSize: '0.76rem', color: '#059669', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {totalAktif} siswa mengikuti pemetaan default &bull; {reshuffleFileName}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setShowReshuffleModal(true); setUploadError('') }}
+                  style={{ background: '#fff', color: '#16A34A', border: '1.5px solid #16A34A', borderRadius: 8, padding: '0.4rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  Ganti File
+                </button>
+              </div>
+
+              {/* Perubahan dari Excel card */}
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0F172A' }}>Perubahan dari Excel</span>
+                    <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 20, padding: '0.15rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>{validCount} siswa</span>
+                  </div>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <Search size={13} color="#94A3B8" style={{ position: 'absolute', left: 9 }} />
+                    <input
+                      placeholder="Cari nama siswa"
+                      value={reshuffleSearchQuery}
+                      onChange={e => setReshuffleSearchQuery(e.target.value)}
+                      style={{ paddingLeft: 28, paddingRight: 10, paddingTop: '0.4rem', paddingBottom: '0.4rem', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: '0.8rem', outline: 'none', width: 180, fontFamily: 'inherit', color: '#0F172A' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid #F1F5F9', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                      <thead>
+                        <tr style={{ background: '#1A2C4E' }}>
+                          {(['Nama', 'NIS', 'Dari', 'Ke', 'Keterangan'] as const).map((h, i, arr) => (
+                            <th key={h} style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', borderRadius: i === 0 ? '8px 0 0 8px' : i === arr.length - 1 ? '0 8px 8px 0' : undefined }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <ReshuffleTableBody rows={filteredRows.slice(0, 6)} />
+                    </table>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.75rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
+                    Menampilkan {Math.min(6, filteredRows.length)} dari {filteredRows.length} perubahan
+                  </span>
+                  {filteredRows.length > 6 && (
+                    <button
+                      onClick={() => setShowAllReshufflePopup(true)}
+                      style={{ background: 'none', border: 'none', color: '#16A34A', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      Lihat Semua <ArrowRight size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Mengikuti pemetaan default card */}
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0F172A' }}>Mengikuti pemetaan default</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 2 }}>siswa naik satu tingkat dengan kelas yang sama</div>
+                  <div style={{ marginTop: '0.65rem' }}>
+                    <span style={{ background: '#F1F5F9', color: '#475569', borderRadius: 20, padding: '0.22rem 0.75rem', fontSize: '0.82rem', fontWeight: 700 }}>{totalAktif} siswa</span>
+                  </div>
+                </div>
+                <Move size={32} color="#CBD5E1" style={{ flexShrink: 0 }} />
+                <div style={{ flexShrink: 0 }}>
+                  {!executeDone && executeError && (
+                    <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.5rem 0.75rem', fontSize: '0.78rem', fontWeight: 600, marginBottom: '0.5rem' }}>{executeError}</div>
+                  )}
+                  {executeDone ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <Link href="/siswa/alumni"
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#059669', color: '#fff', borderRadius: 10, padding: '0.6rem 1rem', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none' }}>
+                        <GraduationCap size={14} /> Lihat Alumni
+                      </Link>
+                      <Link href="/tagihan/tahun-ajaran"
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#1A2C4E', color: '#fff', borderRadius: 10, padding: '0.6rem 1rem', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none' }}>
+                        <Calendar size={14} /> Tahun Ajaran Baru
+                      </Link>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowConfirmPopup(true)}
+                      disabled={executing}
+                      style={{ background: executing ? '#94A3B8' : '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0.75rem 1.5rem', fontSize: '0.9rem', fontWeight: 800, cursor: executing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: executing ? 'none' : '0 4px 16px rgba(245,158,11,0.35)' }}
+                      onMouseEnter={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#D97706' }}
+                      onMouseLeave={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#F59E0B' }}
+                    >
+                      {executing ? 'Memproses...' : <>Jalankan Kenaikan Kelas <ArrowRight size={15} /></>}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Popup Lihat Semua */}
+              {showAllReshufflePopup && (
+                <div
+                  style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                  onClick={() => setShowAllReshufflePopup(false)}
+                >
+                  <div
+                    style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.22)' }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div style={{ padding: '1rem 1.25rem', borderBottom: '1.5px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0F172A' }}>Semua perubahan dari Excel</span>
+                        <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 20, padding: '0.15rem 0.65rem', fontSize: '0.72rem', fontWeight: 700 }}>{reshuffleRows.length} baris</span>
+                      </div>
+                      <button onClick={() => setShowAllReshufflePopup(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: 4 }}>
+                        <X size={20} />
+                      </button>
+                    </div>
+                    <div style={{ overflowY: 'auto', padding: '0.75rem 1rem' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                        <thead>
+                          <tr style={{ background: '#1A2C4E' }}>
+                            {(['Nama', 'NIS', 'Dari', 'Ke', 'Keterangan'] as const).map((h, i, arr) => (
+                              <th key={h} style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: '#fff', borderRadius: i === 0 ? '8px 0 0 8px' : i === arr.length - 1 ? '0 8px 8px 0' : undefined }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <ReshuffleTableBody rows={reshuffleRows} />
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>)
+          })()}
         </>
       )}
 
@@ -886,6 +1090,80 @@ export default function NaikKelasPage() {
               >
                 Pergi ke Manajemen Kelas
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Popup Konfirmasi Jalankan ────────────────────────────────────────── */}
+      {showConfirmPopup && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 32 }}
+          onClick={() => setShowConfirmPopup(false)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.22)', overflow: 'hidden' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header strip */}
+            <div style={{ background: '#1A2C4E', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.12)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ChevronsUp size={20} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fff' }}>Konfirmasi Kenaikan Kelas</div>
+                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>Periksa ringkasan sebelum melanjutkan</div>
+              </div>
+              <button onClick={() => setShowConfirmPopup(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.7)', padding: 4 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '1.25rem' }}>
+              {/* Stats */}
+              <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', marginBottom: '1rem' }}>
+                {[
+                  { label: 'Total siswa akan diproses', value: `${totalAktif} siswa`, icon: <Users size={15} color="#64748B" /> },
+                  { label: 'Akan jadi alumni',           value: `${akanAlumni} siswa`,  icon: <GraduationCap size={15} color="#16A34A" /> },
+                  ...(showReshuffleTable ? [{ label: 'Menggunakan data reshuffle Excel', value: `${reshuffleRows.filter(r => !r.error).length} siswa`, icon: <Upload size={15} color="#3B82F6" /> }] : []),
+                ].map((row, i) => (
+                  <div key={i}>
+                    {i > 0 && <div style={{ height: 1, background: '#F1F5F9' }} />}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 600 }}>{row.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0F172A' }}>{row.value}</span>
+                        {row.icon}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Warning note */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, padding: '0.65rem 0.875rem', marginBottom: '1.25rem' }}>
+                <AlertTriangle size={15} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: '0.78rem', color: '#92400E', lineHeight: 1.55 }}>
+                  Proses ini akan memperbarui kelas seluruh siswa dan mengakhiri tahun ajaran aktif. <strong>Tindakan ini tidak dapat dibatalkan.</strong>
+                </span>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowConfirmPopup(false)}
+                  style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', color: '#475569', fontFamily: 'inherit' }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => { setShowConfirmPopup(false); handleExecute() }}
+                  style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: 'none', background: '#F59E0B', color: '#fff', fontWeight: 800, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 14px rgba(245,158,11,0.35)' }}
+                >
+                  <ChevronsUp size={15} /> Ya, Jalankan Sekarang
+                </button>
+              </div>
             </div>
           </div>
         </div>

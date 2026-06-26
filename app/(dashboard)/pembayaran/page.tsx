@@ -32,11 +32,6 @@ function getInitials(nama: string): string {
   return nama.slice(0, 2).toUpperCase()
 }
 
-function isPeriodPast(bulan: number, tahun: number): boolean {
-  const now = new Date()
-  return tahun < now.getFullYear() ||
-    (tahun === now.getFullYear() && bulan < now.getMonth() + 1)
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -236,67 +231,44 @@ export default function PembayaranPage() {
       pembByTagihan.set(p.tagihan_id, list)
     }
 
-    const isLate = isPeriodPast(bulan, tahun)
     const rows: DisplayRow[] = []
 
     for (const t of tagihan) {
       const pembs = pembByTagihan.get(t.id) ?? []
-      const kelas = t.siswa?.kelas
-      const paidTotal = pembs.reduce((s, p) => s + p.jumlah, 0)
+      if (pembs.length === 0) continue  // tidak ada transaksi = jangan tampilkan
+
+      const kelas        = t.siswa?.kelas
+      const paidTotal    = pembs.reduce((s, p) => s + p.jumlah, 0)
       const paymentCount = pembs.length
 
-      const effectiveStatus: EffectiveStatus =
-        t.status === 'lunas'   ? 'lunas'
-        : t.status === 'cicilan' ? 'cicilan'
-        : isLate               ? 'menunggak'
-        : 'belum_bayar'
-
       const common = {
-        tagihan_id:    t.id,
-        siswa_id:      t.siswa?.id ?? '',
-        siswa_nama:    t.siswa?.nama ?? '-',
-        siswa_nis:     t.siswa?.nis ?? null,
-        kelas_id:      kelas?.id ?? '',
-        kelas_nama:    kelas?.nama ?? '-',
-        kelas_warna:   kelas?.warna ?? '#94A3B8',
-        tagihan_total: t.total_nominal,
-        paid_total:    paidTotal,
-        payment_count: paymentCount,
-        effectiveStatus,
+        tagihan_id:     t.id,
+        siswa_id:       t.siswa?.id ?? '',
+        siswa_nama:     t.siswa?.nama ?? '-',
+        siswa_nis:      t.siswa?.nis ?? null,
+        kelas_id:       kelas?.id ?? '',
+        kelas_nama:     kelas?.nama ?? '-',
+        kelas_warna:    kelas?.warna ?? '#94A3B8',
+        tagihan_total:  t.total_nominal,
+        paid_total:     paidTotal,
+        payment_count:  paymentCount,
         tagihan_status: t.status,
       }
 
-      if (t.status === 'lunas') {
-        const last = pembs[pembs.length - 1]
+      // Satu baris per transaksi pembayaran
+      pembs.forEach((p, idx) => {
+        const isLast: boolean         = idx === pembs.length - 1
+        const effectiveStatus: EffectiveStatus = (isLast && t.status === 'lunas') ? 'lunas' : 'cicilan'
         rows.push({
-          key: `${t.id}_lunas`,
+          key: `${t.id}_${p.id}`,
           ...common,
-          nominal: last?.jumlah ?? t.total_nominal,
-          metode:  last?.metode ?? null,
-          ke:      paymentCount || 1,
-          tanggal: last?.tanggal_bayar ?? null,
+          effectiveStatus,
+          nominal: p.jumlah,
+          metode:  p.metode,
+          ke:      idx + 1,
+          tanggal: p.tanggal_bayar,
         })
-      } else if (t.status === 'cicilan' && pembs.length > 0) {
-        pembs.forEach((p, idx) => {
-          rows.push({
-            key: `${t.id}_${p.id}`,
-            ...common,
-            nominal: p.jumlah,
-            metode:  p.metode,
-            ke:      idx + 1,
-            tanggal: p.tanggal_bayar,
-          })
-        })
-      } else {
-        rows.push({
-          key: `${t.id}_nopay`,
-          ...common,
-          nominal: t.total_nominal,
-          metode:  null,
-          ke:      null,
-          tanggal: null,
-        })
-      }
+      })
     }
 
     const kelasList = Array.from(
@@ -309,7 +281,7 @@ export default function PembayaranPage() {
     )
 
     return { displayRows: rows, kelasList }
-  }, [tagihan, pembayaran, bulan, tahun])
+  }, [tagihan, pembayaran])
 
   // ── Stats ─────────────────────────────────────────────────────────────────
 

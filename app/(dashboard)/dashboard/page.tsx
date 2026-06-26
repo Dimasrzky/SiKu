@@ -24,6 +24,14 @@ const BULAN_NAMES = [
 const BULAN_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const KOMPOSISI_COLORS = ['#1A2C4E', '#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EF4444', '#8B5CF6']
 
+const JENJANG_MAP: Record<string, string[]> = {
+  'TK/PAUD': ['A', 'B', 'C'],
+  'SD/MI':   ['1', '2', '3', '4', '5', '6'],
+  'SMP/MTs': ['7', '8', '9'],
+  'SMA/MA':  ['10', '11', '12'],
+  'SMK':     ['10', '11', '12'],
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function rpCompact(n: number): string {
@@ -91,6 +99,15 @@ interface Insight {
   sub?:         string
   actionLabel?: string
   actionHref?:  string
+}
+
+interface NaikKelasAlertData {
+  tahunAjaranNama: string
+  tanggalSelesai:  string
+  totalSiswaAktif: number
+  akanAlumni:      number
+  maxJenjangLabel: string
+  menunggak:       number
 }
 
 interface SiswaBayarRow {
@@ -694,8 +711,10 @@ export default function DashboardPage() {
   const [data,              setData]              = useState<DashData | null>(null)
   const [now,               setNow]               = useState(new Date())
   const [lastUpd,           setLastUpd]           = useState<Date | null>(null)
-  const [showSetupBerhasil, setShowSetupBerhasil] = useState(false)
-  const [tabAktif,          setTabAktif]          = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan'>('semua')
+  const [showSetupBerhasil,  setShowSetupBerhasil]  = useState(false)
+  const [naikKelasAlert,     setNaikKelasAlert]     = useState<NaikKelasAlertData | null>(null)
+  const [showNaikKelasAlert, setShowNaikKelasAlert] = useState(false)
+  const [tabAktif,           setTabAktif]           = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan'>('semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
 
@@ -758,6 +777,51 @@ export default function DashboardPage() {
 
       const total = count ?? 0
       setHasSiswa(total > 0)
+
+      // Cek apakah tahun ajaran sudah berakhir → tampilkan popup naik kelas
+      try {
+        const dismissed = sessionStorage.getItem('siku_naik_kelas_dismissed') === '1'
+        if (!dismissed) {
+          const { data: taRow } = await supabase
+            .from('tahun_ajaran')
+            .select('nama, tanggal_selesai')
+            .eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle()
+
+          if (taRow) {
+            const selesai = new Date(taRow.tanggal_selesai)
+            const today   = new Date(); today.setHours(0,0,0,0); selesai.setHours(0,0,0,0)
+
+            if (selesai < today) {
+              const { data: pengRow } = await supabase
+                .from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle()
+              const jenjangLevels = JENJANG_MAP[(pengRow as {jenjang_sekolah?:string}|null)?.jenjang_sekolah ?? 'SMP/MTs'] ?? JENJANG_MAP['SMP/MTs']
+              const maxLevel = jenjangLevels[jenjangLevels.length - 1]
+
+              const { data: siswaKelas } = await supabase
+                .from('siswa').select('id, kelas:kelas_id(jenjang)')
+                .eq('sekolah_id', sekolahId).eq('status', 'aktif').limit(2000)
+
+              const akanAlumni = ((siswaKelas ?? []) as {kelas:{jenjang:string}|null}[])
+                .filter(s => s.kelas?.jenjang === maxLevel).length
+
+              const now2 = new Date()
+              const { data: tagihanRows } = await supabase
+                .from('tagihan').select('siswa_id, bulan, tahun')
+                .eq('sekolah_id', sekolahId).eq('status', 'belum_bayar').limit(5000)
+
+              const menunggak = new Set(
+                ((tagihanRows ?? []) as {siswa_id:string;bulan:number;tahun:number}[])
+                  .filter(t => t.tahun < now2.getFullYear() || (t.tahun === now2.getFullYear() && t.bulan < now2.getMonth()+1))
+                  .map(t => t.siswa_id)
+              ).size
+
+              setNaikKelasAlert({ tahunAjaranNama: taRow.nama as string, tanggalSelesai: taRow.tanggal_selesai as string, totalSiswaAktif: total, akanAlumni, maxJenjangLabel: maxLevel, menunggak })
+              setShowNaikKelasAlert(true)
+            }
+          }
+        }
+      } catch { /* non-blocking */ }
+
       if (total > 0) {
         loadDashData(sekolahId!, total)
           .then(d => { setData(d); setLastUpd(new Date()) })
@@ -839,8 +903,85 @@ export default function DashboardPage() {
   const totalHalaman    = Math.max(1, Math.ceil(filteredSiswa.length / TABEL_PAGE_SIZE))
   const paginatedSiswa  = filteredSiswa.slice((halamanTabel - 1) * TABEL_PAGE_SIZE, halamanTabel * TABEL_PAGE_SIZE)
 
+  const fmtTgl = (iso: string) =>
+    new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+
   return (
     <>
+
+    {/* ── Popup Alert Naik Kelas ─────────────────────────────────────────────── */}
+    {showNaikKelasAlert && naikKelasAlert && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+        <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', padding: '2rem 2rem 1.5rem' }}>
+
+          {/* Icon + judul */}
+          <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, marginBottom: '1rem' }}>
+              <svg viewBox="0 0 64 64" width="72" height="72" fill="none">
+                <path d="M32 4L58 54H6L32 4Z" fill="#FEE2E2" stroke="#EF4444" strokeWidth="3" strokeLinejoin="round"/>
+                <path d="M32 24V38" stroke="#EF4444" strokeWidth="3.5" strokeLinecap="round"/>
+                <circle cx="32" cy="46" r="2.2" fill="#EF4444"/>
+              </svg>
+            </div>
+            <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#0F172A', marginBottom: '0.5rem' }}>
+              Tahun ajaran telah berakhir
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#64748B', lineHeight: 1.65 }}>
+              Tahun ajaran <strong style={{ color: '#0F172A' }}>{naikKelasAlert.tahunAjaranNama}</strong> resmi berakhir pada{' '}
+              <strong style={{ color: '#0F172A' }}>{fmtTgl(naikKelasAlert.tanggalSelesai)}</strong>.<br />
+              Saatnya memproses kenaikan kelas untuk seluruh siswa
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: '#F1F5F9', marginBottom: '1.25rem' }} />
+
+          {/* Stats card */}
+          <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', marginBottom: '0.875rem' }}>
+            {[
+              { label: 'Total siswa aktif',  value: `${naikKelasAlert.totalSiswaAktif} siswa`,                              icon: <Users size={16} color="#64748B" /> },
+              { label: 'Akan jadi alumni',   value: `${naikKelasAlert.akanAlumni} siswa kelas ${naikKelasAlert.maxJenjangLabel}`, icon: <BookOpen size={16} color="#64748B" /> },
+              { label: 'Masih ada tunggakan',value: `${naikKelasAlert.menunggak} siswa`,                                    icon: <AlertTriangle size={16} color="#F59E0B" /> },
+            ].map((row, i) => (
+              <div key={i}>
+                {i > 0 && <div style={{ height: 1, background: '#F1F5F9' }} />}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.7rem 1rem' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#334155' }}>{row.label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#0F172A' }}>{row.value}</span>
+                    {row.icon}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Info note */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', marginBottom: '1.5rem' }}>
+            <span style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.5 }}>
+              ⓘ Pengingat ini akan muncul kembali saat kamu login berikutnya sampai proses kenaikan kelas selesai dijalankan
+            </span>
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => { sessionStorage.setItem('siku_naik_kelas_dismissed', '1'); setShowNaikKelasAlert(false) }}
+              style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', color: '#475569', fontFamily: 'inherit' }}
+            >
+              Tutup
+            </button>
+            <Link
+              href="/siswa/naik-kelas"
+              onClick={() => setShowNaikKelasAlert(false)}
+              style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}
+            >
+              <ChevronRight size={15} /> Mulai Proses Kenaikan Kelas
+            </Link>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="dashboard-content">
 
       {/* ── 1. Header ──────────────────────────────────────────────────────── */}
