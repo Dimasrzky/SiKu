@@ -301,7 +301,8 @@ export default function NaikKelasPage() {
       const ws   = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' })
 
-      const kelasNamaMap = new Map(allKelas.map(k => [k.nama.trim().toUpperCase(), k]))
+      const normalizeKelas = (s: string) => s.trim().toUpperCase().replace(/-/g, '').replace(/\s+/g, '')
+      const kelasNamaMap = new Map(allKelas.map(k => [normalizeKelas(k.nama), k]))
       const kelasById    = new Map(allKelas.map(k => [k.id, k]))
 
       const { data: siswaData } = await supabase
@@ -322,7 +323,7 @@ export default function NaikKelasPage() {
         const isAlumni = ['lulus', 'alumni', 'tamat', 'graduated'].includes(kelasBaru.toLowerCase())
 
         const siswa        = siswaByNis.get(nis)
-        const targetKelas  = isAlumni ? undefined : kelasNamaMap.get(kelasBaru.toUpperCase())
+        const targetKelas  = isAlumni ? undefined : kelasNamaMap.get(normalizeKelas(kelasBaru))
         const currentKelas = siswa ? kelasById.get(siswa.kelas_id) : undefined
 
         let error: string | undefined
