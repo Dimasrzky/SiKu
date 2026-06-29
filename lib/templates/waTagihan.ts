@@ -20,6 +20,7 @@ export interface PesanTagihanParams {
   bulan:         number
   tahun:         number
   namaSekolah?:  string
+  paymentUrl?:   string  // jika diisi, pesan menyertakan link pembayaran
 }
 
 // Plain text — untuk dikirim via API
@@ -28,30 +29,48 @@ export function buildPesanTagihanText(p: PesanTagihanParams): string {
   const periode = `${BULAN_NAMES[p.bulan]} ${p.tahun}`
   const sekolah = p.namaSekolah || 'Admin Sekolah'
 
-  return [
+  const lines = [
     `Assalamualaikum wr. wb.`,
     ``,
     `Yth. Bapak/Ibu *${wali}*`,
     ``,
-    `Kami dari ${sekolah},`,
-    `Bersama pesan ini kami menginformasikan tagihan pendidikan yang perlu segera dilunasi:`,
+    `Kami dari ${sekolah} menginformasikan tagihan pendidikan yang perlu segera dilunasi:`,
     ``,
-    `*Nama Siswa*     : ${p.namaSiswa}`,
-    `*Kelas*           : ${p.kelasNama}`,
-    `*Periode*         : ${periode}`,
-    `*Total Tagihan*  : *${formatRp(p.totalNominal)}*`,
-    `*Status*           : Belum Lunas`,
+    `*Nama Siswa*    : ${p.namaSiswa}`,
+    `*Kelas*          : ${p.kelasNama}`,
+    `*Periode*        : ${periode}`,
+    `*Total Tagihan* : *${formatRp(p.totalNominal)}*`,
+    `*Status*          : Belum Lunas`,
     ``,
-    `Mohon melakukan pembayaran sesuai nominal di atas. Setelah melakukan pembayaran, harap konfirmasi kepada pihak sekolah.`,
-    ``,
+  ]
+
+  if (p.paymentUrl) {
+    lines.push(
+      `Silakan lakukan pembayaran melalui link berikut:`,
+      `👉 ${p.paymentUrl}`,
+      ``,
+      `_Nominal sudah otomatis terisi sesuai tagihan._`,
+      ``,
+    )
+  } else {
+    lines.push(
+      `Mohon melakukan pembayaran sesuai nominal di atas dan konfirmasi kepada pihak sekolah.`,
+      ``,
+    )
+  }
+
+  lines.push(
     `Terima kasih atas perhatian dan kerja samanya.`,
     ``,
     `_Hormat kami,_`,
     `_${sekolah}_`,
-  ].join('\n')
+  )
+
+  return lines.join('\n')
 }
 
 // URL-encoded — fallback untuk wa.me link
 export function buildWaLink(noWa: string, params: PesanTagihanParams): string {
   return `https://wa.me/${formatWaNumber(noWa)}?text=${encodeURIComponent(buildPesanTagihanText(params))}`
 }
+

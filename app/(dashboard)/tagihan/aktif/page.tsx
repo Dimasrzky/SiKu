@@ -43,11 +43,12 @@ interface SiswaTagihanRow {
   no_wa:         string
   nama_wali:     string
   has_tunggakan: boolean
+  payment_token: string
 }
 
 type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: string }
 type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: KelasNestedRaw | null }
-type TagihanRawRow     = { id: string; total_nominal: number; status: string; siswa: SiswaNestedRaw | null }
+type TagihanRawRow     = { id: string; total_nominal: number; status: string; payment_token: string | null; siswa: SiswaNestedRaw | null }
 type PaketTotalRaw     = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
 type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type PaketKelasRaw     = { kelas_id: string }
@@ -297,7 +298,7 @@ export default function TagihanAktifPage() {
     const [{ data: tagihanData }, { data: paketData }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('tagihan')
-        .select('id, total_nominal, status, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang, warna))')
+        .select('id, total_nominal, status, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang, warna))')
         .eq('sekolah_id', sid)
         .eq('bulan', bulan)
         .eq('tahun', tahun)
@@ -408,6 +409,7 @@ export default function TagihanAktifPage() {
         no_wa:         r.siswa?.no_wa ?? '',
         nama_wali:     r.siswa?.nama_wali ?? '',
         has_tunggakan: tunggakanIds.has(siswaId),
+        payment_token: r.payment_token ?? '',
       }
     })
 
@@ -507,6 +509,9 @@ export default function TagihanAktifPage() {
   const kirimWA = async (t: SiswaTagihanRow) => {
     setSendingWa(prev => new Set(prev).add(t.tagihan_id))
     try {
+      const paymentUrl = t.payment_token
+        ? `${window.location.origin}/bayar/${t.payment_token}`
+        : undefined
       const pesan = buildPesanTagihanText({
         namaWali:     t.nama_wali,
         namaSiswa:    t.nama,
@@ -515,6 +520,7 @@ export default function TagihanAktifPage() {
         bulan:        bulanIni,
         tahun:        tahunIni,
         namaSekolah,
+        paymentUrl,
       })
       const res = await fetch('/api/kirim-wa', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -997,7 +1003,7 @@ export default function TagihanAktifPage() {
 
                         {/* Aksi */}
                         <td style={sTd}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                             {eff === 'cicilan' ? (
                               <>
                                 <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -1013,7 +1019,7 @@ export default function TagihanAktifPage() {
                                   </button>
                                 )}
                               </>
-                            ) : eff === 'belum_bayar' ? (
+                            ) : eff === 'lunas' ? null : (
                               hasWa ? (
                                 <button
                                   onClick={() => { if (!anyModalOpen) kirimWA(t) }}
@@ -1025,16 +1031,6 @@ export default function TagihanAktifPage() {
                               ) : (
                                 <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
                               )
-                            ) : hasWa ? (
-                              <button
-                                onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
-                                <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
-                              </button>
-                            ) : (
-                              <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
                             )}
 
                             <button
