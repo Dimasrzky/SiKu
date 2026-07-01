@@ -869,9 +869,10 @@ export default function DashboardPage() {
   const yyyy     = now.getFullYear()
   const dateStr  = `${dd} ${mName} ${yyyy}`
 
-  const d         = data
-  const pctLunas  = d && d.totalSiswaRef > 0 ? Math.round((d.lunasRef / d.totalSiswaRef) * 100) : 0
-  const pctTarget = d && d.targetIni > 0      ? Math.round((d.terkumpulIni / d.targetIni) * 100) : 0
+  const d              = data
+  const pctLunas       = d && d.totalSiswaRef > 0 ? Math.round((d.lunasRef / d.totalSiswaRef) * 100) : 0
+  const pctBelumLunas  = d && d.totalSiswaRef > 0 ? 100 - pctLunas : 0
+  const pctTarget      = d && d.targetIni > 0      ? Math.round((d.terkumpulIni / d.targetIni) * 100) : 0
 
   const diffTerkumpul  = d ? d.terkumpulIni - d.terkumpulLalu : 0
   const diffBelumBayar = d ? d.belumBayarNominal - d.belumBayarLalu : 0
@@ -1047,7 +1048,7 @@ export default function DashboardPage() {
         borderRadius: 16,
         overflow: 'hidden',
         marginBottom: '1rem',
-        boxShadow: '2px 2px 8px 8px rgba(45, 91, 145, 0.74)',
+        boxShadow: '0 4px 9px rgba(45, 92, 145, 0.52)',
       }}>
         {/* Body */}
         <div style={{ display: 'flex', padding: '1.5rem', gap: '1.25rem', position: 'relative' }}>
@@ -1115,12 +1116,12 @@ export default function DashboardPage() {
             }}>
               <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
-            <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-3.8rem' }}>
-              {sk(`${pctLunas}%`)}
+            <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
+              {sk(`${pctBelumLunas}%`)}
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah lunas</div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.8rem' }}>
-              {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa belum lunas</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.2rem' }}>
+              {sk(`${d?.siswaBelumBayar ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
             </div>
           </div>
         </div>
