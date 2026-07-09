@@ -14,7 +14,7 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Lewati aset statis
@@ -71,12 +71,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Jalankan middleware di semua path kecuali:
-     * - _next/static (file build statis)
-     * - _next/image (optimasi gambar)
-     * - favicon.ico
-     */
     '/((?!_next/static|_next/image|favicon\\.ico).*)',
   ],
 }
