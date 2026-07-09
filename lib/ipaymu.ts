@@ -32,8 +32,8 @@ async function postIpaymu(endpoint: string, body: object) {
   try {
     return JSON.parse(text)
   } catch {
-    console.error('[iPaymu] Non-JSON response:', text.slice(0, 500))
-    throw new Error(`iPaymu non-JSON (${res.status}): ${text.slice(0, 200)}`)
+    console.error(`[iPaymu] Non-JSON (${res.status}) from ${endpoint}:`, text.slice(0, 300))
+    throw new Error(`iPaymu ${res.status}: ${text.slice(0, 150)}`)
   }
 }
 
@@ -51,32 +51,37 @@ interface DirectPaymentBase {
 // ── QRIS ─────────────────────────────────────────────────────────────────────
 
 export interface QrisResult {
-  success:  boolean
-  trxId?:   string
-  qrUrl?:   string   // URL gambar QR dari iPaymu
-  error?:   string
+  success: boolean
+  trxId?:  string
+  qrUrl?:  string
+  error?:  string
 }
 
 export async function createQrisPayment(params: DirectPaymentBase): Promise<QrisResult> {
   try {
     const body = {
-      name:        params.productName,
-      nominal:     params.nominal,
-      comments:    params.productName,
-      referenceId: params.referenceId,
-      notifyUrl:   params.notifyUrl,
-      buyerName:   params.buyerName,
-      buyerPhone:  params.buyerPhone,
+      name:           params.productName,
+      nominal:        params.nominal,
+      comments:       params.productName,
+      referenceId:    params.referenceId,
+      notifyUrl:      params.notifyUrl,
+      paymentMethod:  'qris',
+      paymentChannel: 'qris',
+      buyerName:      params.buyerName,
+      buyerEmail:     '',
+      buyerPhone:     params.buyerPhone,
+      expiredPayment: 24,
     }
-    const json = await postIpaymu('/payment/qris', body)
-    console.log('[iPaymu QRIS response]', JSON.stringify(json))
+    const json = await postIpaymu('/payment/direct', body)
+    console.log('[iPaymu QRIS]', JSON.stringify(json))
+
     if (json.Status !== 200) {
       return { success: false, error: `iPaymu: ${json.Message ?? json.Status}` }
     }
     return {
       success: true,
       trxId:   json.Data?.TransactionId?.toString(),
-      qrUrl:   json.Data?.QRUrl ?? json.Data?.Qr,
+      qrUrl:   json.Data?.QrUrl ?? json.Data?.QRUrl ?? json.Data?.Qr,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -101,7 +106,7 @@ export const VA_BANKS: Record<VAChannel, string> = {
 export interface VAResult {
   success:    boolean
   trxId?:     string
-  paymentNo?: string  // nomor VA
+  paymentNo?: string
   bankName?:  string
   expired?:   string
   error?:     string
@@ -112,17 +117,21 @@ export async function createVAPayment(
 ): Promise<VAResult> {
   try {
     const body = {
-      name:        params.productName,
-      nominal:     params.nominal,
-      comments:    params.productName,
-      referenceId: params.referenceId,
-      notifyUrl:   params.notifyUrl,
-      channel:     params.channel,
-      buyerName:   params.buyerName,
-      buyerPhone:  params.buyerPhone,
+      name:           params.productName,
+      nominal:        params.nominal,
+      comments:       params.productName,
+      referenceId:    params.referenceId,
+      notifyUrl:      params.notifyUrl,
+      paymentMethod:  'va',
+      paymentChannel: params.channel,
+      buyerName:      params.buyerName,
+      buyerEmail:     '',
+      buyerPhone:     params.buyerPhone,
+      expiredPayment: 24,
     }
-    const json = await postIpaymu('/payment/va', body)
-    console.log('[iPaymu VA response]', JSON.stringify(json))
+    const json = await postIpaymu('/payment/direct', body)
+    console.log('[iPaymu VA]', JSON.stringify(json))
+
     if (json.Status !== 200) {
       return { success: false, error: `iPaymu: ${json.Message ?? json.Status}` }
     }
