@@ -4,10 +4,9 @@ const VA       = process.env.IPAYMU_VA!
 const API_KEY  = process.env.IPAYMU_API_KEY!
 const BASE_URL = process.env.IPAYMU_BASE_URL!
 
-// iPaymu signature: HMAC-SHA256("POST:{VA}:{SHA256(body_lowercase)}:{API_KEY}", API_KEY)
-function buildSignature(body: object): string {
-  const bodyStr  = JSON.stringify(body).toLowerCase()
-  const bodyHash = crypto.createHash('sha256').update(bodyStr).digest('hex')
+// iPaymu signature: HMAC-SHA256("POST:{VA}:{SHA256(rawBody)}:{API_KEY}", API_KEY)
+function buildSignature(rawBody: string): string {
+  const bodyHash = crypto.createHash('sha256').update(rawBody).digest('hex')
   const toSign   = `POST:${VA}:${bodyHash}:${API_KEY}`
   return crypto.createHmac('sha256', API_KEY).update(toSign).digest('hex')
 }
@@ -17,16 +16,17 @@ function buildTimestamp(): string {
 }
 
 async function postIpaymu(endpoint: string, body: object) {
-  const url = `${BASE_URL}${endpoint}`
+  const url     = `${BASE_URL}${endpoint}`
+  const rawBody = JSON.stringify(body)
   const res = await fetch(url, {
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
       'va':           VA,
-      'signature':    buildSignature(body),
+      'signature':    buildSignature(rawBody),
       'timestamp':    buildTimestamp(),
     },
-    body: JSON.stringify(body),
+    body: rawBody,
   })
   const text = await res.text()
   try {
