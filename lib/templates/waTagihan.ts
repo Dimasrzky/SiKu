@@ -47,9 +47,10 @@ export function buildPesanTagihanText(p: PesanTagihanParams): string {
   if (p.paymentUrl) {
     lines.push(
       `Silakan lakukan pembayaran melalui link berikut:`,
-      `👉 ${p.paymentUrl}`,
       ``,
-      `_Nominal sudah otomatis terisi sesuai tagihan._`,
+      `${p.paymentUrl}`,
+      ``,
+      `_Klik link di atas untuk membayar. Nominal sudah otomatis terisi._`,
       ``,
     )
   } else {
