@@ -17,7 +17,8 @@ function buildTimestamp(): string {
 }
 
 async function postIpaymu(endpoint: string, body: object) {
-  const res = await fetch(`${BASE_URL}${endpoint}`, {
+  const url = `${BASE_URL}${endpoint}`
+  const res = await fetch(url, {
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -27,7 +28,13 @@ async function postIpaymu(endpoint: string, body: object) {
     },
     body: JSON.stringify(body),
   })
-  return res.json()
+  const text = await res.text()
+  try {
+    return JSON.parse(text)
+  } catch {
+    console.error('[iPaymu] Non-JSON response:', text.slice(0, 500))
+    throw new Error(`iPaymu non-JSON (${res.status}): ${text.slice(0, 200)}`)
+  }
 }
 
 // ── Parameter dasar untuk semua direct payment ────────────────────────────────
@@ -62,16 +69,19 @@ export async function createQrisPayment(params: DirectPaymentBase): Promise<Qris
       buyerPhone:  params.buyerPhone,
     }
     const json = await postIpaymu('/payment/qris', body)
+    console.log('[iPaymu QRIS response]', JSON.stringify(json))
     if (json.Status !== 200) {
-      return { success: false, error: json.Message ?? 'Gagal membuat QRIS.' }
+      return { success: false, error: `iPaymu: ${json.Message ?? json.Status}` }
     }
     return {
       success: true,
       trxId:   json.Data?.TransactionId?.toString(),
       qrUrl:   json.Data?.QRUrl ?? json.Data?.Qr,
     }
-  } catch {
-    return { success: false, error: 'Gagal menghubungi iPaymu.' }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[iPaymu QRIS error]', msg)
+    return { success: false, error: msg }
   }
 }
 
@@ -112,8 +122,9 @@ export async function createVAPayment(
       buyerPhone:  params.buyerPhone,
     }
     const json = await postIpaymu('/payment/va', body)
+    console.log('[iPaymu VA response]', JSON.stringify(json))
     if (json.Status !== 200) {
-      return { success: false, error: json.Message ?? 'Gagal membuat Virtual Account.' }
+      return { success: false, error: `iPaymu: ${json.Message ?? json.Status}` }
     }
     return {
       success:   true,
@@ -122,8 +133,10 @@ export async function createVAPayment(
       bankName:  json.Data?.PaymentName ?? VA_BANKS[params.channel],
       expired:   json.Data?.Expired,
     }
-  } catch {
-    return { success: false, error: 'Gagal menghubungi iPaymu.' }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[iPaymu VA error]', msg)
+    return { success: false, error: msg }
   }
 }
 
