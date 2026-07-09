@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/bayar',                  // halaman pembayaran publik (orang tua)
   '/api/payment/create',     // buat transaksi dari halaman publik
   '/api/payment/callback',   // webhook dari iPaymu
+  '/api/payment/status',     // cek status tagihan (polling dari halaman publik)
 ]
 
 function isPublicPath(pathname: string): boolean {

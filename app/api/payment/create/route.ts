@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { createIpaymuPayment } from '@/lib/ipaymu'
+import { createQrisPayment, createVAPayment, type VAChannel } from '@/lib/ipaymu'
+
+type PaymentMethod = 'qris' | VAChannel
 
 interface CreateBody {
   payment_token: string
   nominal:       number
   jenis:         'lunas' | 'cicilan'
+  method:        PaymentMethod
 }
 
 type SiswaJoin = {
@@ -25,6 +28,8 @@ type TagihanRow = {
   siswa:               SiswaJoin | null
 }
 
+const VA_CHANNELS: VAChannel[] = ['bca', 'bni', 'bri', 'mandiri', 'cimb', 'permata']
+
 export async function POST(req: NextRequest) {
   let body: CreateBody
   try {
@@ -33,13 +38,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Request tidak valid.' }, { status: 400 })
   }
 
-  const { payment_token, nominal, jenis } = body
+  const { payment_token, nominal, jenis, method } = body
 
-  if (!payment_token || !nominal || !jenis) {
+  if (!payment_token || !nominal || !jenis || !method) {
     return NextResponse.json({ error: 'Parameter tidak lengkap.' }, { status: 400 })
   }
   if (nominal <= 0 || !Number.isInteger(nominal)) {
     return NextResponse.json({ error: 'Nominal tidak valid.' }, { status: 400 })
+  }
+  if (method !== 'qris' && !VA_CHANNELS.includes(method as VAChannel)) {
+    return NextResponse.json({ error: 'Metode pembayaran tidak valid.' }, { status: 400 })
   }
 
   const supabase = createServiceClient()
@@ -76,13 +84,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Tagihan sudah lunas.' }, { status: 400 })
   }
   if (nominal > sisa) {
-    return NextResponse.json({ error: `Nominal melebihi sisa tagihan (${sisa}).` }, { status: 400 })
+    return NextResponse.json({ error: `Nominal melebihi sisa tagihan.` }, { status: 400 })
   }
   if (jenis === 'cicilan' && nominal >= sisa) {
-    return NextResponse.json({ error: 'Untuk cicilan, nominal harus kurang dari sisa tagihan.' }, { status: 400 })
+    return NextResponse.json({ error: 'Nominal cicilan harus kurang dari sisa tagihan.' }, { status: 400 })
   }
 
-  // Buat record pending dulu untuk dapat ID sebagai referenceId ke iPaymu
+  // Buat record pending
   const { data: trxRecord, error: trxErr } = await supabase
     .from('payment_gateway_trx')
     .insert({
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
       payment_token,
       nominal,
       jenis,
-      status:        'pending',
+      status: 'pending',
     })
     .select('id')
     .single()
@@ -100,30 +108,56 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Gagal membuat catatan transaksi.' }, { status: 500 })
   }
 
-  const siswa      = t.siswa
-  const appUrl     = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const siswa       = t.siswa
+  const appUrl      = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const productName = `Tagihan ${siswa?.kelas?.nama ?? ''} - ${siswa?.nama ?? ''}`.trim()
+  const notifyUrl   = `${appUrl}/api/payment/callback`
+  const buyerName   = siswa?.nama_wali ?? siswa?.nama ?? 'Orang Tua'
+  const buyerPhone  = siswa?.no_wa ?? ''
 
-  const result = await createIpaymuPayment({
+  const baseParams = {
     referenceId: trxRecord.id,
     nominal,
     productName,
-    buyerName:   siswa?.nama_wali ?? siswa?.nama ?? 'Orang Tua',
-    buyerPhone:  siswa?.no_wa ?? '',
-    returnUrl:   `${appUrl}/bayar/sukses?ref=${trxRecord.id}`,
-    cancelUrl:   `${appUrl}/bayar/${payment_token}?cancelled=1`,
-    notifyUrl:   `${appUrl}/api/payment/callback`,
-  })
+    buyerName,
+    buyerPhone,
+    notifyUrl,
+  }
 
-  if (!result.success) {
+  if (method === 'qris') {
+    const result = await createQrisPayment(baseParams)
+
+    if (!result.success) {
+      await supabase.from('payment_gateway_trx').delete().eq('id', trxRecord.id)
+      return NextResponse.json({ error: result.error ?? 'Gagal membuat QRIS.' }, { status: 502 })
+    }
+
+    await supabase
+      .from('payment_gateway_trx')
+      .update({ ipaymu_trx_id: result.trxId })
+      .eq('id', trxRecord.id)
+
+    return NextResponse.json({ type: 'qris', qrUrl: result.qrUrl, trxId: result.trxId })
+  }
+
+  // Virtual Account
+  const vaResult = await createVAPayment({ ...baseParams, channel: method as VAChannel })
+
+  if (!vaResult.success) {
     await supabase.from('payment_gateway_trx').delete().eq('id', trxRecord.id)
-    return NextResponse.json({ error: result.error ?? 'Gagal membuat transaksi iPaymu.' }, { status: 502 })
+    return NextResponse.json({ error: vaResult.error ?? 'Gagal membuat Virtual Account.' }, { status: 502 })
   }
 
   await supabase
     .from('payment_gateway_trx')
-    .update({ ipaymu_trx_id: result.trxId })
+    .update({ ipaymu_trx_id: vaResult.trxId })
     .eq('id', trxRecord.id)
 
-  return NextResponse.json({ paymentUrl: result.paymentUrl })
+  return NextResponse.json({
+    type:      'va',
+    paymentNo: vaResult.paymentNo,
+    bankName:  vaResult.bankName,
+    expired:   vaResult.expired,
+    trxId:     vaResult.trxId,
+  })
 }

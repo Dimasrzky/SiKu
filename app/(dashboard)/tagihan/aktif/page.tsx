@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, AlertTriangle, Eye, X, ClipboardList } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { buildPesanTagihanText, formatWaNumber } from '@/lib/templates/waTagihan'
+import { buildWaLink } from '@/lib/templates/waTagihan'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -262,7 +262,6 @@ export default function TagihanAktifPage() {
   const [filterStatus,      setFilterStatus]      = useState('Semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
-  const [sendingWa,         setSendingWa]         = useState<Set<string>>(new Set())
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
 
   // Modal state
@@ -506,35 +505,24 @@ export default function TagihanAktifPage() {
 
   // ── Kirim WA ──────────────────────────────────────────────────────────────────
 
-  const kirimWA = async (t: SiswaTagihanRow) => {
-    setSendingWa(prev => new Set(prev).add(t.tagihan_id))
-    try {
-      const paymentUrl = t.payment_token
-        ? `${window.location.origin}/bayar/${t.payment_token}`
-        : undefined
-      const pesan = buildPesanTagihanText({
-        namaWali:     t.nama_wali,
-        namaSiswa:    t.nama,
-        kelasNama:    t.kelas_nama,
-        totalNominal: t.total_nominal,
-        bulan:        bulanIni,
-        tahun:        tahunIni,
-        namaSekolah,
-        paymentUrl,
-      })
-      const res = await fetch('/api/kirim-wa', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: formatWaNumber(t.no_wa), content: pesan }),
-      })
-      if (res.ok) {
-        setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
-        setTimeout(() => setWaSentSuccess(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s }), 3000)
-      } else {
-        alert('Gagal kirim WA. Cek koneksi Fonnte.')
-      }
-    } finally {
-      setSendingWa(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s })
-    }
+  const kirimWA = (t: SiswaTagihanRow) => {
+    if (!t.no_wa) return
+    const paymentUrl = t.payment_token
+      ? `${window.location.origin}/bayar/${t.payment_token}`
+      : undefined
+    const waLink = buildWaLink(t.no_wa, {
+      namaWali:     t.nama_wali,
+      namaSiswa:    t.nama,
+      kelasNama:    t.kelas_nama,
+      totalNominal: t.total_nominal,
+      bulan:        bulanIni,
+      tahun:        tahunIni,
+      namaSekolah,
+      paymentUrl,
+    })
+    window.open(waLink, '_blank')
+    setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
+    setTimeout(() => setWaSentSuccess(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s }), 3000)
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────────
@@ -1012,10 +1000,10 @@ export default function TagihanAktifPage() {
                                 {hasWa && (
                                   <button
                                     onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                    disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                    disabled={anyModalOpen}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
                                     <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                    {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+                                    {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
                                   </button>
                                 )}
                               </>
@@ -1023,10 +1011,10 @@ export default function TagihanAktifPage() {
                               hasWa ? (
                                 <button
                                   onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                  disabled={sendingWa.has(t.tagihan_id) || anyModalOpen}
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (sendingWa.has(t.tagihan_id) || anyModalOpen) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                  disabled={anyModalOpen}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
                                   <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                  {sendingWa.has(t.tagihan_id) ? 'Mengirim...' : waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+                                  {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
                                 </button>
                               ) : (
                                 <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>

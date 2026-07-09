@@ -69,8 +69,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
         sisa={sisa}
         isFirstPayment={isFirstPayment}
         namaSiswa={siswa?.nama ?? ''}
-        namaWali={siswa?.nama_wali ?? ''}
-        kelasNama={siswa?.kelas?.nama ?? ''}
+kelasNama={siswa?.kelas?.nama ?? ''}
         periode={periode}
         items={tagihan.tagihan_item ?? []}
       />
