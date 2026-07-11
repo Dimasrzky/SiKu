@@ -1167,18 +1167,6 @@ export default function TagihanAktifPage() {
                   </div>
                 </div>
 
-                <div style={{ marginBottom: '1rem' }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>Metode</div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {(['tunai', 'transfer', 'qris'] as const).map(m => (
-                      <button key={m} onClick={() => setCatatMetode(m)}
-                        style={{ padding: '0.45rem 1rem', borderRadius: 8, border: catatMetode === m ? 'none' : '1.5px solid #E2E8F0', background: catatMetode === m ? '#1A2C4E' : '#fff', color: catatMetode === m ? '#fff' : '#374151', fontSize: '0.82rem', fontWeight: catatMetode === m ? 700 : 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' as const }}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 <div style={{ marginBottom: '1.5rem' }}>
                   <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>
                     Keterangan <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Opsional)</span>

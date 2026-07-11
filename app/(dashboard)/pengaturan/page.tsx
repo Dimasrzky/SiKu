@@ -1,7 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
+import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+const BANK_LIST = ['BCA', 'BNI', 'BPD DIY', 'BRI', 'BSI', 'BTN', 'CIMB', 'MANDIRI'] as const
+
+function bankLogoSrc(bank: string): string {
+  return `/image/${encodeURIComponent(bank)}.png`
+}
+
+function maskRekening(no: string): string {
+  const digits = no.replace(/\D/g, '')
+  if (digits.length <= 3) return digits
+  return '•'.repeat(digits.length - 3) + ' ' + digits.slice(-3)
+}
+
+interface RekeningRow { id: string; bank: string; noRek: string; atasNama: string }
 
 interface UserData {
   nama:         string
@@ -206,6 +222,11 @@ export default function PengaturanPage() {
     nama: '', jabatan: '', sekolah: '', email: '',
     namaSekolah: '', telepon: '', jenjang: '', idSekolah: '',
   })
+  const [rekening,          setRekening]          = useState<RekeningRow | null>(null)
+  const [showRekeningModal, setShowRekeningModal] = useState(false)
+  const [rekeningForm,      setRekeningForm]      = useState({ bank: '', noRek: '', atasNama: '' })
+  const [savingRekening,    setSavingRekening]    = useState(false)
+  const [saveRekeningError, setSaveRekeningError] = useState('')
 
   useEffect(() => {
     const authRaw = localStorage.getItem('siku_auth')
@@ -214,7 +235,8 @@ export default function PengaturanPage() {
       : { nama: '', jabatan: '', sekolah: '' }
 
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user ?? null
 
       const [{ data: profileData }, { data: pData }] = await Promise.all([
         user ? supabase.from('profiles').select('sekolah_id, nama, jabatan, no_wa, yayasan, npsn').eq('id', user.id).single() : Promise.resolve({ data: null }),
@@ -227,12 +249,20 @@ export default function PengaturanPage() {
       const p       = pData       as PRow       | null
 
       const sekolahId = profile?.sekolah_id ?? ''
-      const { data: sekolahData } = sekolahId
-        ? await supabase.from('sekolah').select('nama, no_wa, alamat').eq('id', sekolahId).single()
-        : { data: null }
+      const [{ data: sekolahData }, { data: rekeningData }] = sekolahId
+        ? await Promise.all([
+            supabase.from('sekolah').select('nama, no_wa, alamat').eq('id', sekolahId).single(),
+            supabase.from('rekening').select('id, bank, no_rek, atas_nama')
+              .eq('sekolah_id', sekolahId).eq('jenis', 'transfer').eq('aktif', true)
+              .order('urutan', { ascending: true }).limit(1).maybeSingle(),
+          ])
+        : [{ data: null }, { data: null }]
 
-      type SekolahRow = { nama: string; no_wa: string; alamat: string | null }
+      type SekolahRow  = { nama: string; no_wa: string; alamat: string | null }
+      type RekeningDb  = { id: string; bank: string; no_rek: string; atas_nama: string }
       const sk = sekolahData as SekolahRow | null
+      const rk = rekeningData as RekeningDb | null
+      setRekening(rk ? { id: rk.id, bank: rk.bank, noRek: rk.no_rek, atasNama: rk.atas_nama } : null)
 
       const rawTelepon = (sk?.no_wa ?? '').replace(/^\+?62/, '')
       setTeleponInput(formatWA(rawTelepon))
@@ -364,6 +394,62 @@ export default function PengaturanPage() {
     setTeleponInput(formatWA(e.target.value))
   }
 
+  const openTambahRekening = () => {
+    setRekeningForm({ bank: '', noRek: '', atasNama: '' })
+    setSaveRekeningError('')
+    setShowRekeningModal(true)
+  }
+
+  const openEditRekening = () => {
+    if (!rekening) return
+    setRekeningForm({ bank: rekening.bank, noRek: rekening.noRek, atasNama: rekening.atasNama })
+    setSaveRekeningError('')
+    setShowRekeningModal(true)
+  }
+
+  const handleSaveRekening = async () => {
+    if (!userData.idSekolah) {
+      setSaveRekeningError('Data belum termuat, coba refresh halaman.')
+      return
+    }
+    if (!rekeningForm.bank) {
+      setSaveRekeningError('Pilih bank terlebih dahulu.')
+      return
+    }
+    if (!rekeningForm.noRek.trim()) {
+      setSaveRekeningError('Nomor rekening wajib diisi.')
+      return
+    }
+    if (!rekeningForm.atasNama.trim()) {
+      setSaveRekeningError('Nama pemilik rekening wajib diisi.')
+      return
+    }
+    setSavingRekening(true)
+    setSaveRekeningError('')
+
+    const payload = {
+      bank:      rekeningForm.bank,
+      no_rek:    rekeningForm.noRek.trim(),
+      atas_nama: rekeningForm.atasNama.trim(),
+    }
+
+    const { data, error } = rekening
+      ? await supabase.from('rekening').update(payload).eq('id', rekening.id)
+          .select('id, bank, no_rek, atas_nama').single()
+      : await supabase.from('rekening').insert({ ...payload, sekolah_id: userData.idSekolah, jenis: 'transfer' })
+          .select('id, bank, no_rek, atas_nama').single()
+
+    setSavingRekening(false)
+    if (error) {
+      setSaveRekeningError(error.message)
+    } else {
+      const row = data as { id: string; bank: string; no_rek: string; atas_nama: string }
+      setRekening({ id: row.id, bank: row.bank, noRek: row.no_rek, atasNama: row.atas_nama })
+      setShowRekeningModal(false)
+      handleSave()
+    }
+  }
+
   return (
     <div className="dashboard-content">
       <style>{`
@@ -448,6 +534,148 @@ export default function PengaturanPage() {
           </div>
         </div>
       </div>
+
+      {/* Rekening Resmi Sekolah */}
+      <Section
+        title="Rekening Resmi Sekolah"
+        desc="Rekening yang digunakan untuk menerima pembayaran dari orang tua"
+        action={rekening ? (
+          <button onClick={openEditRekening} title="Edit Rekening"
+            style={{
+              width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: '#fff', color: 'var(--navy)', border: '1.5px solid var(--navy)',
+              borderRadius: 8, cursor: 'pointer', flexShrink: 0,
+            }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        ) : undefined}
+      >
+        {rekening ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 10, padding: 8,
+              border: '1.5px solid var(--border)', background: '#F9FAFB',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Image src={bankLogoSrc(rekening.bank)} alt={rekening.bank} width={48} height={48} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--navy-dark)' }}>{rekening.bank}</div>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-mid)', fontFamily: 'monospace', letterSpacing: '0.04em', marginTop: 2 }}>
+                {maskRekening(rekening.noRek)}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                a.n. {rekening.atasNama}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '1.25rem 1rem' }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.75rem' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="10" width="18" height="9" rx="1"/><path d="M3 10 12 4l9 6"/><path d="M6 14v3M12 14v3M18 14v3"/>
+              </svg>
+            </div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: '0.2rem' }}>
+              Belum ada rekening ditambahkan
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Tambahkan rekening resmi agar orang tua bisa melakukan pembayaran
+            </div>
+            <button onClick={openTambahRekening}
+              style={{ background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.55rem 1.2rem', borderRadius: 8, fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+              + Tambah Rekening
+            </button>
+          </div>
+        )}
+
+        {saveRekeningError && !showRekeningModal && (
+          <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#DC2626', padding: '0.5rem 0.75rem', background: '#FEF2F2', borderRadius: 6 }}>
+            {saveRekeningError}
+          </div>
+        )}
+      </Section>
+
+      {/* Modal Tambah/Edit Rekening */}
+      {showRekeningModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(18,47,102,0.45)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+          }}
+          onClick={() => setShowRekeningModal(false)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 16, padding: '1.5rem', width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(18,47,102,0.22)', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <span style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E' }}>
+                {rekening ? 'Edit Rekening' : 'Tambah Rekening'}
+              </span>
+              <button onClick={() => setShowRekeningModal(false)}
+                style={{ background: '#F1F5F9', border: 'none', borderRadius: 8, width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B', flexShrink: 0 }}>
+                <X size={17} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 8 }}>
+                Pilih Bank
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {BANK_LIST.map(bank => (
+                  <button
+                    key={bank}
+                    onClick={() => setRekeningForm(f => ({ ...f, bank }))}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                      padding: '0.6rem 0.4rem', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                      border: rekeningForm.bank === bank ? '2px solid var(--navy)' : '1.5px solid var(--border)',
+                      background: rekeningForm.bank === bank ? '#EFF6FF' : '#fff',
+                    }}
+                  >
+                    <div style={{ width: 40, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Image src={bankLogoSrc(bank)} alt={bank} width={40} height={30} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <span style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--text-mid)', textAlign: 'center', lineHeight: 1.2 }}>{bank}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <FormField
+              label="Nama Pemilik Rekening"
+              value={rekeningForm.atasNama}
+              onChange={v => setRekeningForm(f => ({ ...f, atasNama: v }))}
+            />
+
+            <FormField
+              label="Nomor Rekening"
+              value={rekeningForm.noRek}
+              onChange={v => setRekeningForm(f => ({ ...f, noRek: v.replace(/\D/g, '') }))}
+            />
+
+            {saveRekeningError && (
+              <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: '#DC2626', padding: '0.5rem 0.75rem', background: '#FEF2F2', borderRadius: 6 }}>
+                {saveRekeningError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: '0.5rem' }}>
+              <button onClick={() => setShowRekeningModal(false)} disabled={savingRekening}
+                style={{ background: '#fff', color: 'var(--text-mid)', border: '1.5px solid var(--border)', padding: '0.6rem 1.4rem', borderRadius: 10, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: savingRekening ? 0.6 : 1 }}>
+                Batal
+              </button>
+              <button onClick={handleSaveRekening} disabled={savingRekening}
+                style={{ background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.6rem 1.4rem', borderRadius: 10, fontWeight: 700, fontSize: '0.875rem', cursor: savingRekening ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: savingRekening ? 0.7 : 1 }}>
+                {savingRekening ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Profil Sekolah */}
       <Section title="Profil Sekolah" desc="Informasi dasar sekolah yang ditampilkan di laporan dan tagihan" action={

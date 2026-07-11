@@ -10,6 +10,7 @@ import {
 import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { buildWaLink } from '@/lib/templates/waTagihan'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
@@ -69,8 +70,10 @@ interface TagihanRaw {
   bulan:         number
   tahun:         number
   siswa_id:      string
+  payment_token: string | null
   siswa: {
     id: string; nama: string; nis: string | null
+    no_wa: string | null; nama_wali: string | null
     kelas: { id: string; nama: string; warna: string; jenjang: string } | null
   } | null
 }
@@ -118,6 +121,9 @@ interface SiswaBayarRow {
   tagihan_bulan_ini: number
   status:            'lunas' | 'belum_bayar' | 'cicilan'
   has_tunggakan:     boolean
+  no_wa:             string | null
+  nama_wali:         string | null
+  payment_token:     string | null
 }
 
 interface DashData {
@@ -148,29 +154,30 @@ interface DashData {
 
 function BarChart({ data }: { data: TrenItem[] }) {
   if (!data.length) return null
-  const max  = Math.max(...data.map(d => Math.max(d.terkumpul, d.tunggakan)), 1)
-  const bW   = 16
-  const bGap = 4
-  const gGap = 18
-  const gW   = bW * 2 + bGap
-  const cH   = 140
+  const max    = Math.max(...data.map(d => Math.max(d.terkumpul, d.tunggakan)), 1)
+  const bW     = 60
+  const bGap   = 6
+  const gGap   = 20
+  const gW     = bW * 2 + bGap
+  const cH     = 600
+  const padX   = 12
+  const chartW = padX * 2 + data.length * gW + (data.length - 1) * gGap
+  const chartH = cH + 24
 
   return (
-    <svg viewBox={`0 0 280 160`} style={{ width: '100%', maxHeight: 160, marginBottom: 16 }}>
-      <g transform="translate(-20 0)">
-        {data.map((d, i) => {
-          const x  = 2 + i * (gW + gGap)
-          const h1 = (d.terkumpul / max) * cH
-          const h2 = (d.tunggakan / max) * cH
-          return (
-            <g key={d.short}>
-              <rect x={x}              y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={4} fill="#10B981" opacity={0.85} />
-              <rect x={x + bW + bGap}  y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={4} fill="#EF4444" opacity={0.75} />
-              <text x={x + bW}         y={155}      textAnchor="middle" fontSize={10} fill="#9CA3AF">{d.short}</text>
-            </g>
-          )
-        })}
-      </g>
+    <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block', marginBottom: 16 }}>
+      {data.map((d, i) => {
+        const x  = padX + i * (gW + gGap)
+        const h1 = (d.terkumpul / max) * cH
+        const h2 = (d.tunggakan / max) * cH
+        return (
+          <g key={d.short}>
+            <rect x={x}             y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={5} fill="#10B981" opacity={0.85} />
+            <rect x={x + bW + bGap} y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={5} fill="#EF4444" opacity={0.75} />
+            <text x={x + bW}        y={cH + 18} textAnchor="middle" fontSize={11} fill="#9CA3AF">{d.short}</text>
+          </g>
+        )
+      })}
     </svg>
   )
 }
@@ -242,7 +249,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
       .from('tagihan')
-      .select('id, status, total_nominal, bulan, tahun, siswa_id, siswa:siswa_id(id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang))')
+      .select('id, status, total_nominal, bulan, tahun, siswa_id, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, warna, jenjang))')
       .eq('sekolah_id', sid)
       .limit(2000),
     supabase
@@ -449,6 +456,9 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       tagihan_bulan_ini: t.total_nominal,
       status:            t.status,
       has_tunggakan:     tunggakanSiswaIds.has(t.siswa_id),
+      no_wa:             t.siswa!.no_wa,
+      nama_wali:         t.siswa!.nama_wali,
+      payment_token:     t.payment_token,
     }))
     .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
 
@@ -717,6 +727,7 @@ export default function DashboardPage() {
   const [tabAktif,           setTabAktif]           = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan'>('semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
+  const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -906,6 +917,27 @@ export default function DashboardPage() {
 
   const fmtTgl = (iso: string) =>
     new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  // ── Kirim pengingat WA ───────────────────────────────────────────────────────
+  const kirimWA = (s: SiswaBayarRow) => {
+    if (!s.no_wa) return
+    const paymentUrl = s.payment_token
+      ? `${window.location.origin}/bayar/${s.payment_token}`
+      : undefined
+    const waLink = buildWaLink(s.no_wa, {
+      namaWali:     s.nama_wali ?? '',
+      namaSiswa:    s.nama,
+      kelasNama:    s.kelas?.nama ?? '-',
+      totalNominal: s.tagihan_bulan_ini,
+      bulan:        now.getMonth() + 1,
+      tahun:        yyyy,
+      namaSekolah:  user?.sekolah,
+      paymentUrl,
+    })
+    window.open(waLink, '_blank')
+    setWaSentSuccess(prev => new Set(prev).add(s.id))
+    setTimeout(() => setWaSentSuccess(prev => { const next = new Set(prev); next.delete(s.id); return next }), 3000)
+  }
 
   return (
     <>
@@ -1244,7 +1276,7 @@ export default function DashboardPage() {
           <ChartCard title="Tren Pemasukan Bulanan" subtitle="6 bulan terakhir" style={{ flex: 1 }}>
             <div style={{ marginTop: 'auto' }}>
               {d?.trenData.length ? <BarChart data={d.trenData} /> : (
-                <div style={{ height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1rem' }}>Belum ada data</div>
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1rem' }}>Belum ada data</div>
               )}
             </div>
             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
@@ -1441,17 +1473,21 @@ export default function DashboardPage() {
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center' }}>
                       {effStatus === 'lunas' ? (
                         <ClipboardCheck size={22} color="#16A34A" />
-                      ) : (
-                        <button style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          background: '#22C55E', color: '#fff',
-                          border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
-                          fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}>
+                      ) : siswa.no_wa ? (
+                        <button
+                          onClick={() => kirimWA(siswa)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            background: waSentSuccess.has(siswa.id) ? '#16A34A' : '#22C55E', color: '#fff',
+                            border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
+                            fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}>
                           <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
-                          Ingatkan
+                          {waSentSuccess.has(siswa.id) ? 'Terkirim!' : 'Ingatkan'}
                         </button>
+                      ) : (
+                        <span style={{ color: '#CBD5E1', fontSize: '0.8rem' }}>No. WA belum diisi</span>
                       )}
                     </td>
                   </tr>
