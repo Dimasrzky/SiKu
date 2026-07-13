@@ -70,8 +70,4 @@ export function buildPesanTagihanText(p: PesanTagihanParams): string {
   return lines.join('\n')
 }
 
-// URL-encoded — fallback untuk wa.me link
-export function buildWaLink(noWa: string, params: PesanTagihanParams): string {
-  return `https://wa.me/${formatWaNumber(noWa)}?text=${encodeURIComponent(buildPesanTagihanText(params))}`
-}
 
