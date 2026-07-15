@@ -181,7 +181,7 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
                   <img
                     src={previewUrl}
                     alt="Pratinjau bukti transfer"
-                    style={{ width: 220, height: 500, objectFit: 'cover', borderRadius: 10, border: '1.5px solid #E2E8F0', margin: '0 auto 0.6rem', display: 'block' }}
+                    style={{ width: '100%', maxWidth: 220, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 10, border: '1.5px solid #E2E8F0', margin: '0 auto 0.6rem', display: 'block' }}
                   />
                   <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
                   <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>Klik untuk ganti foto</div>

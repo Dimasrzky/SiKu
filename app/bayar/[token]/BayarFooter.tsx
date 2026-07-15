@@ -23,13 +23,13 @@ export default function BayarFooter({ namaBendahara, noWaBendahara }: Props) {
 
   return (
     <footer style={{ background: '#1A2C4E' }}>
-      <div style={{ width: '100%', boxSizing: 'border-box', padding: '1.5rem 3rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Image src="/image/SimbolSiKu.png" alt="" width={80} height={80} style={{ objectFit: 'contain' }} />
-            <Image src="/image/LogoSiKuText.png" alt="SiKu" width={80} height={40} style={{ objectFit: 'contain' }} />
+      <div style={{ width: '100%', boxSizing: 'border-box', padding: 'clamp(1rem, 5vw, 1.5rem) clamp(1rem, 6vw, 3rem)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Image src="/image/SimbolSiKu.png" alt="" width={80} height={80} style={{ objectFit: 'contain', width: 'clamp(48px, 12vw, 80px)', height: 'clamp(48px, 12vw, 80px)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <Image src="/image/LogoSiKuText.png" alt="SiKu" width={80} height={40} style={{ objectFit: 'contain', width: 'clamp(48px, 12vw, 80px)', height: 'auto' }} />
+            <span style={{ color: '#64748B', fontSize: '0.8rem', marginTop: 2 }}>by Equanusa</span>
           </div>
-          <div style={{ color: '#64748B', fontSize: '0.9rem', marginLeft: '5.3rem', marginTop: -20 }}>by Equanusa</div>
         </div>
 
         {(namaBendahara || waDisplay) && (
@@ -53,7 +53,7 @@ export default function BayarFooter({ namaBendahara, noWaBendahara }: Props) {
         )}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '1.5rem 3rem', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', padding: 'clamp(1rem, 5vw, 1.5rem) clamp(1rem, 6vw, 3rem)', boxSizing: 'border-box' }}>
         <div style={{ width: '100%', borderTop: '3px solid #7B8DAA', marginBottom: '1.5rem' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 600 }}>© 2025 Equanusa. Semua hak dilindungi.</span>
