@@ -10,7 +10,7 @@ import {
 import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { buildPesanTagihanText } from '@/lib/templates/waTagihan'
+import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
@@ -728,7 +728,6 @@ export default function DashboardPage() {
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
-  const [waSending,         setWaSending]         = useState<Set<string>>(new Set())
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -920,8 +919,8 @@ export default function DashboardPage() {
     new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
   // ── Kirim pengingat WA ───────────────────────────────────────────────────────
-  const kirimWA = async (s: SiswaBayarRow) => {
-    if (!s.no_wa || waSending.has(s.id)) return
+  const kirimWA = (s: SiswaBayarRow) => {
+    if (!s.no_wa) return
     const paymentUrl = s.payment_token
       ? `${window.location.origin}/bayar/${s.payment_token}`
       : undefined
@@ -936,19 +935,7 @@ export default function DashboardPage() {
       paymentUrl,
     })
 
-    setWaSending(prev => new Set(prev).add(s.id))
-    const res = await fetch('/api/kirim-wa', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ phone_number: s.no_wa, content }),
-    })
-    const result = await res.json() as { error: string | null }
-    setWaSending(prev => { const next = new Set(prev); next.delete(s.id); return next })
-
-    if (result.error) {
-      alert('Gagal mengirim WA: ' + result.error)
-      return
-    }
+    window.open(buildWaMeLink(s.no_wa, content), '_blank', 'noopener,noreferrer')
     setWaSentSuccess(prev => new Set(prev).add(s.id))
     setTimeout(() => setWaSentSuccess(prev => { const next = new Set(prev); next.delete(s.id); return next }), 3000)
   }
@@ -1490,16 +1477,15 @@ export default function DashboardPage() {
                       ) : siswa.no_wa ? (
                         <button
                           onClick={() => kirimWA(siswa)}
-                          disabled={waSending.has(siswa.id)}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 6,
                             background: waSentSuccess.has(siswa.id) ? '#16A34A' : '#22C55E', color: '#fff',
                             border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
-                            fontSize: '0.8rem', fontWeight: 700, cursor: waSending.has(siswa.id) ? 'not-allowed' : 'pointer',
-                            fontFamily: 'inherit', opacity: waSending.has(siswa.id) ? 0.6 : 1,
+                            fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                            fontFamily: 'inherit',
                           }}>
                           <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
-                          {waSentSuccess.has(siswa.id) ? 'Terkirim!' : waSending.has(siswa.id) ? 'Mengirim...' : 'Ingatkan'}
+                          {waSentSuccess.has(siswa.id) ? 'Terkirim!' : 'Ingatkan'}
                         </button>
                       ) : (
                         <span style={{ color: '#CBD5E1', fontSize: '0.8rem' }}>No. WA belum diisi</span>

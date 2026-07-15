@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, AlertTriangle, Eye, X, ClipboardList } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { buildPesanTagihanText } from '@/lib/templates/waTagihan'
+import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -263,7 +263,6 @@ export default function TagihanAktifPage() {
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
-  const [waSending,         setWaSending]         = useState<Set<string>>(new Set())
 
   // Modal state
   const [showCatatModal,  setShowCatatModal]  = useState(false)
@@ -506,8 +505,8 @@ export default function TagihanAktifPage() {
 
   // ── Kirim WA ──────────────────────────────────────────────────────────────────
 
-  const kirimWA = async (t: SiswaTagihanRow) => {
-    if (!t.no_wa || waSending.has(t.tagihan_id)) return
+  const kirimWA = (t: SiswaTagihanRow) => {
+    if (!t.no_wa) return
     const paymentUrl = t.payment_token
       ? `${window.location.origin}/bayar/${t.payment_token}`
       : undefined
@@ -522,19 +521,7 @@ export default function TagihanAktifPage() {
       paymentUrl,
     })
 
-    setWaSending(prev => new Set(prev).add(t.tagihan_id))
-    const res = await fetch('/api/kirim-wa', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ phone_number: t.no_wa, content }),
-    })
-    const result = await res.json() as { error: string | null }
-    setWaSending(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s })
-
-    if (result.error) {
-      alert('Gagal mengirim WA: ' + result.error)
-      return
-    }
+    window.open(buildWaMeLink(t.no_wa, content), '_blank', 'noopener,noreferrer')
     setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
     setTimeout(() => setWaSentSuccess(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s }), 3000)
   }
@@ -1014,10 +1001,10 @@ export default function TagihanAktifPage() {
                                 {hasWa && (
                                   <button
                                     onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                    disabled={anyModalOpen || waSending.has(t.tagihan_id)}
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (anyModalOpen || waSending.has(t.tagihan_id)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (anyModalOpen || waSending.has(t.tagihan_id)) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                    disabled={anyModalOpen}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
                                     <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                    {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : waSending.has(t.tagihan_id) ? 'Mengirim...' : 'Ingatkan'}
+                                    {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
                                   </button>
                                 )}
                               </>
@@ -1025,10 +1012,10 @@ export default function TagihanAktifPage() {
                               hasWa ? (
                                 <button
                                   onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                  disabled={anyModalOpen || waSending.has(t.tagihan_id)}
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: (anyModalOpen || waSending.has(t.tagihan_id)) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (anyModalOpen || waSending.has(t.tagihan_id)) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                                  disabled={anyModalOpen}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
                                   <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                  {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : waSending.has(t.tagihan_id) ? 'Mengirim...' : 'Ingatkan'}
+                                  {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
                                 </button>
                               ) : (
                                 <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>

@@ -12,6 +12,11 @@ export function formatWaNumber(no: string): string {
   return '62' + digits
 }
 
+// Link wa.me — membuka WhatsApp dengan pesan yang sudah terisi, dikirim manual oleh admin
+export function buildWaMeLink(no: string, message: string): string {
+  return `https://wa.me/${formatWaNumber(no)}?text=${encodeURIComponent(message)}`
+}
+
 export interface PesanTagihanParams {
   namaWali:      string
   namaSiswa:     string
