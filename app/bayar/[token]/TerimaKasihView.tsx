@@ -76,15 +76,14 @@ export default function TerimaKasihView({
             </Langkah>
           </div>
         </div>
-      </div>
-
-      <div style={{ marginTop: '1rem' }}>
-        <button
-          onClick={onLihatStatus}
-          style={{ padding: '0.75rem 1.5rem', background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          Halaman Status
-        </button>
+        <div style={{ padding: '0 1.5rem 1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={onLihatStatus}
+            style={{ padding: '0.75rem 1.5rem', background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 800, fontSize: 'clamp(0.78rem, 2.8vw, 0.9rem)', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Halaman Status
+          </button>
+        </div>
       </div>
     </div>
   )

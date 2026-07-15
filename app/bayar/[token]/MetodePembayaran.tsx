@@ -218,10 +218,16 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
 
 function RekeningRow({ label, value, action, bold, last }: { label: string; value: string; action?: React.ReactNode; bold?: boolean; last?: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0', borderBottom: last ? 'none' : '1px dashed #F1F5F9' }}>
-      <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 600 }}>{label}</span>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: bold ? '0.95rem' : '0.85rem', color: '#0F172A', fontWeight: bold ? 800 : 700 }}>{value}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0.55rem 0', borderBottom: last ? 'none' : '1px dashed #F1F5F9' }}>
+      <span style={{ fontSize: 'clamp(0.68rem, 2.4vw, 0.8rem)', color: '#64748B', fontWeight: 600, flexShrink: 0 }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={{
+          fontSize: bold ? 'clamp(0.8rem, 2.8vw, 0.95rem)' : 'clamp(0.7rem, 2.6vw, 0.85rem)',
+          color: '#0F172A', fontWeight: bold ? 800 : 700,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right',
+        }}>
+          {value}
+        </span>
         {action}
       </span>
     </div>

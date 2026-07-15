@@ -28,7 +28,7 @@ export default function BayarStepper({ step }: { step: 1 | 2 | 3 }) {
               </span>
             </div>
             {n < STEPS.length && (
-              <div style={{ width: 'clamp(14px, 10vw, 80px)', height: 4, borderRadius: 50, background: done ? '#1A2C4E' : '#A6AFC3', flexShrink: 0 }} />
+              <div style={{ width: 'clamp(14px, 4vw, 20px)', height: 4, borderRadius: 50, background: done ? '#1A2C4E' : '#A6AFC3', flexShrink: 0 }} />
             )}
           </div>
         )
