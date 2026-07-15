@@ -212,10 +212,10 @@ export default function PengaturanPage() {
   const [copyToast,    setCopyToast]    = useState(false)
   const [toastLeaving, setToastLeaving] = useState(false)
   const [editingProfil,  setEditingProfil]  = useState(false)
-  const [profilForm,     setProfilForm]     = useState({ namaSekolah: '', jenjang: '', alamat: '' })
+  const [profilForm,     setProfilForm]     = useState({ namaSekolah: '', jenjang: '', alamat: '', yayasan: '' })
   const [teleponInput,   setTeleponInput]   = useState('')
   const [editingAkun,    setEditingAkun]    = useState(false)
-  const [akunForm,       setAkunForm]       = useState({ nama: '', jabatan: '', noWa: '', yayasan: '', npsn: '' })
+  const [akunForm,       setAkunForm]       = useState({ nama: '', jabatan: '', noWa: '', npsn: '' })
   const [savingAkun,     setSavingAkun]     = useState(false)
   const [saveAkunError,  setSaveAkunError]  = useState('')
   const [userData,       setUserData]       = useState<UserData>({
@@ -239,11 +239,11 @@ export default function PengaturanPage() {
       const user = session?.user ?? null
 
       const [{ data: profileData }, { data: pData }] = await Promise.all([
-        user ? supabase.from('profiles').select('sekolah_id, nama, jabatan, no_wa, yayasan, npsn').eq('id', user.id).single() : Promise.resolve({ data: null }),
+        user ? supabase.from('profiles').select('sekolah_id, nama, jabatan, no_wa, npsn').eq('id', user.id).single() : Promise.resolve({ data: null }),
         supabase.from('pengaturan').select('jenjang_sekolah').maybeSingle(),
       ])
 
-      type ProfileRow = { sekolah_id: string; nama: string; jabatan: string; no_wa: string; yayasan: string; npsn: string }
+      type ProfileRow = { sekolah_id: string; nama: string; jabatan: string; no_wa: string; npsn: string }
       type PRow       = { jenjang_sekolah: string }
       const profile = profileData as ProfileRow | null
       const p       = pData       as PRow       | null
@@ -251,14 +251,14 @@ export default function PengaturanPage() {
       const sekolahId = profile?.sekolah_id ?? ''
       const [{ data: sekolahData }, { data: rekeningData }] = sekolahId
         ? await Promise.all([
-            supabase.from('sekolah').select('nama, no_wa, alamat').eq('id', sekolahId).single(),
+            supabase.from('sekolah').select('nama, no_wa, alamat, yayasan').eq('id', sekolahId).single(),
             supabase.from('rekening').select('id, bank, no_rek, atas_nama')
               .eq('sekolah_id', sekolahId).eq('jenis', 'transfer').eq('aktif', true)
               .order('urutan', { ascending: true }).limit(1).maybeSingle(),
           ])
         : [{ data: null }, { data: null }]
 
-      type SekolahRow  = { nama: string; no_wa: string; alamat: string | null }
+      type SekolahRow  = { nama: string; no_wa: string; alamat: string | null; yayasan: string | null }
       type RekeningDb  = { id: string; bank: string; no_rek: string; atas_nama: string }
       const sk = sekolahData as SekolahRow | null
       const rk = rekeningData as RekeningDb | null
@@ -270,12 +270,12 @@ export default function PengaturanPage() {
         namaSekolah: sk?.nama            ?? auth.sekolah ?? '',
         jenjang:     p?.jenjang_sekolah  ?? '',
         alamat:      sk?.alamat ?? '',
+        yayasan:     sk?.yayasan ?? '',
       })
       setAkunForm({
         nama:    profile?.nama    ?? auth.nama    ?? '',
         jabatan: profile?.jabatan ?? auth.jabatan ?? '',
         noWa:    profile?.no_wa   ?? '',
-        yayasan: profile?.yayasan ?? '',
         npsn:    profile?.npsn    ?? '',
       })
 
@@ -319,7 +319,7 @@ export default function PengaturanPage() {
     const [{ error: errSekolah }, { error: errPengaturan }, { error: errProfiles }] = await Promise.all([
       supabase
         .from('sekolah')
-        .update({ nama: profilForm.namaSekolah, no_wa: noWaRaw, alamat: profilForm.alamat })
+        .update({ nama: profilForm.namaSekolah, no_wa: noWaRaw, alamat: profilForm.alamat, yayasan: profilForm.yayasan })
         .eq('id', userData.idSekolah),
       supabase
         .from('pengaturan')
@@ -364,7 +364,6 @@ export default function PengaturanPage() {
         nama:    akunForm.nama.trim(),
         jabatan: akunForm.jabatan.trim(),
         no_wa:   akunForm.noWa.trim(),
-        yayasan: akunForm.yayasan.trim(),
         npsn:    akunForm.npsn.trim(),
         avatar,
       })
@@ -564,7 +563,7 @@ export default function PengaturanPage() {
               <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-mid)', fontFamily: 'monospace', letterSpacing: '0.04em', marginTop: 2 }}>
                 {maskRekening(rekening.noRek)}
               </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
                 a.n. {rekening.atasNama}
               </div>
             </div>
@@ -758,6 +757,13 @@ export default function PengaturanPage() {
             )}
           </div>
 
+          {editingProfil ? (
+            <FormField label="Yayasan" value={profilForm.yayasan}
+              onChange={v => setProfilForm(f => ({ ...f, yayasan: v }))} />
+          ) : (
+            <ViewField label="Yayasan" value={profilForm.yayasan} />
+          )}
+
           <div style={{ gridColumn:'1 / -1' }}>
             {editingProfil ? (
               <FormField label="Alamat Sekolah" value={profilForm.alamat}
@@ -819,13 +825,6 @@ export default function PengaturanPage() {
               onChange={v => setAkunForm(f => ({ ...f, noWa: v }))} />
           ) : (
             <ViewField label="No. WhatsApp" value={akunForm.noWa} />
-          )}
-
-          {editingAkun ? (
-            <FormField label="Yayasan" value={akunForm.yayasan}
-              onChange={v => setAkunForm(f => ({ ...f, yayasan: v }))} />
-          ) : (
-            <ViewField label="Yayasan" value={akunForm.yayasan} />
           )}
 
           {editingAkun ? (

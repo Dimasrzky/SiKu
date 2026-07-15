@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Users, Calendar, Download,
   Clock, AlertTriangle, CheckCircle2, ChevronRight,
@@ -114,16 +114,17 @@ interface NaikKelasAlertData {
 }
 
 interface SiswaBayarRow {
-  id:                string
-  nis:               string
-  nama:              string
-  kelas:             { id: string; nama: string; warna: string; jenjang: string } | null
-  tagihan_bulan_ini: number
-  status:            'lunas' | 'belum_bayar' | 'cicilan'
-  has_tunggakan:     boolean
-  no_wa:             string | null
-  nama_wali:         string | null
-  payment_token:     string | null
+  id:                       string
+  nis:                      string
+  nama:                     string
+  kelas:                    { id: string; nama: string; warna: string; jenjang: string } | null
+  tagihan_bulan_ini:        number
+  status:                   'lunas' | 'belum_bayar' | 'cicilan'
+  has_tunggakan:            boolean
+  has_verifikasi_menunggu:  boolean
+  no_wa:                    string | null
+  nama_wali:                string | null
+  payment_token:            string | null
 }
 
 interface DashData {
@@ -140,6 +141,8 @@ interface DashData {
   targetIni:         number
   belumBayarNominal: number
   belumBayarLalu:    number
+  menungguVerifikasiNominal: number
+  menungguVerifikasiCount:   number
   totalBeasiswaNom:  number
   penerimaBeasiswa:  number
   totalTagihanNom:   number
@@ -245,6 +248,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     { data: beasiswaRaw },
     { data: paketRaw },
     { data: taData },
+    { data: verifikasiRaw },
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
@@ -262,11 +266,13 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .select('paket_kelas(kelas_id), paket_komponen(nominal, komponen:komponen_id(nama, kelas_warna))')
       .eq('sekolah_id', sid),
     supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle(),
+    supabase.from('verifikasi_pembayaran').select('tagihan_id').eq('sekolah_id', sid).eq('status', 'menunggu').limit(2000),
   ])
 
   const allTagihan = (tagihanRaw ?? []) as TagihanRaw[]
   const bsProgs    = (beasiswaRaw ?? []) as BeasiswaProgRaw[]
   const pakets     = (paketRaw ?? []) as unknown as PaketKomposisiRaw[]
+  const verifikasiTagihanIds = new Set(((verifikasiRaw ?? []) as { tagihan_id: string }[]).map(v => v.tagihan_id))
 
   // ── Filter per bulan ───────────────────────────────────────────────────────
   const tagihanIni  = allTagihan.filter(t => t.bulan === bulanIni  && t.tahun === tahunIni)
@@ -279,8 +285,11 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const siswaBelumBayar = tagihanIni.filter(t => t.status === 'belum_bayar').length
   const terkumpulIni    = lunasIni.reduce((s, t) => s + t.total_nominal, 0)
   const targetIni       = tagihanIni.reduce((s, t) => s + t.total_nominal, 0)
+  const menungguVerifikasiRows = tagihanIni.filter(t => t.status !== 'lunas' && verifikasiTagihanIds.has(t.id))
+  const menungguVerifikasiNominal = menungguVerifikasiRows.reduce((s, t) => s + t.total_nominal, 0)
+  const menungguVerifikasiCount   = menungguVerifikasiRows.length
   const belumBayarNominal = tagihanIni
-    .filter(t => t.status !== 'lunas')
+    .filter(t => t.status !== 'lunas' && !verifikasiTagihanIds.has(t.id))
     .reduce((s, t) => s + t.total_nominal, 0)
 
   // ── Statistik bulan lalu ───────────────────────────────────────────────────
@@ -449,16 +458,17 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const siswaBayarList: SiswaBayarRow[] = tagihanIni
     .filter(t => t.siswa)
     .map(t => ({
-      id:                t.siswa!.id,
-      nis:               t.siswa!.nis ?? '-',
-      nama:              t.siswa!.nama,
-      kelas:             t.siswa!.kelas,
-      tagihan_bulan_ini: t.total_nominal,
-      status:            t.status,
-      has_tunggakan:     tunggakanSiswaIds.has(t.siswa_id),
-      no_wa:             t.siswa!.no_wa,
-      nama_wali:         t.siswa!.nama_wali,
-      payment_token:     t.payment_token,
+      id:                      t.siswa!.id,
+      nis:                     t.siswa!.nis ?? '-',
+      nama:                    t.siswa!.nama,
+      kelas:                   t.siswa!.kelas,
+      tagihan_bulan_ini:       t.total_nominal,
+      status:                  t.status,
+      has_tunggakan:           tunggakanSiswaIds.has(t.siswa_id),
+      has_verifikasi_menunggu: t.status !== 'lunas' && verifikasiTagihanIds.has(t.id),
+      no_wa:                   t.siswa!.no_wa,
+      nama_wali:               t.siswa!.nama_wali,
+      payment_token:           t.payment_token,
     }))
     .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
 
@@ -476,6 +486,8 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     targetIni,
     belumBayarNominal,
     belumBayarLalu,
+    menungguVerifikasiNominal,
+    menungguVerifikasiCount,
     totalBeasiswaNom,
     penerimaBeasiswa,
     totalTagihanNom: targetIni,
@@ -555,10 +567,11 @@ function InsightCard({ insight }: { insight: Insight }) {
 // ── Status Badge Siswa ────────────────────────────────────────────────────────
 
 const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
-  lunas:      { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
-  cicilan:    { bg: '#FEF3C7', color: '#D97706', label: 'Cicilan' },
-  belum_bayar:{ bg: '#FEE2E2', color: '#DC2626', label: 'Belum Bayar' },
-  tunggakan:  { bg: '#FECACA', color: '#991B1B', label: 'Tunggakan' },
+  lunas:               { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
+  cicilan:             { bg: '#FEF3C7', color: '#D97706', label: 'Cicilan' },
+  belum_bayar:         { bg: '#FEE2E2', color: '#DC2626', label: 'Belum Bayar' },
+  tunggakan:           { bg: '#FECACA', color: '#991B1B', label: 'Tunggakan' },
+  menunggu_verifikasi: { bg: '#FEF3C7', color: '#D97706', label: 'Menunggu Verifikasi' },
 }
 
 function StatusBadgeSiswa({ status }: { status: string }) {
@@ -724,10 +737,13 @@ export default function DashboardPage() {
   const [showSetupBerhasil,  setShowSetupBerhasil]  = useState(false)
   const [naikKelasAlert,     setNaikKelasAlert]     = useState<NaikKelasAlertData | null>(null)
   const [showNaikKelasAlert, setShowNaikKelasAlert] = useState(false)
-  const [tabAktif,           setTabAktif]           = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan'>('semua')
+  const [tabAktif,           setTabAktif]           = useState<'semua' | 'belum_bayar' | 'cicilan' | 'lunas' | 'tunggakan' | 'menunggu_verifikasi'>('semua')
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
+
+  const sekolahIdRef = useRef<string | null>(null)
+  const totalRef      = useRef(0)
 
   const raw  = useSyncExternalStore(
     (cb) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) },
@@ -746,7 +762,14 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000)
+    const id = setInterval(() => {
+      setNow(new Date())
+      if (sekolahIdRef.current && totalRef.current > 0) {
+        loadDashData(sekolahIdRef.current, totalRef.current)
+          .then(d => { setData(d); setLastUpd(new Date()) })
+          .catch(() => { /* biarkan data terakhir tetap tampil, coba lagi interval berikutnya */ })
+      }
+    }, 60_000)
     return () => clearInterval(id)
   }, [])
 
@@ -764,6 +787,7 @@ export default function DashboardPage() {
 
       const sekolahId = profile?.sekolah_id
       if (!sekolahId) { setHasSiswa(false); return }
+      sekolahIdRef.current = sekolahId
 
       const { data } = await supabase
         .from('pengaturan')
@@ -787,6 +811,7 @@ export default function DashboardPage() {
         .eq('status', 'aktif')
 
       const total = count ?? 0
+      totalRef.current = total
       setHasSiswa(total > 0)
 
       // Cek apakah tahun ajaran sudah berakhir → tampilkan popup naik kelas
@@ -841,7 +866,8 @@ export default function DashboardPage() {
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
             lunasRef: 0, siswaTunggakanLama: 0, terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
-            belumBayarLalu: 0, totalBeasiswaNom: 0, penerimaBeasiswa: 0,
+            belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
+            totalBeasiswaNom: 0, penerimaBeasiswa: 0,
             totalTagihanNom: 0, trenData: [], komposisi: [], perKelas: [],
             siswaBayarList: [],
             insights: [{
@@ -900,10 +926,12 @@ export default function DashboardPage() {
   // ── Tabel siswa: filter + pagination ────────────────────────────────────────
   const siswaBayarList   = d?.siswaBayarList ?? []
   const filteredSiswa    = siswaBayarList.filter(s => {
-    const eff = s.has_tunggakan ? 'tunggakan' : s.status
+    const isTunggakan = s.has_tunggakan && s.status === 'belum_bayar'
+    const eff = s.has_verifikasi_menunggu ? 'menunggu_verifikasi' : isTunggakan ? 'tunggakan' : s.status
     if (tabAktif !== 'semua') {
-      if (tabAktif === 'tunggakan' && !s.has_tunggakan) return false
-      if (tabAktif !== 'tunggakan' && eff !== tabAktif) return false
+      if (tabAktif === 'tunggakan' && !isTunggakan) return false
+      if (tabAktif === 'menunggu_verifikasi' && !s.has_verifikasi_menunggu) return false
+      if (tabAktif !== 'tunggakan' && tabAktif !== 'menunggu_verifikasi' && eff !== tabAktif) return false
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -1235,9 +1263,17 @@ export default function DashboardPage() {
           value={sk(rpCompact(d?.belumBayarNominal ?? 0))}
           valueColor="#DE6666"
           info={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', fontWeight: 700, color: diffBelumBayar > 0 ? '#DE6666' : '#69C183' }}>
-              {diffBelumBayar > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-              {d && d.belumBayarLalu > 0 ? `${diffBelumBayar > 0 ? 'Naik' : 'Turun'} ${rpCompact(Math.abs(diffBelumBayar))} dari bulan lalu` : '—'}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', fontWeight: 700, color: diffBelumBayar > 0 ? '#DE6666' : '#69C183' }}>
+                {diffBelumBayar > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {d && d.belumBayarLalu > 0 ? `${diffBelumBayar > 0 ? 'Naik' : 'Turun'} ${rpCompact(Math.abs(diffBelumBayar))} dari bulan lalu` : '—'}
+              </div>
+              {d && d.menungguVerifikasiNominal > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#D97706' }}>
+                  <Clock size={11} />
+                  {rpCompact(d.menungguVerifikasiNominal)} menunggu verifikasi
+                </div>
+              )}
             </div>
           }
           progress={100 - pctTarget}
@@ -1371,11 +1407,12 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.2rem', marginBlock: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div style={{ display: 'flex' }}>
             {([
-              { key: 'semua',       label: 'Semua' },
-              { key: 'belum_bayar', label: 'Belum Bayar' },
-              { key: 'cicilan',     label: 'Cicilan' },
-              { key: 'lunas',       label: 'Lunas' },
-              { key: 'tunggakan',   label: 'Tunggakan Lama' },
+              { key: 'semua',               label: 'Semua' },
+              { key: 'belum_bayar',         label: 'Belum Bayar' },
+              { key: 'cicilan',             label: 'Cicilan' },
+              { key: 'lunas',               label: 'Lunas' },
+              { key: 'tunggakan',           label: 'Tunggakan Lama' },
+              { key: 'menunggu_verifikasi', label: 'Menunggu Verifikasi' },
             ] as const).map(tab => {
               const active = tabAktif === tab.key
               return (
@@ -1439,7 +1476,9 @@ export default function DashboardPage() {
                   </td>
                 </tr>
               ) : paginatedSiswa.map((siswa, i) => {
-                const effStatus = siswa.has_tunggakan ? 'tunggakan' : siswa.status
+                const effStatus = siswa.has_verifikasi_menunggu
+                  ? 'menunggu_verifikasi'
+                  : (siswa.has_tunggakan && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
                 return (
                   <tr key={siswa.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', fontSize: '0.85rem', color: '#6B7280' }}>
@@ -1474,6 +1513,10 @@ export default function DashboardPage() {
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center' }}>
                       {effStatus === 'lunas' ? (
                         <ClipboardCheck size={22} color="#16A34A" />
+                      ) : effStatus === 'menunggu_verifikasi' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#D97706', fontSize: '0.78rem', fontWeight: 700 }}>
+                          <Clock size={16} /> Diproses
+                        </span>
                       ) : siswa.no_wa ? (
                         <button
                           onClick={() => kirimWA(siswa)}

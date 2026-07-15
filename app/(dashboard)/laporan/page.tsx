@@ -1,63 +1,80 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import { BarChart2, Database, TrendingUp, PieChart, AlertTriangle, ChevronDown, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
-
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-
-const FILTER_OPTIONS = [
-  { label: 'Bulan ini',    sublabel: 'Jun 2026',  value: 'bulan-ini'  },
-  { label: 'Bulan lalu',   sublabel: 'Mei 2026',  value: 'bulan-lalu' },
-  { label: 'Semester 1',   sublabel: '2025/2026', value: 'sem1-2526'  },
-  { label: 'Semester 2',   sublabel: '2025/2026', value: 'sem2-2526'  },
-  { label: 'Tahun ajaran', sublabel: '2025/2026', value: 'ta-2526'    },
-  { label: 'Tahun ajaran', sublabel: '2024/2025', value: 'ta-2425'    },
-]
-
-const MONTHLY_DATA = [
-  { bulan: 'Jan', nominal: 97_000_000  },
-  { bulan: 'Feb', nominal: 120_000_000 },
-  { bulan: 'Mar', nominal: 450_000_000 },
-  { bulan: 'Apr', nominal: 50_000_000  },
-  { bulan: 'Mei', nominal: 50_000_000  },
-  { bulan: 'Jun', nominal: 50_000_000  },
-]
-
-const STATUS_DATA = [
-  { label: 'Lunas',       value: 310, color: '#22C55E' },
-  { label: 'Cicilan',     value: 50,  color: '#3B82F6' },
-  { label: 'Belum bayar', value: 20,  color: '#F59E0B' },
-  { label: 'Menunggak',   value: 20,  color: '#EF4444' },
-]
-
-const TOTAL_SISWA = 455
-
-const JENJANG_DATA = [
-  { jenjang: 'Jenjang 7', pct: 96 },
-  { jenjang: 'Jenjang 8', pct: 87 },
-  { jenjang: 'Jenjang 9', pct: 43 },
-]
-
-const KOMPONEN_DATA = [
-  { kode: 'UG',  nama: 'Uang Gedung', jumlah: 68, total: 36_400_000 },
-  { kode: 'SPP', nama: 'SPP',         jumlah: 46, total: 36_400_000 },
-  { kode: 'SR',  nama: 'Seragam',     jumlah: 23, total: 36_400_000 },
-  { kode: 'CT',  nama: 'Catering',    jumlah: 18, total: 36_400_000 },
-  { kode: 'EK',  nama: 'Ekstrakurikuler', jumlah: 12, total: 18_000_000 },
-  { kode: 'BP',  nama: 'Buku Paket',  jumlah: 9,  total: 13_500_000 },
-]
+import { supabase } from '@/lib/supabase'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const BULAN_NAMES = [
+  '', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
+]
+const BULAN_NAMES_FULL = [
+  '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+]
 
 function fmt(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 }
 
+function monthsInRange(startIso: string, endIso: string): { bulan: number; tahun: number }[] {
+  const start = new Date(startIso)
+  const end   = new Date(endIso)
+  const out: { bulan: number; tahun: number }[] = []
+  let y = start.getFullYear()
+  let m = start.getMonth() + 1
+  while (y < end.getFullYear() || (y === end.getFullYear() && m <= end.getMonth() + 1)) {
+    out.push({ bulan: m, tahun: y })
+    m += 1
+    if (m > 12) { m = 1; y += 1 }
+  }
+  return out
+}
+
+const periodKey = (bulan: number, tahun: number) => `${tahun}-${bulan}`
+
+const isPastDue = (bulan: number, tahun: number, nowBulan: number, nowTahun: number) =>
+  tahun < nowTahun || (tahun === nowTahun && bulan < nowBulan)
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface TahunAjaranRow {
+  id:                      string
+  nama:                    string
+  tanggal_mulai:           string
+  tanggal_selesai:         string
+  semester_ganjil_mulai:   string
+  semester_ganjil_selesai: string
+  semester_genap_mulai:    string
+  semester_genap_selesai:  string
+}
+
+interface FilterOption {
+  label:    string
+  sublabel: string
+  value:    string
+  months:   { bulan: number; tahun: number }[]
+}
+
+interface TagihanItemRaw { nama_komponen: string; nominal: number }
+interface TagihanRaw {
+  id:            string
+  total_nominal: number
+  status:        'lunas' | 'belum_bayar' | 'cicilan'
+  bulan:         number
+  tahun:         number
+  siswa:         { kelas: { jenjang: string } | null } | null
+  tagihan_item:  TagihanItemRaw[]
+}
+interface PembayaranRaw { tagihan_id: string; jumlah: number }
+
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 
-function BarChart({ data }: { data: typeof MONTHLY_DATA }) {
-  const max    = Math.max(...data.map(d => d.nominal))
+function BarChart({ data }: { data: { bulan: string; nominal: number }[] }) {
+  const max    = Math.max(1, ...data.map(d => d.nominal))
   const W      = 520; const H = 170; const PX = 30; const PY = 14; const BOT = 26
   const barW   = (W - PX * 2) / data.length
   const innerH = H - PY - BOT
@@ -83,7 +100,7 @@ function BarChart({ data }: { data: typeof MONTHLY_DATA }) {
         const y      = PY + innerH - barH
         const isLast = i === data.length - 1
         return (
-          <g key={d.bulan}>
+          <g key={`${d.bulan}_${i}`}>
             <rect x={x} y={y} width={bW} height={barH} rx={4} fill={isLast ? '#1A2C4E' : '#93C5FD'} />
             <text x={x + bW / 2} y={y - 4} textAnchor="middle" fontSize={7.5}
               fill={isLast ? '#1A2C4E' : '#64748B'} fontWeight={isLast ? 700 : 400}>
@@ -102,8 +119,8 @@ function BarChart({ data }: { data: typeof MONTHLY_DATA }) {
 
 // ── Donut Chart ───────────────────────────────────────────────────────────────
 
-function DonutChart({ data, totalSiswa }: { data: typeof STATUS_DATA; totalSiswa: number }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
+function DonutChart({ data }: { data: { label: string; value: number; color: string }[] }) {
+  const total = Math.max(1, data.reduce((s, d) => s + d.value, 0))
   const SIZE  = 140; const R = 52; const STROKE = 24; const C = SIZE / 2
   const CIRC  = 2 * Math.PI * R
 
@@ -123,8 +140,8 @@ function DonutChart({ data, totalSiswa }: { data: typeof STATUS_DATA; totalSiswa
             strokeDashoffset={-s.offset}
             style={{ transform: 'rotate(-90deg)', transformOrigin: `${C}px ${C}px` }} />
         ))}
-        <text x={C} y={C - 4}  textAnchor="middle" fontSize={20} fontWeight={800} fill="#0F172A">{totalSiswa}</text>
-        <text x={C} y={C + 10} textAnchor="middle" fontSize={8.5} fill="#94A3B8">Siswa</text>
+        <text x={C} y={C - 4}  textAnchor="middle" fontSize={20} fontWeight={800} fill="#0F172A">{total}</text>
+        <text x={C} y={C + 10} textAnchor="middle" fontSize={8.5} fill="#94A3B8">Tagihan</text>
       </svg>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {data.map(d => (
@@ -144,9 +161,15 @@ function DonutChart({ data, totalSiswa }: { data: typeof STATUS_DATA; totalSiswa
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LaporanPage() {
-  const hasData = true // mock: ubah ke false untuk lihat empty state
-  const [selectedFilter, setSelectedFilter] = useState(FILTER_OPTIONS[0])
-  const [showDropdown,   setShowDropdown]   = useState(false)
+  const [sekolahId,    setSekolahId]    = useState('')
+  const [loading,      setLoading]      = useState(true)
+  const [allTagihan,   setAllTagihan]   = useState<TagihanRaw[]>([])
+  const [allPembayaran, setAllPembayaran] = useState<PembayaranRaw[]>([])
+  const [activeTA,     setActiveTA]     = useState<TahunAjaranRow | null>(null)
+  const [archivedTAs,  setArchivedTAs]  = useState<TahunAjaranRow[]>([])
+
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [selectedValue, setSelectedValue] = useState('bulan-ini')
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -158,6 +181,195 @@ export default function LaporanPage() {
     document.addEventListener('mousedown', onOutsideClick)
     return () => document.removeEventListener('mousedown', onOutsideClick)
   }, [])
+
+  // ── Load profile ──────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: p } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
+      if (p?.sekolah_id) setSekolahId(p.sekolah_id as string)
+    }
+    init()
+  }, [])
+
+  // ── Load data ─────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!sekolahId) return
+    let cancelled = false
+
+    const TA_SELECT = 'id, nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai'
+
+    const load = async () => {
+      setLoading(true)
+
+      const [{ data: tagihanData }, { data: pembData }, { data: taAktif }, { data: taArsip }] = await Promise.all([
+        supabase.from('tagihan')
+          .select('id, total_nominal, status, bulan, tahun, siswa:siswa_id(kelas:kelas_id(jenjang)), tagihan_item(nama_komponen, nominal)')
+          .eq('sekolah_id', sekolahId)
+          .limit(5000),
+        supabase.from('pembayaran')
+          .select('tagihan_id, jumlah')
+          .eq('sekolah_id', sekolahId)
+          .limit(10000),
+        supabase.from('tahun_ajaran').select(TA_SELECT).eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle(),
+        supabase.from('tahun_ajaran').select(TA_SELECT).eq('sekolah_id', sekolahId).eq('is_aktif', false)
+          .order('tanggal_mulai', { ascending: false }).limit(5),
+      ])
+
+      if (cancelled) return
+      setAllTagihan((tagihanData ?? []) as unknown as TagihanRaw[])
+      setAllPembayaran((pembData ?? []) as PembayaranRaw[])
+      setActiveTA((taAktif ?? null) as TahunAjaranRow | null)
+      setArchivedTAs((taArsip ?? []) as TahunAjaranRow[])
+      setLoading(false)
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [sekolahId])
+
+  // ── Filter periode options ────────────────────────────────────────────────
+
+  const filterOptions = useMemo<FilterOption[]>(() => {
+    const now       = new Date()
+    const bulanIni  = now.getMonth() + 1
+    const tahunIni  = now.getFullYear()
+    const bulanLalu = bulanIni === 1 ? 12 : bulanIni - 1
+    const tahunLalu = bulanIni === 1 ? tahunIni - 1 : tahunIni
+
+    const opts: FilterOption[] = [
+      { label: 'Bulan ini',  sublabel: `${BULAN_NAMES_FULL[bulanIni]} ${tahunIni}`,   value: 'bulan-ini',  months: [{ bulan: bulanIni, tahun: tahunIni }] },
+      { label: 'Bulan lalu', sublabel: `${BULAN_NAMES_FULL[bulanLalu]} ${tahunLalu}`, value: 'bulan-lalu', months: [{ bulan: bulanLalu, tahun: tahunLalu }] },
+    ]
+
+    if (activeTA) {
+      opts.push({ label: 'Semester Ganjil', sublabel: activeTA.nama, value: `sem-ganjil-${activeTA.id}`, months: monthsInRange(activeTA.semester_ganjil_mulai, activeTA.semester_ganjil_selesai) })
+      opts.push({ label: 'Semester Genap',  sublabel: activeTA.nama, value: `sem-genap-${activeTA.id}`,  months: monthsInRange(activeTA.semester_genap_mulai, activeTA.semester_genap_selesai) })
+      opts.push({ label: 'Tahun ajaran',    sublabel: activeTA.nama, value: `ta-${activeTA.id}`,          months: monthsInRange(activeTA.tanggal_mulai, activeTA.tanggal_selesai) })
+    }
+    for (const ta of archivedTAs) {
+      opts.push({ label: 'Tahun ajaran', sublabel: ta.nama, value: `ta-${ta.id}`, months: monthsInRange(ta.tanggal_mulai, ta.tanggal_selesai) })
+    }
+    return opts
+  }, [activeTA, archivedTAs])
+
+  const selectedFilter = filterOptions.find(o => o.value === selectedValue) ?? filterOptions[0]
+
+  // ── Data untuk periode terpilih ───────────────────────────────────────────
+
+  const periodTagihan = useMemo(() => {
+    if (!selectedFilter) return []
+    const monthSet = new Set(selectedFilter.months.map(m => periodKey(m.bulan, m.tahun)))
+    return allTagihan.filter(t => monthSet.has(periodKey(t.bulan, t.tahun)))
+  }, [allTagihan, selectedFilter])
+
+  const paidByTagihan = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of allPembayaran) {
+      map.set(p.tagihan_id, (map.get(p.tagihan_id) ?? 0) + p.jumlah)
+    }
+    return map
+  }, [allPembayaran])
+
+  const now      = new Date()
+  const nowBulan = now.getMonth() + 1
+  const nowTahun = now.getFullYear()
+
+  const stats = useMemo(() => {
+    let totalPemasukan = 0
+    let transaksiCount = 0
+    let sudahMasuk     = 0
+    let totalTagihanRp = 0
+    let belumJatuhTempo = 0
+    let menunggakRp     = 0
+
+    for (const t of periodTagihan) {
+      const paid = paidByTagihan.get(t.id) ?? 0
+      totalPemasukan += paid
+      totalTagihanRp += t.total_nominal
+      if (t.status === 'lunas') sudahMasuk += t.total_nominal
+      const sisa = t.total_nominal - paid
+      if (t.status !== 'lunas' && sisa > 0) {
+        if (isPastDue(t.bulan, t.tahun, nowBulan, nowTahun)) menunggakRp += sisa
+        else belumJatuhTempo += sisa
+      }
+    }
+    transaksiCount = periodTagihan.reduce((s, t) => s + (paidByTagihan.get(t.id) ? 1 : 0), 0)
+
+    const tingkatPelunasan = totalTagihanRp > 0 ? Math.round((sudahMasuk / totalTagihanRp) * 100) : 0
+
+    return { totalPemasukan, transaksiCount, sudahMasuk, totalTagihanRp, tingkatPelunasan, belumJatuhTempo, menunggakRp, totalTunggakan: belumJatuhTempo + menunggakRp }
+  }, [periodTagihan, paidByTagihan, nowBulan, nowTahun])
+
+  const donutData = useMemo(() => {
+    let lunas = 0, cicilan = 0, belumBayar = 0, menunggak = 0
+    for (const t of periodTagihan) {
+      if (t.status === 'lunas') lunas += 1
+      else if (t.status === 'cicilan') cicilan += 1
+      else if (isPastDue(t.bulan, t.tahun, nowBulan, nowTahun)) menunggak += 1
+      else belumBayar += 1
+    }
+    return [
+      { label: 'Lunas',       value: lunas,      color: '#22C55E' },
+      { label: 'Cicilan',     value: cicilan,    color: '#3B82F6' },
+      { label: 'Belum bayar', value: belumBayar, color: '#F59E0B' },
+      { label: 'Menunggak',   value: menunggak,  color: '#EF4444' },
+    ]
+  }, [periodTagihan, nowBulan, nowTahun])
+
+  const jenjangData = useMemo(() => {
+    const byJenjang = new Map<string, { total: number; lunas: number }>()
+    for (const t of periodTagihan) {
+      const jenjang = t.siswa?.kelas?.jenjang
+      if (!jenjang) continue
+      const cur = byJenjang.get(jenjang) ?? { total: 0, lunas: 0 }
+      cur.total += 1
+      if (t.status === 'lunas') cur.lunas += 1
+      byJenjang.set(jenjang, cur)
+    }
+    return Array.from(byJenjang.entries())
+      .map(([jenjang, v]) => ({ jenjang: `Jenjang ${jenjang}`, pct: v.total > 0 ? Math.round((v.lunas / v.total) * 100) : 0 }))
+      .sort((a, b) => a.jenjang.localeCompare(b.jenjang, 'id', { numeric: true }))
+  }, [periodTagihan])
+
+  const komponenData = useMemo(() => {
+    const byKomponen = new Map<string, { jumlah: number; total: number }>()
+    for (const t of periodTagihan) {
+      if (t.status === 'lunas') continue
+      for (const item of t.tagihan_item) {
+        const cur = byKomponen.get(item.nama_komponen) ?? { jumlah: 0, total: 0 }
+        cur.jumlah += 1
+        cur.total  += item.nominal
+        byKomponen.set(item.nama_komponen, cur)
+      }
+    }
+    return Array.from(byKomponen.entries())
+      .map(([nama, v]) => ({ nama, jumlah: v.jumlah, total: v.total }))
+      .sort((a, b) => b.jumlah - a.jumlah)
+      .slice(0, 4)
+  }, [periodTagihan])
+
+  // Tren 6 bulan terakhir — independen dari filter periode
+  const monthlyTrend = useMemo(() => {
+    const months: { bulan: number; tahun: number }[] = []
+    let y = nowTahun, m = nowBulan
+    for (let i = 0; i < 6; i++) {
+      months.unshift({ bulan: m, tahun: y })
+      m -= 1
+      if (m < 1) { m = 12; y -= 1 }
+    }
+    return months.map(({ bulan, tahun }) => {
+      const nominal = allTagihan
+        .filter(t => t.bulan === bulan && t.tahun === tahun)
+        .reduce((s, t) => s + (paidByTagihan.get(t.id) ?? 0), 0)
+      return { bulan: BULAN_NAMES[bulan], nominal }
+    })
+  }, [allTagihan, paidByTagihan, nowBulan, nowTahun])
+
+  const hasData = periodTagihan.length > 0
 
   return (
     <div className="dashboard-content">
@@ -178,7 +390,7 @@ export default function LaporanPage() {
           </div>
         </div>
 
-        {hasData && (
+        {!loading && selectedFilter && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
             {/* Filter Periode */}
             <div style={{ position: 'relative' }} ref={dropdownRef}>
@@ -193,12 +405,12 @@ export default function LaporanPage() {
               </button>
               {showDropdown && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', minWidth: 220, zIndex: 100, overflow: 'hidden' }}>
-                  {FILTER_OPTIONS.map(opt => {
-                    const isActive = selectedFilter.value === opt.value
+                  {filterOptions.map(opt => {
+                    const isActive = selectedValue === opt.value
                     return (
                       <button
                         key={opt.value}
-                        onClick={() => { setSelectedFilter(opt); setShowDropdown(false) }}
+                        onClick={() => { setSelectedValue(opt.value); setShowDropdown(false) }}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem', border: 'none', background: isActive ? '#F8FAFC' : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
                       >
                         <span style={{ fontSize: '0.82rem', fontWeight: isActive ? 700 : 600, color: isActive ? '#1A2C4E' : '#374151' }}>{opt.label}</span>
@@ -218,8 +430,15 @@ export default function LaporanPage() {
         )}
       </div>
 
+      {/* ── Loading ── */}
+      {loading && (
+        <div style={{ background: '#fff', borderRadius: 14, borderLeft: '28px solid #E2E8F0', border: '1.5px solid #E2E8F0', padding: '4rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '0.875rem', minHeight: 220 }}>
+          Memuat data...
+        </div>
+      )}
+
       {/* ── Empty State ── */}
-      {!hasData && (
+      {!loading && !hasData && (
         <div style={{
           background: '#fff',
           borderRadius: 14,
@@ -243,7 +462,7 @@ export default function LaporanPage() {
       )}
 
       {/* ── Data State ── */}
-      {hasData && (
+      {!loading && hasData && (
         <>
           {/* Semua baris stat dalam satu wrapper card border-left */}
           <div style={{
@@ -283,9 +502,9 @@ export default function LaporanPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.35rem' }}>
-                  Rp 120.000.000
+                  {fmt(stats.totalPemasukan)}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#6F788A' }}>Dari 87 transaksi</div>
+                <div style={{ fontSize: '0.78rem', color: '#6F788A' }}>Dari {stats.transaksiCount} transaksi</div>
               </div>
 
               {/* Tingkat Pelunasan */}
@@ -296,11 +515,11 @@ export default function LaporanPage() {
                     <PieChart size={16} color="#3B82F6" />
                   </div>
                 </div>
-                <div style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.75rem' }}>78%</div>
+                <div style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.75rem' }}>{stats.tingkatPelunasan}%</div>
                 <div style={{ height: 18, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden', marginBottom: '0.5rem' }}>
-                  <div style={{ height: '100%', width: '78%', background: '#69C183', borderRadius: 99 }} />
+                  <div style={{ height: '100%', width: `${stats.tingkatPelunasan}%`, background: '#69C183', borderRadius: 99 }} />
                 </div>
-                <div style={{ fontSize: '0.76rem', color: '#6F788A' }}>Rp 124,5jt dari 159,5jt</div>
+                <div style={{ fontSize: '0.76rem', color: '#6F788A' }}>{fmt(stats.sudahMasuk)} dari {fmt(stats.totalTagihanRp)}</div>
               </div>
 
               {/* Total Tunggakan */}
@@ -312,7 +531,7 @@ export default function LaporanPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.875rem' }}>
-                  Rp 35.000.000
+                  {fmt(stats.totalTunggakan)}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -320,14 +539,14 @@ export default function LaporanPage() {
                       <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
                       <span style={{ fontSize: '0.76rem', color: '#64748B' }}>Belum jatuh tempo</span>
                     </div>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#0F172A' }}>Rp 23jt</span>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#0F172A' }}>{fmt(stats.belumJatuhTempo)}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
                       <span style={{ fontSize: '0.76rem', color: '#64748B' }}>Menunggak</span>
                     </div>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#EF4444' }}>Rp 12jt</span>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#EF4444' }}>{fmt(stats.menunggakRp)}</span>
                   </div>
                 </div>
               </div>
@@ -337,13 +556,13 @@ export default function LaporanPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '0.9rem' }}>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Komposisi status pembayaran</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Distribusi per status tagihan siswa</div>
-                <DonutChart data={STATUS_DATA} totalSiswa={TOTAL_SISWA} />
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Distribusi per status tagihan periode ini</div>
+                <DonutChart data={donutData} />
               </div>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Tren pemasukan per bulan</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1rem' }}>6 bulan terakhir</div>
-                <BarChart data={MONTHLY_DATA} />
+                <BarChart data={monthlyTrend} />
               </div>
             </div>
 
@@ -352,47 +571,56 @@ export default function LaporanPage() {
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Pelunasan per jenjang</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Persentase tagihan lunas per tingkat kelas</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-                  {JENJANG_DATA.map(j => {
-                    const color = j.pct >= 80 ? '#22C55E' : j.pct >= 60 ? '#3B82F6' : '#F59E0B'
-                    return (
-                      <div key={j.jenjang}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{j.jenjang}</span>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#6F788A' }}>{j.pct}%</span>
+                {jenjangData.length === 0 ? (
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Belum ada data.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                    {jenjangData.map(j => {
+                      const color = j.pct >= 80 ? '#22C55E' : j.pct >= 60 ? '#3B82F6' : '#F59E0B'
+                      return (
+                        <div key={j.jenjang}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{j.jenjang}</span>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#6F788A' }}>{j.pct}%</span>
+                          </div>
+                          <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${j.pct}%`, background: color, borderRadius: 99 }} />
+                          </div>
                         </div>
-                        <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${j.pct}%`, background: color, borderRadius: 99 }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Komponen paling banyak belum dibayar</div>
-                <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan jumlah siswa yang belum membayar</div>
-                <div>
-                  {[...KOMPONEN_DATA].sort((a, b) => b.jumlah - a.jumlah).slice(0, 4).map((k, i) => {
-                    const amountColor = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#94A3B8'
-                    const badgeBg     = i === 0 ? '#FEF2F2' : i === 1 ? '#FFFBEB' : '#F1F5F9'
-                    const badgeColor  = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#64748B'
-                    return (
-                      <div key={k.kode} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.75rem 0', borderBottom: i < 3 ? '1px solid #E2E8F0' : 'none' }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 9, background: badgeBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <span style={{ fontSize: '0.62rem', fontWeight: 800, color: badgeColor, letterSpacing: '-0.3px' }}>{k.kode}</span>
+                <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan jumlah tagihan yang belum lunas</div>
+                {komponenData.length === 0 ? (
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Tidak ada komponen menunggak.</div>
+                ) : (
+                  <div>
+                    {komponenData.map((k, i) => {
+                      const amountColor = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#94A3B8'
+                      const badgeBg     = i === 0 ? '#FEF2F2' : i === 1 ? '#FFFBEB' : '#F1F5F9'
+                      const badgeColor  = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#64748B'
+                      const kode = k.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
+                      return (
+                        <div key={k.nama} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.75rem 0', borderBottom: i < komponenData.length - 1 ? '1px solid #E2E8F0' : 'none' }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 9, background: badgeBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.62rem', fontWeight: 800, color: badgeColor, letterSpacing: '-0.3px' }}>{kode}</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: 2 }}>{k.nama}</div>
+                            <div style={{ fontSize: '0.73rem', color: '#6F788A' }}>{k.jumlah} tagihan belum lunas</div>
+                          </div>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: amountColor, flexShrink: 0 }}>
+                            {fmt(k.total)}
+                          </span>
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: 2 }}>{k.nama}</div>
-                          <div style={{ fontSize: '0.73rem', color: '#6F788A' }}>{k.jumlah} siswa belum bayar</div>
-                        </div>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 800, color: amountColor, flexShrink: 0 }}>
-                          {fmt(k.total)}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 

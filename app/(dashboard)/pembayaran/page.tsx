@@ -59,7 +59,21 @@ interface PembayaranRecord {
   catatan:      string | null
 }
 
-type EffectiveStatus = 'lunas' | 'cicilan' | 'belum_bayar' | 'menunggak'
+interface VerifikasiMenungguRow {
+  id:               string
+  tagihan_id:       string
+  nominal_diajukan: number
+  created_at:       string
+  siswa: {
+    id:    string
+    nama:  string
+    nis:   string | null
+    kelas: { id: string; nama: string; warna: string; jenjang: string } | null
+  } | null
+  tagihan: { bulan: number; tahun: number } | null
+}
+
+type EffectiveStatus = 'lunas' | 'cicilan' | 'belum_bayar' | 'menunggak' | 'menunggu_verifikasi'
 
 interface DisplayRow {
   key:             string
@@ -84,10 +98,11 @@ interface DisplayRow {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<EffectiveStatus, { label: string; bg: string; color: string }> = {
-  lunas:      { label: 'Lunas',       bg: '#D1FAE5', color: '#065F46' },
-  cicilan:    { label: 'Cicilan',     bg: '#1A2C4E', color: '#FFFFFF' },
-  belum_bayar:{ label: 'Belum Bayar', bg: '#DBEAFE', color: '#1D4ED8' },
-  menunggak:  { label: 'Menunggak',   bg: '#FEE2E2', color: '#DC2626' },
+  lunas:               { label: 'Lunas',               bg: '#D1FAE5', color: '#065F46' },
+  cicilan:             { label: 'Cicilan',              bg: '#1A2C4E', color: '#FFFFFF' },
+  belum_bayar:         { label: 'Belum Bayar',          bg: '#DBEAFE', color: '#1D4ED8' },
+  menunggak:           { label: 'Menunggak',            bg: '#FEE2E2', color: '#DC2626' },
+  menunggu_verifikasi: { label: 'Menunggu Verifikasi',  bg: '#FEF3C7', color: '#D97706' },
 }
 
 const METODE_OPTIONS = [
@@ -125,6 +140,7 @@ export default function PembayaranPage() {
   const [tahun,          ]          = useState(now.getFullYear())
   const [tagihan,        setTagihan]        = useState<TagihanRow[]>([])
   const [pembayaran,     setPembayaran]     = useState<PembayaranRecord[]>([])
+  const [verifMenunggu,  setVerifMenunggu]  = useState<VerifikasiMenungguRow[]>([])
   const [lastMonthTotal, setLastMonthTotal] = useState(0)
   const [loading,        setLoading]        = useState(true)
   const [search,         setSearch]         = useState('')
@@ -176,6 +192,17 @@ export default function PembayaranPage() {
       if (cancelled) return
       const tagihanList = (tagihanData ?? []) as unknown as TagihanRow[]
 
+      const { data: verifData } = await supabase
+        .from('verifikasi_pembayaran')
+        .select('id, tagihan_id, nominal_diajukan, created_at, siswa:siswa_id(id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang)), tagihan:tagihan_id(bulan, tahun)')
+        .eq('sekolah_id', sekolahId)
+        .eq('status', 'menunggu')
+        .limit(200)
+
+      if (cancelled) return
+      const verifList = ((verifData ?? []) as unknown as VerifikasiMenungguRow[])
+        .filter(v => v.tagihan?.bulan === bulan && v.tagihan?.tahun === tahun)
+
       const tagihanIds = tagihanList.map(t => t.id)
       let pembayaranList: PembayaranRecord[] = []
       if (tagihanIds.length > 0) {
@@ -213,6 +240,7 @@ export default function PembayaranPage() {
       if (cancelled) return
       setTagihan(tagihanList)
       setPembayaran(pembayaranList)
+      setVerifMenunggu(verifList)
       setLastMonthTotal(prevTotal)
       setLoading(false)
     }
@@ -232,6 +260,30 @@ export default function PembayaranPage() {
     }
 
     const rows: DisplayRow[] = []
+
+    // Baris menunggu verifikasi (bukti transfer dari orang tua, belum diproses admin) — tampil paling atas
+    for (const v of verifMenunggu) {
+      const kelas = v.siswa?.kelas
+      rows.push({
+        key:             `verif_${v.id}`,
+        tagihan_id:      v.tagihan_id,
+        siswa_id:        v.siswa?.id ?? '',
+        siswa_nama:      v.siswa?.nama ?? '-',
+        siswa_nis:       v.siswa?.nis ?? null,
+        kelas_id:        kelas?.id ?? '',
+        kelas_nama:      kelas?.nama ?? '-',
+        kelas_warna:     kelas?.warna ?? '#94A3B8',
+        nominal:         v.nominal_diajukan,
+        tagihan_total:   v.nominal_diajukan,
+        paid_total:      0,
+        payment_count:   0,
+        metode:          'transfer',
+        ke:              null,
+        effectiveStatus: 'menunggu_verifikasi',
+        tanggal:         v.created_at,
+        tagihan_status:  'belum_bayar',
+      })
+    }
 
     for (const t of tagihan) {
       const pembs = pembByTagihan.get(t.id) ?? []
@@ -281,7 +333,7 @@ export default function PembayaranPage() {
     )
 
     return { displayRows: rows, kelasList }
-  }, [tagihan, pembayaran])
+  }, [tagihan, pembayaran, verifMenunggu])
 
   // ── Stats ─────────────────────────────────────────────────────────────────
 

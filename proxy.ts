@@ -5,9 +5,12 @@ import { NextResponse, type NextRequest } from 'next/server'
 const PUBLIC_PATHS = [
   '/',                       // halaman login
   '/bayar',                  // halaman pembayaran publik (orang tua)
+  '/api/bayar',              // konfirmasi upload bukti transfer dari halaman publik
   '/api/payment/create',     // buat transaksi dari halaman publik
   '/api/payment/callback',   // webhook dari iPaymu
   '/api/payment/status',     // cek status tagihan (polling dari halaman publik)
+  '/admin',                  // halaman admin verifikasi pembayaran — auth sendiri (cookie sesi admin), bukan Supabase Auth
+  '/api/admin',              // login/logout/aksi admin verifikasi — cek sesi sendiri di masing-masing route
 ]
 
 function isPublicPath(pathname: string): boolean {

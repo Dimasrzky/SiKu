@@ -46,13 +46,14 @@ interface Props {
   kelasNama:      string
   periode:        string
   items:          { nama_komponen: string; nominal: number }[]
+  onPaid?:        () => void
 }
 
 // ── Komponen utama ────────────────────────────────────────────────────────────
 
 export default function PaymentForm({
   paymentToken, totalNominal, sisa, isFirstPayment,
-  namaSiswa, kelasNama, periode, items,
+  namaSiswa, kelasNama, periode, items, onPaid,
 }: Props) {
   const [jenis, setJenis]           = useState<'lunas' | 'cicilan'>('lunas')
   const [inputCicilan, setInput]    = useState('')
@@ -89,6 +90,10 @@ export default function PaymentForm({
     const id = setInterval(checkStatus, 5000)
     return () => clearInterval(id)
   }, [result, statusPaid, checkStatus])
+
+  useEffect(() => {
+    if (statusPaid) onPaid?.()
+  }, [statusPaid, onPaid])
 
   // ── Submit ────────────────────────────────────────────────────────────────
 

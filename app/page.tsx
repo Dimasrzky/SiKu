@@ -23,6 +23,17 @@ export default function LoginPage() {
 
     setLoading(true)
 
+    // Cek dulu apakah ini kredensial admin verifikasi pembayaran (bukan akun Supabase)
+    const adminRes = await fetch('/api/admin/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, password }),
+    })
+    if (adminRes.ok) {
+      router.push('/admin/verifikasi-pembayaran')
+      return
+    }
+
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (authError || !data.user) {
