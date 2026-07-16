@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { Folder, ShieldCheck, Bell } from 'lucide-react'
+import { Folder, ShieldCheck } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import AdminLogoutButton from '../AdminLogoutButton'
+import NotificationBell from './NotificationBell'
 
 type SekolahJoin = { id: string; nama: string } | null
 type VerifRow    = { sekolah: SekolahJoin }
@@ -23,15 +24,22 @@ export default async function VerifikasiPembayaranPage() {
 
   const supabase = createServiceClient()
 
-  const { data } = await supabase
-    .from('verifikasi_pembayaran')
-    .select('sekolah:sekolah_id(id, nama)')
-    .eq('status', 'menunggu')
-    .limit(2000)
+  const [{ data: sekolahData }, { data }] = await Promise.all([
+    supabase.from('sekolah').select('id, nama').order('nama').limit(2000),
+    supabase
+      .from('verifikasi_pembayaran')
+      .select('sekolah:sekolah_id(id, nama)')
+      .eq('status', 'menunggu')
+      .limit(2000),
+  ])
 
+  const sekolahList = (sekolahData ?? []) as { id: string; nama: string }[]
   const rows = (data ?? []) as unknown as VerifRow[]
 
   const folderMap = new Map<string, SekolahFolder>()
+  for (const s of sekolahList) {
+    folderMap.set(s.id, { id: s.id, nama: s.nama, count: 0 })
+  }
   for (const r of rows) {
     if (!r.sekolah) continue
     const existing = folderMap.get(r.sekolah.id)
@@ -43,7 +51,6 @@ export default async function VerifikasiPembayaranPage() {
   }
 
   const folders = Array.from(folderMap.values()).sort((a, b) => b.count - a.count || a.nama.localeCompare(b.nama, 'id'))
-  const totalMenunggu = rows.length
 
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '1.5rem' }}>
@@ -64,18 +71,7 @@ export default async function VerifikasiPembayaranPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ position: 'relative', width: 44, height: 44, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Bell size={20} color="#1A2C4E" />
-              {totalMenunggu > 0 && (
-                <span style={{
-                  position: 'absolute', top: -6, right: -6, minWidth: 20, height: 20, padding: '0 5px',
-                  background: '#DC2626', color: '#fff', borderRadius: 20, fontSize: '0.7rem', fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #F1F5F9',
-                }}>
-                  {totalMenunggu > 99 ? '99+' : totalMenunggu}
-                </span>
-              )}
-            </div>
+            <NotificationBell pending={folders.filter(f => f.count > 0)} />
             <AdminLogoutButton />
           </div>
         </div>
@@ -83,7 +79,7 @@ export default async function VerifikasiPembayaranPage() {
         {/* Folder grid */}
         {folders.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '3.5rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.9rem' }}>
-            Belum ada bukti transfer yang menunggu verifikasi.
+            Belum ada sekolah terdaftar.
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
@@ -97,6 +93,7 @@ export default async function VerifikasiPembayaranPage() {
                   position: 'relative', background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '1.5rem', display: 'flex', flexDirection: 'column',
                   alignItems: 'center', textAlign: 'center', gap: '0.75rem', cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.15s',
+                  opacity: f.count > 0 ? 1 : 0.65,
                 }}>
                   {f.count > 0 && (
                     <span style={{
@@ -108,11 +105,11 @@ export default async function VerifikasiPembayaranPage() {
                     </span>
                   )}
                   <div style={{ width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Folder size={52} color="#F5B942" fill="#FEF3C7" strokeWidth={1.5} />
+                    <Folder size={52} color={f.count > 0 ? '#F5B942' : '#CBD5E1'} fill={f.count > 0 ? '#FEF3C7' : '#F8FAFC'} strokeWidth={1.5} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0F172A', lineHeight: 1.3 }}>{f.nama}</div>
                   <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-                    {f.count} bukti menunggu
+                    {f.count > 0 ? `${f.count} bukti menunggu` : 'Tidak ada bukti menunggu'}
                   </div>
                 </div>
               </Link>
