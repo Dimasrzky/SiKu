@@ -120,7 +120,6 @@ interface SiswaBayarRow {
   kelas:                    { id: string; nama: string; warna: string; jenjang: string } | null
   tagihan_bulan_ini:        number
   status:                   'lunas' | 'belum_bayar' | 'cicilan'
-  has_tunggakan:            boolean
   has_verifikasi_menunggu:  boolean
   no_wa:                    string | null
   nama_wali:                string | null
@@ -136,6 +135,7 @@ interface DashData {
   totalSiswaRef:     number
   lunasRef:          number
   siswaTunggakanLama: number
+  isLewatTempo:      boolean
   terkumpulIni:      number
   terkumpulLalu:     number
   targetIni:         number
@@ -304,6 +304,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const totalTunggakan    = tunggakanRows.reduce((s, t) => s + t.total_nominal, 0)
   const tunggakanSiswaIds = new Set(tunggakanRows.map(t => t.siswa_id))
   const siswaTunggakanLama = tunggakanSiswaIds.size
+  const isLewatTempo = now.getTime() > new Date(tahunIni, bulanIni, 0).getTime()
 
   // ── Beasiswa ───────────────────────────────────────────────────────────────
   const activeBsSiswa    = bsProgs.flatMap(bs =>
@@ -464,7 +465,6 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       kelas:                   t.siswa!.kelas,
       tagihan_bulan_ini:       t.total_nominal,
       status:                  t.status,
-      has_tunggakan:           tunggakanSiswaIds.has(t.siswa_id),
       has_verifikasi_menunggu: t.status !== 'lunas' && verifikasiTagihanIds.has(t.id),
       no_wa:                   t.siswa!.no_wa,
       nama_wali:               t.siswa!.nama_wali,
@@ -481,6 +481,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     totalSiswaRef,
     lunasRef,
     siswaTunggakanLama,
+    isLewatTempo,
     terkumpulIni,
     terkumpulLalu,
     targetIni,
@@ -569,7 +570,7 @@ function InsightCard({ insight }: { insight: Insight }) {
 const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
   lunas:               { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
   cicilan:             { bg: '#FEF3C7', color: '#D97706', label: 'Cicilan' },
-  belum_bayar:         { bg: '#FEE2E2', color: '#DC2626', label: 'Belum Bayar' },
+  belum_bayar:         { bg: '#d6ae2b', color: '#ffffff', label: 'Belum Bayar' },
   tunggakan:           { bg: '#FECACA', color: '#991B1B', label: 'Tunggakan' },
   menunggu_verifikasi: { bg: '#FEF3C7', color: '#D97706', label: 'Menunggu Verifikasi' },
 }
@@ -741,6 +742,7 @@ export default function DashboardPage() {
   const [searchQuery,       setSearchQuery]       = useState('')
   const [halamanTabel,      setHalamanTabel]      = useState(1)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
+  const [ingatkanHover,     setIngatkanHover]     = useState(false)
 
   const sekolahIdRef = useRef<string | null>(null)
   const totalRef      = useRef(0)
@@ -864,7 +866,7 @@ export default function DashboardPage() {
           .catch(() => setData({
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
-            lunasRef: 0, siswaTunggakanLama: 0, terkumpulIni: 0,
+            lunasRef: 0, siswaTunggakanLama: 0, isLewatTempo: false, terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
             belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
             totalBeasiswaNom: 0, penerimaBeasiswa: 0,
@@ -924,9 +926,10 @@ export default function DashboardPage() {
   const sk = (val: string) => loading ? '—' : val
 
   // ── Tabel siswa: filter + pagination ────────────────────────────────────────
+  const isLewatTempo      = d?.isLewatTempo ?? false
   const siswaBayarList   = d?.siswaBayarList ?? []
   const filteredSiswa    = siswaBayarList.filter(s => {
-    const isTunggakan = s.has_tunggakan && s.status === 'belum_bayar'
+    const isTunggakan = isLewatTempo && s.status === 'belum_bayar'
     const eff = s.has_verifikasi_menunggu ? 'menunggu_verifikasi' : isTunggakan ? 'tunggakan' : s.status
     if (tabAktif !== 'semua') {
       if (tabAktif === 'tunggakan' && !isTunggakan) return false
@@ -1089,13 +1092,19 @@ export default function DashboardPage() {
             Export Laporan
           </button>
 
-          <button style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: '#22C55E', color: '#fff',
-            border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
-            fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}>
+          <button
+            disabled
+            title="Fitur pengingat massal belum tersedia — gunakan tombol Ingatkan per siswa di tabel bawah"
+            onMouseEnter={() => setIngatkanHover(true)}
+            onMouseLeave={() => setIngatkanHover(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: ingatkanHover ? '#94A3B8' : '#22C55E', color: '#fff',
+              border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
+              fontSize: '0.8rem', fontWeight: 700, cursor: 'not-allowed',
+              fontFamily: 'inherit', opacity: ingatkanHover ? 0.75 : 1,
+              transition: 'background 0.15s, opacity 0.15s',
+            }}>
             <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
             Ingatkan
           </button>
@@ -1478,7 +1487,7 @@ export default function DashboardPage() {
               ) : paginatedSiswa.map((siswa, i) => {
                 const effStatus = siswa.has_verifikasi_menunggu
                   ? 'menunggu_verifikasi'
-                  : (siswa.has_tunggakan && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
+                  : (isLewatTempo && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
                 return (
                   <tr key={siswa.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', fontSize: '0.85rem', color: '#6B7280' }}>

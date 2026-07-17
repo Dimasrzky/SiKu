@@ -42,7 +42,6 @@ interface SiswaTagihanRow {
   status:        'belum_bayar' | 'lunas' | 'cicilan'
   no_wa:         string
   nama_wali:     string
-  has_tunggakan: boolean
   payment_token: string
 }
 
@@ -294,7 +293,7 @@ export default function TagihanAktifPage() {
   const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> => {
     const isSemesterMonth = bulan === 1 || bulan === 7
 
-    const [{ data: tagihanData }, { data: paketData }, { data: tunggakanData }] = await Promise.all([
+    const [{ data: tagihanData }, { data: paketData }] = await Promise.all([
       supabase
         .from('tagihan')
         .select('id, total_nominal, status, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang, warna))')
@@ -307,15 +306,7 @@ export default function TagihanAktifPage() {
         .from('paket')
         .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
         .eq('sekolah_id', sid),
-      supabase
-        .from('tagihan')
-        .select('siswa_id')
-        .eq('sekolah_id', sid)
-        .neq('status', 'lunas')
-        .or(`tahun.lt.${tahun},and(tahun.eq.${tahun},bulan.lt.${bulan})`),
     ])
-
-    const tunggakanIds = new Set(((tunggakanData ?? []) as { siswa_id: string }[]).map(t => t.siswa_id))
 
     const kelasTotal = new Map<string, number>()
     const kelasKomps = new Map<string, Map<string, number>>()
@@ -407,7 +398,6 @@ export default function TagihanAktifPage() {
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
         no_wa:         r.siswa?.no_wa ?? '',
         nama_wali:     r.siswa?.nama_wali ?? '',
-        has_tunggakan: tunggakanIds.has(siswaId),
         payment_token: r.payment_token ?? '',
       }
     })
@@ -528,10 +518,12 @@ export default function TagihanAktifPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────────
 
-  const jatuhTempo = getJatuhTempo(bulanIni, tahunIni)
+  const jatuhTempo   = getJatuhTempo(bulanIni, tahunIni)
+  const endOfMonth   = new Date(tahunIni, bulanIni, 0)
+  const isLewatTempo = now.getTime() > endOfMonth.getTime()
 
   const getEffStatus = (t: SiswaTagihanRow): EffectiveStatus =>
-    t.has_tunggakan && t.status === 'belum_bayar' ? 'menunggak' : t.status
+    t.status === 'belum_bayar' && isLewatTempo ? 'menunggak' : t.status
 
   const uniqueJenjang = ['Semua', ...Array.from(new Set(tagihanList.map(t => t.kelas_jenjang).filter(Boolean)))]
 
@@ -545,8 +537,8 @@ export default function TagihanAktifPage() {
 
   const countLunas     = tagihanList.filter(t => t.status === 'lunas').length
   const countCicilan   = tagihanList.filter(t => t.status === 'cicilan').length
-  const countBelum     = tagihanList.filter(t => t.status === 'belum_bayar' && !t.has_tunggakan).length
-  const countMenunggak = tagihanList.filter(t => t.has_tunggakan && t.status === 'belum_bayar').length
+  const countBelum     = tagihanList.filter(t => t.status === 'belum_bayar' && !isLewatTempo).length
+  const countMenunggak = tagihanList.filter(t => t.status === 'belum_bayar' && isLewatTempo).length
   const totalNominal   = tagihanList.reduce((s, t) => s + t.total_nominal, 0)
   const sudahMasuk     = tagihanList.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
   const belumMasuk     = totalNominal - sudahMasuk
@@ -555,7 +547,6 @@ export default function TagihanAktifPage() {
 
   // ── Countdown to end of month ─────────────────────────────────────────────────
 
-  const endOfMonth = new Date(tahunIni, bulanIni, 0)
   const hDays = Math.max(0, Math.floor((endOfMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
 
   // ── Detail modal computed values ──────────────────────────────────────────────
@@ -924,12 +915,12 @@ export default function TagihanAktifPage() {
             </div>
 
             {/* Table */}
-            <div style={{ overflowX: 'auto', padding: '0 1rem 0' }}>
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '65vh', padding: '0 1rem 0' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ background: '#1A2C4E' }}>
                     {(['Nama', 'Kelas', 'Total tagihan', 'Status', 'Jatuh tempo', 'Aksi'] as const).map(col => (
-                      <th key={col} style={{ padding: '0.45rem 1rem', textAlign: 'left', fontSize: '0.82rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', borderRadius: col === 'Nama' ? '8px 0 0 8px' : col === 'Aksi' ? '0 8px 8px 0' : undefined }}>
+                      <th key={col} style={{ padding: '0.45rem 1rem', textAlign: 'left', fontSize: '0.82rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#1A2C4E', zIndex: 1, borderRadius: col === 'Nama' ? '8px 0 0 8px' : col === 'Aksi' ? '0 8px 8px 0' : undefined }}>
                         {col}
                       </th>
                     ))}

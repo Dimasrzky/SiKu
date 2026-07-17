@@ -102,6 +102,7 @@ export default function DaftarSiswaPage() {
   const [editNoWaError, setEditNoWaError] = useState('')
   const [editSaving,    setEditSaving]    = useState(false)
   const [editError,     setEditError]     = useState('')
+  const [editToast,     setEditToast]     = useState(false)
 
   // Import Excel flow
   const [previewRows,       setPreviewRows]       = useState<ParsedRow[] | null>(null)
@@ -419,6 +420,8 @@ export default function DaftarSiswaPage() {
     await loadSiswa(sekolahId)
     setEditSiswa(null)
     setEditSaving(false)
+    setEditToast(true)
+    setTimeout(() => setEditToast(false), 2500)
   }
 
   // ── View Mode computed ───────────────────────────────────────────────────
@@ -696,6 +699,19 @@ export default function DaftarSiswaPage() {
 
   return (
     <>
+    {editToast && (
+      <div style={{
+        position: 'fixed', top: '1.25rem', left: '50%',
+        zIndex: 9999, display: 'flex', alignItems: 'center', gap: '0.6rem',
+        background: '#1A2C4E', color: '#fff', borderRadius: 12, padding: '0.75rem 1.25rem',
+        boxShadow: '0 12px 32px rgba(0,0,0,0.25)', fontSize: '0.875rem', fontWeight: 700,
+        animation: 'toastEnter 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards',
+        willChange: 'transform, opacity',
+      }}>
+        <CheckCircle2 size={18} color="#4ADE80" />
+        Data berhasil diubah
+      </div>
+    )}
     <div className="dashboard-content">
 
       {/* Header */}

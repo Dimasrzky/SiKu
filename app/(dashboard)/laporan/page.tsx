@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import Image from 'next/image'
+import * as XLSX from 'xlsx'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { BarChart2, Database, TrendingUp, PieChart, AlertTriangle, ChevronDown, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -15,6 +18,15 @@ const BULAN_NAMES_FULL = [
   '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ]
+
+// Sama seperti naik-kelas & dashboard — dipakai untuk menurunkan angkatan dari posisi jenjang siswa.
+const JENJANG_MAP: Record<string, string[]> = {
+  'TK/PAUD': ['A', 'B', 'C'],
+  'SD/MI':   ['1', '2', '3', '4', '5', '6'],
+  'SMP/MTs': ['7', '8', '9'],
+  'SMA/MA':  ['10', '11', '12'],
+  'SMK':     ['10', '11', '12'],
+}
 
 function fmt(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -38,6 +50,96 @@ const periodKey = (bulan: number, tahun: number) => `${tahun}-${bulan}`
 
 const isPastDue = (bulan: number, tahun: number, nowBulan: number, nowTahun: number) =>
   tahun < nowTahun || (tahun === nowTahun && bulan < nowBulan)
+
+const METODE_LABELS: Record<string, string> = {
+  tunai:    'Tunai',
+  transfer: 'Transfer Manual',
+  qris:     'QRIS',
+  va:       'Virtual Account',
+}
+const metodeLabel = (m: string | null) => (m ? (METODE_LABELS[m] ?? m) : 'Transfer Manual')
+
+function jenisPembayaranLabel(
+  items: { nama_komponen: string; komponen: { jenis: string } | null }[],
+  bulan: number,
+  tahun: number,
+): string {
+  if (items.length === 0) return '-'
+  return items
+    .map(item => item.komponen?.jenis === 'rutin_bulanan'
+      ? `${item.nama_komponen} ${BULAN_NAMES_FULL[bulan]} ${tahun}`
+      : item.nama_komponen)
+    .join(', ')
+}
+
+interface PaketKelasInfo { nama: string; komponenIds: Set<string> }
+
+// Tagihan bulanan biasanya cuma berisi sebagian komponen paket (rutin_bulanan tiap bulan,
+// sekali_bayar cuma bulan pertama, per_semester cuma bulan semester) — jadi dicek dengan subset,
+// bukan exact match, terhadap komponen paket kelas siswa tsb. Kalau semua item tagihan berasal dari
+// paket standar (tidak ada komponen individu/kustom di luar paket), tampilkan nama paketnya saja.
+function resolveJenisLabel(
+  items: { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[],
+  bulan: number,
+  tahun: number,
+  kelasId: string | null,
+  paketByKelas: Map<string, PaketKelasInfo>,
+): string {
+  if (items.length === 0) return '-'
+  const paket = kelasId ? paketByKelas.get(kelasId) : undefined
+  if (paket) {
+    const isFromPaket = items.every(i => i.komponen_id && paket.komponenIds.has(i.komponen_id))
+    if (isFromPaket) return paket.nama
+  }
+  return jenisPembayaranLabel(items, bulan, tahun)
+}
+
+async function buildPaketByKelasMap(sekolahId: string): Promise<Map<string, PaketKelasInfo>> {
+  const { data, error } = await supabase
+    .from('paket')
+    .select('nama, paket_kelas(kelas_id), paket_komponen(komponen_id)')
+    .eq('sekolah_id', sekolahId)
+    .limit(200)
+  if (error) console.error('[Laporan] gagal memuat paket kelas:', error)
+
+  const map = new Map<string, PaketKelasInfo>()
+  for (const p of ((data ?? []) as unknown as { nama: string; paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string }[] }[])) {
+    const komponenIds = new Set(p.paket_komponen.map(k => k.komponen_id))
+    for (const pk of p.paket_kelas) map.set(pk.kelas_id, { nama: p.nama, komponenIds })
+  }
+  return map
+}
+
+function getFinalY(doc: jsPDF): number {
+  return (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 20
+}
+
+// Data sekolah demo cuma isi NIS, belum isi NISN — fallback ke NIS supaya kolom tidak kosong.
+function nisnOrNis(siswa: { nisn: string | null; nis: string | null } | null | undefined): string {
+  return siswa?.nisn ?? siswa?.nis ?? '-'
+}
+
+function generateIdTransaksi(tanggalIso: string, seq: number): string {
+  const d = new Date(tanggalIso)
+  const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  return `TRX${yyyymmdd}${String(seq).padStart(3, '0')}`
+}
+
+function formatTanggalExcel(iso: string): string {
+  return new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function formatDateLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Jatuh tempo = akhir bulan tagihan — konvensi yang sama dipakai di tagihan/aktif & dashboard.
+function getJatuhTempoTanggal(bulan: number, tahun: number): string {
+  return formatDateLocal(new Date(tahun, bulan, 0))
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +172,76 @@ interface TagihanRaw {
   tagihan_item:  TagihanItemRaw[]
 }
 interface PembayaranRaw { tagihan_id: string; jumlah: number }
+
+interface ExportTagihanNested {
+  id:           string
+  bulan:        number
+  tahun:        number
+  siswa:        { nama: string; nis: string | null; nisn: string | null; kelas: { id: string; nama: string } | null } | null
+  tagihan_item: { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[]
+}
+interface PembayaranExportRaw {
+  id:             string
+  jumlah:         number
+  metode:         string
+  tanggal_bayar:  string
+  gateway_trx_id: string | null
+  tagihan_id:     string
+}
+interface VerifikasiExportRaw {
+  id:               string
+  nominal_diajukan: number
+  created_at:       string
+  tagihan:          ExportTagihanNested | null
+}
+interface GatewayTrxRaw {
+  ipaymu_trx_id:   string | null
+  ipaymu_response: { fee?: string } | null
+}
+interface TunggakanTagihanRaw {
+  id:            string
+  bulan:         number
+  tahun:         number
+  status:        'lunas' | 'belum_bayar' | 'cicilan'
+  total_nominal: number
+  siswa:         { nama: string; nis: string | null; nisn: string | null; kelas: { id: string; nama: string } | null } | null
+  tagihan_item:  { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[]
+}
+interface ExportRow {
+  tanggal:         string
+  nisn:            string
+  nama:            string
+  kelas:           string
+  jenisPembayaran: string
+  metode:          string
+  nominal:         number
+  biayaAdmin:      number
+  status:          string
+}
+interface SiswaAktifRaw {
+  nama:         string
+  nis:          string | null
+  nisn:         string | null
+  no_wa:        string | null
+  nama_wali:    string | null
+  status:       'aktif' | 'alumni'
+  jenis_alumni: string | null
+  kelas:        string | null
+  kelasRef:     { nama: string; jenjang: string } | null
+}
+interface AlumniRaw {
+  id:          string
+  nama:        string
+  nis:         string | null
+  nisn:        string | null
+  tahun_lulus: string | null
+}
+interface TahunAjaranFullRaw {
+  nama:            string
+  tanggal_mulai:   string
+  tanggal_selesai: string
+  is_aktif:        boolean
+}
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +342,13 @@ export default function LaporanPage() {
 
   const [showDropdown, setShowDropdown] = useState(false)
   const [selectedValue, setSelectedValue] = useState('bulan-ini')
+  const [exportingTransaksi, setExportingTransaksi] = useState(false)
+  const [exportingTunggakan, setExportingTunggakan] = useState(false)
+  const [exportingSiswaAktif, setExportingSiswaAktif] = useState(false)
+  const [exportingAlumni, setExportingAlumni] = useState(false)
+  const [exportingKeuanganTahunan, setExportingKeuanganTahunan] = useState(false)
+  const [exportNotice, setExportNotice] = useState('')
+  const [generatingUtama, setGeneratingUtama] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -371,6 +550,579 @@ export default function LaporanPage() {
 
   const hasData = periodTagihan.length > 0
 
+  // ── Export Laporan Transaksi (Excel) ─────────────────────────────────────
+
+  const handleExportTransaksi = async () => {
+    if (!selectedFilter || !sekolahId) return
+
+    const sortedMonths = [...selectedFilter.months].sort((a, b) => a.tahun - b.tahun || a.bulan - b.bulan)
+    const first = sortedMonths[0]
+    const last  = sortedMonths[sortedMonths.length - 1]
+    if (!first || !last) {
+      setExportNotice('Tidak ada transaksi pada periode ini.')
+      return
+    }
+    // Rentang berdasarkan tanggal transaksi aktual (tanggal_bayar / created_at), bukan bulan tagihan —
+    // supaya pembayaran yang terjadi di periode ini tetap masuk walau melunasi tagihan bulan lain.
+    const startIso = new Date(first.tahun, first.bulan - 1, 1).toISOString()
+    const endIso   = new Date(last.tahun, last.bulan, 1).toISOString()
+
+    setExportingTransaksi(true)
+    try {
+      const NESTED_SELECT = 'id, bulan, tahun, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))'
+
+      // pembayaran.tagihan_id tidak terdaftar sebagai foreign key di PostgREST schema cache,
+      // jadi tagihan tidak bisa di-embed langsung di sini — harus di-fetch terpisah lalu digabung manual
+      // (pola yang sama dipakai di pembayaran/page.tsx).
+      const [{ data: pembData, error: pembErr }, { data: verifData, error: verifErr }, paketByKelas] = await Promise.all([
+        supabase
+          .from('pembayaran')
+          .select('id, jumlah, metode, tanggal_bayar, gateway_trx_id, tagihan_id')
+          .eq('sekolah_id', sekolahId)
+          .gte('tanggal_bayar', startIso)
+          .lt('tanggal_bayar', endIso)
+          .order('tanggal_bayar', { ascending: true })
+          .limit(5000),
+        supabase
+          .from('verifikasi_pembayaran')
+          .select(`id, nominal_diajukan, created_at, tagihan:tagihan_id(${NESTED_SELECT})`)
+          .eq('sekolah_id', sekolahId)
+          .eq('status', 'menunggu')
+          .gte('created_at', startIso)
+          .lt('created_at', endIso)
+          .limit(2000),
+        buildPaketByKelasMap(sekolahId),
+      ])
+
+      if (pembErr)  console.error('[Export Laporan Transaksi] gagal memuat pembayaran:', pembErr)
+      if (verifErr) console.error('[Export Laporan Transaksi] gagal memuat verifikasi_pembayaran:', verifErr)
+
+      const pembList  = (pembData ?? []) as unknown as PembayaranExportRaw[]
+      const verifList = (verifData ?? []) as unknown as VerifikasiExportRaw[]
+
+      const pembTagihanIds = Array.from(new Set(pembList.map(p => p.tagihan_id)))
+      let tagihanMap = new Map<string, ExportTagihanNested>()
+      if (pembTagihanIds.length > 0) {
+        const { data: tagihanData, error: tagihanErr } = await supabase
+          .from('tagihan')
+          .select(NESTED_SELECT)
+          .in('id', pembTagihanIds)
+        if (tagihanErr) console.error('[Export Laporan Transaksi] gagal memuat tagihan:', tagihanErr)
+        tagihanMap = new Map(((tagihanData ?? []) as unknown as ExportTagihanNested[]).map(t => [t.id, t]))
+      }
+
+      const gatewayTrxIds = Array.from(new Set(pembList.map(p => p.gateway_trx_id).filter((id): id is string => !!id)))
+      let feeMap = new Map<string, number>()
+      if (gatewayTrxIds.length > 0) {
+        const { data: gwData } = await supabase
+          .from('payment_gateway_trx')
+          .select('ipaymu_trx_id, ipaymu_response')
+          .in('ipaymu_trx_id', gatewayTrxIds)
+          .limit(gatewayTrxIds.length)
+        feeMap = new Map(
+          ((gwData ?? []) as unknown as GatewayTrxRaw[])
+            .filter(g => g.ipaymu_trx_id)
+            .map(g => [g.ipaymu_trx_id as string, Number(g.ipaymu_response?.fee ?? 0) || 0])
+        )
+      }
+
+      const rows: ExportRow[] = []
+
+      for (const p of pembList) {
+        const tagihan = tagihanMap.get(p.tagihan_id)
+        if (!tagihan) continue
+        rows.push({
+          tanggal:         p.tanggal_bayar,
+          nisn:            nisnOrNis(tagihan.siswa),
+          nama:            tagihan.siswa?.nama ?? '-',
+          kelas:           tagihan.siswa?.kelas?.nama ?? '-',
+          jenisPembayaran: resolveJenisLabel(tagihan.tagihan_item, tagihan.bulan, tagihan.tahun, tagihan.siswa?.kelas?.id ?? null, paketByKelas),
+          metode:          metodeLabel(p.metode),
+          nominal:         p.jumlah,
+          biayaAdmin:      p.gateway_trx_id ? (feeMap.get(p.gateway_trx_id) ?? 0) : 0,
+          status:          'Berhasil',
+        })
+      }
+
+      for (const v of verifList) {
+        if (!v.tagihan) continue
+        rows.push({
+          tanggal:         v.created_at,
+          nisn:            nisnOrNis(v.tagihan.siswa),
+          nama:            v.tagihan.siswa?.nama ?? '-',
+          kelas:           v.tagihan.siswa?.kelas?.nama ?? '-',
+          jenisPembayaran: resolveJenisLabel(v.tagihan.tagihan_item, v.tagihan.bulan, v.tagihan.tahun, v.tagihan.siswa?.kelas?.id ?? null, paketByKelas),
+          metode:          'Transfer Manual',
+          nominal:         v.nominal_diajukan,
+          biayaAdmin:      0,
+          status:          'Menunggu Verifikasi',
+        })
+      }
+
+      if (rows.length === 0) {
+        setExportNotice('Tidak ada transaksi pada periode ini.')
+        return
+      }
+
+      rows.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime())
+
+      const headers = ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', 'Nominal', 'Biaya Admin', 'Total Bayar', 'Status']
+      const aoa: (string | number)[][] = [headers]
+      rows.forEach((r, i) => {
+        aoa.push([
+          i + 1,
+          formatTanggalExcel(r.tanggal),
+          generateIdTransaksi(r.tanggal, i + 1),
+          r.nisn,
+          r.nama,
+          r.kelas,
+          r.jenisPembayaran,
+          r.metode,
+          r.nominal,
+          r.biayaAdmin,
+          r.nominal + r.biayaAdmin,
+          r.status,
+        ])
+      })
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 10 },
+        { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 18 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Transaksi')
+
+      const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
+      XLSX.writeFile(wb, `Laporan_Transaksi_${periodeLabel}.xlsx`)
+    } finally {
+      setExportingTransaksi(false)
+    }
+  }
+
+  // ── Export Laporan Tunggakan (Excel) ──────────────────────────────────────
+  // Selalu semua tunggakan outstanding sampai hari ini — tidak terikat filter periode dropdown,
+  // karena tunggakan bersifat akumulatif (piutang lintas bulan), bukan snapshot satu periode.
+
+  const handleExportTunggakan = async () => {
+    if (!sekolahId) return
+
+    const tunggakanIds = allTagihan
+      .filter(t => t.status !== 'lunas' && isPastDue(t.bulan, t.tahun, nowBulan, nowTahun))
+      .map(t => t.id)
+
+    if (tunggakanIds.length === 0) {
+      setExportNotice('Tidak ada tunggakan saat ini.')
+      return
+    }
+
+    setExportingTunggakan(true)
+    try {
+      const [{ data: tagihanData, error }, paketByKelas] = await Promise.all([
+        supabase
+          .from('tagihan')
+          .select('id, bulan, tahun, status, total_nominal, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))')
+          .in('id', tunggakanIds)
+          .limit(5000),
+        buildPaketByKelasMap(sekolahId),
+      ])
+
+      if (error) console.error('[Export Laporan Tunggakan] gagal memuat tagihan:', error)
+
+      const detailList = (tagihanData ?? []) as unknown as TunggakanTagihanRaw[]
+
+      const rows = detailList
+        .map(t => ({
+          nisn:       nisnOrNis(t.siswa),
+          nama:       t.siswa?.nama ?? '-',
+          kelas:      t.siswa?.kelas?.nama ?? '-',
+          jenis:      resolveJenisLabel(t.tagihan_item, t.bulan, t.tahun, t.siswa?.kelas?.id ?? null, paketByKelas),
+          periode:    `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}`,
+          nominal:    t.total_nominal - (paidByTagihan.get(t.id) ?? 0),
+          jatuhTempo: getJatuhTempoTanggal(t.bulan, t.tahun),
+          status:     t.status === 'cicilan' ? 'Cicilan' : 'Belum Bayar',
+          bulan:      t.bulan,
+          tahun:      t.tahun,
+        }))
+        .sort((a, b) => a.tahun - b.tahun || a.bulan - b.bulan || a.nama.localeCompare(b.nama, 'id'))
+
+      if (rows.length === 0) {
+        setExportNotice('Tidak ada tunggakan saat ini.')
+        return
+      }
+
+      const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', 'Nominal Tunggakan', 'Jatuh Tempo', 'Status']
+      const aoa: (string | number)[][] = [headers]
+      rows.forEach((r, i) => {
+        aoa.push([i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode, r.nominal, r.jatuhTempo, r.status])
+      })
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 32 },
+        { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Tunggakan')
+
+      XLSX.writeFile(wb, `Laporan_Tunggakan_${formatDateLocal(now)}.xlsx`)
+    } finally {
+      setExportingTunggakan(false)
+    }
+  }
+
+  // ── Export Laporan Data Siswa Aktif (Excel) ───────────────────────────────
+  // Angkatan tidak tersimpan untuk siswa aktif — diturunkan dari posisi jenjang siswa
+  // dalam JENJANG_MAP dikurangkan dari tahun mulai tahun ajaran aktif (pola sama dgn naik-kelas).
+  // Status "Nonaktif" mencakup alumni yang keluar/pindah sebelum lulus (jenis_alumni pindah/keluar).
+
+  const handleExportSiswaAktif = async () => {
+    if (!sekolahId) return
+
+    setExportingSiswaAktif(true)
+    try {
+      const [{ data: pengData }, { data: siswaData, error }] = await Promise.all([
+        supabase.from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle(),
+        supabase
+          .from('siswa')
+          .select('nama, nis, nisn, no_wa, nama_wali, status, jenis_alumni, kelas, kelasRef:kelas_id(nama, jenjang)')
+          .eq('sekolah_id', sekolahId)
+          .or('status.eq.aktif,and(status.eq.alumni,jenis_alumni.in.(pindah,keluar))')
+          .limit(5000),
+      ])
+
+      if (error) console.error('[Export Laporan Siswa Aktif] gagal memuat siswa:', error)
+
+      const jenjangSekolah = (pengData as { jenjang_sekolah?: string } | null)?.jenjang_sekolah ?? 'SMP/MTs'
+      const jenjangLevels  = JENJANG_MAP[jenjangSekolah] ?? JENJANG_MAP['SMP/MTs']
+      const taMulaiTahun   = activeTA ? new Date(activeTA.tanggal_mulai).getFullYear() : nowTahun
+
+      const list = (siswaData ?? []) as unknown as SiswaAktifRaw[]
+
+      const rows = list
+        .map(s => {
+          const isAktif   = s.status === 'aktif'
+          const kelasNama = s.kelasRef?.nama ?? s.kelas ?? '-'
+          const levelIdx  = isAktif && s.kelasRef?.jenjang ? jenjangLevels.indexOf(s.kelasRef.jenjang) : -1
+          const angkatan  = levelIdx >= 0 ? String(taMulaiTahun - levelIdx) : '-'
+          return {
+            nisn:     nisnOrNis(s),
+            nama:     s.nama,
+            kelas:    kelasNama,
+            angkatan,
+            namaOrtu: s.nama_wali ?? '-',
+            noWa:     s.no_wa ?? '-',
+            status:   isAktif ? 'Aktif' : 'Nonaktif',
+          }
+        })
+        .sort((a, b) =>
+          (a.status === b.status ? 0 : a.status === 'Aktif' ? -1 : 1) ||
+          a.kelas.localeCompare(b.kelas, 'id', { numeric: true }) ||
+          a.nama.localeCompare(b.nama, 'id')
+        )
+
+      if (rows.length === 0) {
+        setExportNotice('Tidak ada data siswa aktif.')
+        return
+      }
+
+      const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Angkatan', 'Nama Orang Tua', 'No. WhatsApp', 'Status']
+      const aoa: (string | number)[][] = [headers]
+      rows.forEach((r, i) => {
+        aoa.push([i + 1, r.nisn, r.nama, r.kelas, r.angkatan, r.namaOrtu, r.noWa, r.status])
+      })
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 12 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Siswa Aktif')
+
+      XLSX.writeFile(wb, `Laporan_Siswa_Aktif_${formatDateLocal(now)}.xlsx`)
+    } finally {
+      setExportingSiswaAktif(false)
+    }
+  }
+
+  // ── Export Laporan Alumni (Excel) ─────────────────────────────────────────
+  // Total Tagihan/Terbayar dihitung dari SELURUH tagihan siswa sejak awal masuk hingga sebelum
+  // jadi alumni (bukan cuma periode tertentu) — karena tagihan berhenti dibuat begitu siswa
+  // jadi alumni (kelas_id dikosongkan), jumlah semua tagihan siswa itu = riwayat penuhnya.
+  // Angkatan = tahun lulus dikurangi jumlah level jenjang (pola sama dgn Laporan Siswa Aktif,
+  // dihitung dari sisi lulus, bukan sisi aktif).
+
+  const handleExportAlumni = async () => {
+    if (!sekolahId) return
+
+    setExportingAlumni(true)
+    try {
+      const [{ data: pengData }, { data: alumniData, error: alumniErr }] = await Promise.all([
+        supabase.from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle(),
+        supabase
+          .from('siswa')
+          .select('id, nama, nis, nisn, tahun_lulus')
+          .eq('sekolah_id', sekolahId)
+          .eq('status', 'alumni')
+          .eq('jenis_alumni', 'lulus')
+          .limit(5000),
+      ])
+
+      if (alumniErr) console.error('[Export Laporan Alumni] gagal memuat alumni:', alumniErr)
+
+      const jenjangSekolah = (pengData as { jenjang_sekolah?: string } | null)?.jenjang_sekolah ?? 'SMP/MTs'
+      const jenjangLevels  = JENJANG_MAP[jenjangSekolah] ?? JENJANG_MAP['SMP/MTs']
+
+      const alumniList = (alumniData ?? []) as unknown as AlumniRaw[]
+      const alumniIds  = alumniList.map(a => a.id)
+
+      if (alumniIds.length === 0) {
+        setExportNotice('Belum ada data alumni.')
+        return
+      }
+
+      const [{ data: tagihanData, error: tagihanErr }, { data: pembData, error: pembErr }] = await Promise.all([
+        supabase.from('tagihan').select('siswa_id, total_nominal').in('siswa_id', alumniIds).limit(20000),
+        supabase.from('pembayaran').select('siswa_id, jumlah').in('siswa_id', alumniIds).limit(20000),
+      ])
+      if (tagihanErr) console.error('[Export Laporan Alumni] gagal memuat tagihan:', tagihanErr)
+      if (pembErr)    console.error('[Export Laporan Alumni] gagal memuat pembayaran:', pembErr)
+
+      const totalTagihanMap = new Map<string, number>()
+      for (const t of ((tagihanData ?? []) as { siswa_id: string; total_nominal: number }[])) {
+        totalTagihanMap.set(t.siswa_id, (totalTagihanMap.get(t.siswa_id) ?? 0) + t.total_nominal)
+      }
+      const totalBayarMap = new Map<string, number>()
+      for (const p of ((pembData ?? []) as { siswa_id: string; jumlah: number }[])) {
+        totalBayarMap.set(p.siswa_id, (totalBayarMap.get(p.siswa_id) ?? 0) + p.jumlah)
+      }
+
+      const rows = alumniList
+        .map(a => {
+          const totalTagihan  = totalTagihanMap.get(a.id) ?? 0
+          const totalBayar    = totalBayarMap.get(a.id) ?? 0
+          const sisa          = totalTagihan - totalBayar
+          const tahunLulusNum = a.tahun_lulus ? parseInt(a.tahun_lulus, 10) : null
+          const angkatan      = tahunLulusNum ? String(tahunLulusNum - jenjangLevels.length) : '-'
+          return {
+            nisn:       nisnOrNis(a),
+            nama:       a.nama,
+            angkatan,
+            tahunLulus: a.tahun_lulus ?? '-',
+            totalTagihan,
+            totalBayar,
+            sisa,
+            status: sisa === 0 ? 'Lunas' : 'Belum Lunas',
+          }
+        })
+        .sort((a, b) => a.tahunLulus.localeCompare(b.tahunLulus) || a.nama.localeCompare(b.nama, 'id'))
+
+      const headers = ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', 'Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan', 'Status Pelunasan']
+      const aoa: (string | number)[][] = [headers]
+      rows.forEach((r, i) => {
+        aoa.push([i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus, r.totalTagihan, r.totalBayar, r.sisa, r.status])
+      })
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Alumni')
+
+      XLSX.writeFile(wb, `Laporan_Alumni_${formatDateLocal(now)}.xlsx`)
+    } finally {
+      setExportingAlumni(false)
+    }
+  }
+
+  // ── Export Laporan Keuangan Tahunan (Excel) ───────────────────────────────
+  // Satu baris per tahun ajaran (fetch ulang semua tahun ajaran tanpa batas — bukan reuse
+  // activeTA/archivedTAs yang di halaman ini sengaja dibatasi 5 utk dropdown). Target/Realisasi
+  // dihitung dari tagihan yg bulan/tahunnya masuk rentang tahun ajaran tsb (pola monthsInRange
+  // yang sama dipakai utk filter dropdown periode).
+
+  const handleExportKeuanganTahunan = async () => {
+    if (!sekolahId) return
+
+    setExportingKeuanganTahunan(true)
+    try {
+      const [{ data: taData, error: taErr }, { data: tagihanData, error: tagihanErr }, { data: pembData, error: pembErr }] = await Promise.all([
+        supabase
+          .from('tahun_ajaran')
+          .select('nama, tanggal_mulai, tanggal_selesai, is_aktif')
+          .eq('sekolah_id', sekolahId)
+          .order('tanggal_mulai', { ascending: true })
+          .limit(200),
+        supabase.from('tagihan').select('id, bulan, tahun, total_nominal').eq('sekolah_id', sekolahId).limit(10000),
+        supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sekolahId).limit(20000),
+      ])
+
+      if (taErr)      console.error('[Export Laporan Keuangan Tahunan] gagal memuat tahun ajaran:', taErr)
+      if (tagihanErr) console.error('[Export Laporan Keuangan Tahunan] gagal memuat tagihan:', tagihanErr)
+      if (pembErr)    console.error('[Export Laporan Keuangan Tahunan] gagal memuat pembayaran:', pembErr)
+
+      const taList      = (taData ?? []) as unknown as TahunAjaranFullRaw[]
+      const tagihanList = (tagihanData ?? []) as { id: string; bulan: number; tahun: number; total_nominal: number }[]
+      const pembList    = (pembData ?? []) as { tagihan_id: string; jumlah: number }[]
+
+      if (taList.length === 0) {
+        setExportNotice('Belum ada data tahun ajaran.')
+        return
+      }
+
+      const paidMap = new Map<string, number>()
+      for (const p of pembList) paidMap.set(p.tagihan_id, (paidMap.get(p.tagihan_id) ?? 0) + p.jumlah)
+
+      const rows = taList.map(ta => {
+        const monthSet = new Set(monthsInRange(ta.tanggal_mulai, ta.tanggal_selesai).map(m => periodKey(m.bulan, m.tahun)))
+        const tagihanTA = tagihanList.filter(t => monthSet.has(periodKey(t.bulan, t.tahun)))
+        const tagihanIds = new Set(tagihanTA.map(t => t.id))
+
+        const totalTarget    = tagihanTA.reduce((s, t) => s + t.total_nominal, 0)
+        const totalRealisasi = tagihanTA.reduce((s, t) => s + (paidMap.get(t.id) ?? 0), 0)
+        const jumlahTransaksi = pembList.filter(p => tagihanIds.has(p.tagihan_id)).length
+
+        return {
+          tahunAjaran:    ta.nama,
+          totalTarget,
+          totalRealisasi,
+          totalTunggakan: totalTarget - totalRealisasi,
+          jumlahTransaksi,
+          statusAudit:    ta.is_aktif ? 'Berjalan' : 'Terverifikasi',
+        }
+      })
+
+      const headers = ['No', 'Tahun Ajaran', 'Total Target', 'Total Realisasi', 'Total Tunggakan', 'Jumlah Transaksi', 'Status Audit']
+      const aoa: (string | number)[][] = [headers]
+      rows.forEach((r, i) => {
+        aoa.push([i + 1, r.tahunAjaran, r.totalTarget, r.totalRealisasi, r.totalTunggakan, r.jumlahTransaksi, r.statusAudit])
+      })
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Keuangan Tahunan')
+
+      XLSX.writeFile(wb, `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}.xlsx`)
+    } finally {
+      setExportingKeuanganTahunan(false)
+    }
+  }
+
+  // ── Generate Laporan Utama (PDF) ───────────────────────────────────────────
+  // Merangkum seluruh blok "Ringkasan periode ini" yang tampil di layar (stats, komposisi
+  // status, tren 6 bulan, pelunasan per jenjang, komponen belum dibayar) jadi satu dokumen PDF
+  // sesuai periode yang lagi dipilih di dropdown atas.
+
+  const handleGenerateLaporanUtama = async () => {
+    if (!selectedFilter || !sekolahId) return
+    if (!hasData) {
+      setExportNotice('Tidak ada data pada periode ini untuk digenerate.')
+      return
+    }
+
+    setGeneratingUtama(true)
+    try {
+      const { data: sekolahData } = await supabase.from('sekolah').select('nama').eq('id', sekolahId).maybeSingle()
+      const namaSekolah = (sekolahData as { nama?: string } | null)?.nama ?? 'Sekolah'
+
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const navy: [number, number, number] = [26, 44, 78]
+      let y = 18
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(15)
+      doc.text(namaSekolah, pageWidth / 2, y, { align: 'center' })
+      y += 7
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11)
+      doc.text('Laporan Utama', pageWidth / 2, y, { align: 'center' })
+      y += 6
+      doc.setFontSize(9); doc.setTextColor(100)
+      doc.text(`Periode: ${selectedFilter.label} - ${selectedFilter.sublabel}`, pageWidth / 2, y, { align: 'center' })
+      y += 5
+      doc.text(
+        `Dibuat pada ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}, ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`,
+        pageWidth / 2, y, { align: 'center' }
+      )
+      doc.setTextColor(0)
+      y += 8
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Ringkasan', 'Nilai']],
+        body: [
+          ['Total Pemasukan', fmt(stats.totalPemasukan)],
+          ['Dari Transaksi', `${stats.transaksiCount} transaksi`],
+          ['Tingkat Pelunasan', `${stats.tingkatPelunasan}%`],
+          ['Sudah Masuk', `${fmt(stats.sudahMasuk)} dari ${fmt(stats.totalTagihanRp)}`],
+          ['Total Tunggakan', fmt(stats.totalTunggakan)],
+          ['- Belum Jatuh Tempo', fmt(stats.belumJatuhTempo)],
+          ['- Menunggak', fmt(stats.menunggakRp)],
+        ],
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+      })
+      y = getFinalY(doc) + 10
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+      doc.text('Komposisi Status Pembayaran', 14, y)
+      y += 4
+      autoTable(doc, {
+        startY: y,
+        head: [['Status', 'Jumlah Tagihan']],
+        body: donutData.map(d => [d.label, String(d.value)]),
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+      })
+      y = getFinalY(doc) + 10
+
+      if (y > 250) { doc.addPage(); y = 18 }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+      doc.text('Tren Pemasukan (6 Bulan Terakhir)', 14, y)
+      y += 4
+      autoTable(doc, {
+        startY: y,
+        head: [['Bulan', 'Nominal']],
+        body: monthlyTrend.map(m => [m.bulan, fmt(m.nominal)]),
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+      })
+      y = getFinalY(doc) + 10
+
+      if (jenjangData.length > 0) {
+        if (y > 250) { doc.addPage(); y = 18 }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+        doc.text('Pelunasan per Jenjang', 14, y)
+        y += 4
+        autoTable(doc, {
+          startY: y,
+          head: [['Jenjang', 'Persentase Lunas']],
+          body: jenjangData.map(j => [j.jenjang, `${j.pct}%`]),
+          theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+        })
+        y = getFinalY(doc) + 10
+      }
+
+      if (komponenData.length > 0) {
+        if (y > 250) { doc.addPage(); y = 18 }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+        doc.text('Komponen Paling Banyak Belum Dibayar', 14, y)
+        y += 4
+        autoTable(doc, {
+          startY: y,
+          head: [['Komponen', 'Jumlah Tagihan', 'Total Nominal']],
+          body: komponenData.map(k => [k.nama, String(k.jumlah), fmt(k.total)]),
+          theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+        })
+      }
+
+      const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
+      doc.save(`Laporan_Utama_${periodeLabel}.pdf`)
+    } finally {
+      setGeneratingUtama(false)
+    }
+  }
+
   return (
     <div className="dashboard-content">
 
@@ -423,8 +1175,11 @@ export default function LaporanPage() {
             </div>
 
             {/* Generate Laporan */}
-            <button style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-              <Download size={20} /> Generate Laporan Utama
+            <button
+              onClick={handleGenerateLaporanUtama}
+              disabled={generatingUtama}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, background: generatingUtama ? '#5B6B8C' : '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, cursor: generatingUtama ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              <Download size={20} /> {generatingUtama ? 'Memproses...' : 'Generate Laporan Utama'}
             </button>
           </div>
         )}
@@ -672,14 +1427,75 @@ export default function LaporanPage() {
                   <button style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: '#fff', border: '2px solid #1A2C4E', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
                     <FileText size={13} color="#64748B" /> PDF
                   </button>
-                  <button style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <FileSpreadsheet size={13} color="#1A1A1A" /> Excel
-                  </button>
+                  {i === 0 ? (
+                    <button
+                      onClick={handleExportTransaksi}
+                      disabled={exportingTransaksi}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingTransaksi ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingTransaksi ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingTransaksi ? 'Memproses...' : 'Excel'}
+                    </button>
+                  ) : i === 1 ? (
+                    <button
+                      onClick={handleExportTunggakan}
+                      disabled={exportingTunggakan}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingTunggakan ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingTunggakan ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingTunggakan ? 'Memproses...' : 'Excel'}
+                    </button>
+                  ) : i === 2 ? (
+                    <button
+                      onClick={handleExportSiswaAktif}
+                      disabled={exportingSiswaAktif}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingSiswaAktif ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingSiswaAktif ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingSiswaAktif ? 'Memproses...' : 'Excel'}
+                    </button>
+                  ) : i === 3 ? (
+                    <button
+                      onClick={handleExportAlumni}
+                      disabled={exportingAlumni}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingAlumni ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingAlumni ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingAlumni ? 'Memproses...' : 'Excel'}
+                    </button>
+                  ) : i === 4 ? (
+                    <button
+                      onClick={handleExportKeuanganTahunan}
+                      disabled={exportingKeuanganTahunan}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingKeuanganTahunan ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingKeuanganTahunan ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingKeuanganTahunan ? 'Memproses...' : 'Excel'}
+                    </button>
+                  ) : (
+                    <button style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <FileSpreadsheet size={13} color="#1A1A1A" /> Excel
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </>
+      )}
+
+      {/* ── Notice Modal (pengganti alert() untuk hasil export) ── */}
+      {exportNotice && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+          onClick={() => setExportNotice('')}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 24px 60px rgba(0,0,0,0.22)', overflow: 'hidden', textAlign: 'center', padding: '2rem 1.75rem 1.5rem' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <Database size={26} color="#94A3B8" />
+            </div>
+            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0F172A', marginBottom: 6 }}>Tidak Ada Data</div>
+            <div style={{ fontSize: '0.85rem', color: '#64748B', lineHeight: 1.5, marginBottom: '1.5rem' }}>{exportNotice}</div>
+            <button
+              onClick={() => setExportNotice('')}
+              style={{ width: '100%', background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.7rem', fontSize: '0.88rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Tutup
+            </button>
+          </div>
+        </div>
       )}
 
     </div>
