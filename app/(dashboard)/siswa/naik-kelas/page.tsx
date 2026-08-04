@@ -43,6 +43,7 @@ function getIdentitas(kelasNama: string, jenjang: string): string {
 interface TahunAjaran {
   id: string; nama: string
   tanggal_selesai: string
+  kenaikan_kelas_pada: string | null
 }
 
 interface KelasDB {
@@ -96,6 +97,7 @@ export default function NaikKelasPage() {
   const [totalAktif,  setTotalAktif]   = useState(0)
   const [menunggak,   setMenunggak]    = useState(0)
   const [akanAlumni,  setAkanAlumni]   = useState(0)
+  const [maxJenjang,  setMaxJenjang]   = useState('')
   const [pemetaan,    setPemetaan]     = useState<PemetaanGroup[]>([])
 
   // Reshuffle
@@ -130,7 +132,7 @@ export default function NaikKelasPage() {
 
       const { data: ta } = await supabase
         .from('tahun_ajaran')
-        .select('id, nama, tanggal_selesai')
+        .select('id, nama, tanggal_selesai, kenaikan_kelas_pada')
         .eq('sekolah_id', sid)
         .eq('is_aktif', true)
         .maybeSingle()
@@ -150,6 +152,18 @@ export default function NaikKelasPage() {
     selesai.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0)
     return Math.ceil((selesai.getTime() - today.getTime()) / 86_400_000)
   }, [tahunAjaran])
+
+  // Tahun ajaran dianggap selesai sejak hari tanggal_selesai itu sendiri (inklusif)
+  const tahunAjaranSelesai = sisaHari !== null && sisaHari <= 0
+
+  // Kenaikan kelas hanya boleh sekali per tahun ajaran
+  const sudahNaikKelas = !!tahunAjaran?.kenaikan_kelas_pada
+
+  const badgeLabel =
+    sisaHari === null ? '—'
+      : sisaHari > 0   ? `${sisaHari} hari lagi hingga tahun ajaran berakhir`
+      : sisaHari === 0 ? 'Berakhir hari ini'
+      : `Berakhir ${-sisaHari} hari lalu`
 
   // ── Handle "Jalankan lebih awal" ───────────────────────────────────────────
 
@@ -198,6 +212,7 @@ export default function NaikKelasPage() {
 
   const loadState2 = async (kelasList: KelasDB[], jenjangLevels: string[], maxLevel: string) => {
     setAllKelas(kelasList)
+    setMaxJenjang(maxLevel)
 
     const kelasNamaMap = new Map(kelasList.map(k => [k.nama.trim(), k]))
 
@@ -452,11 +467,13 @@ export default function NaikKelasPage() {
         if (error) throw new Error(`Gagal update alumni: ${error.message}`)
       }
 
-      // Arsip tahun ajaran
+      // Tandai kenaikan kelas sudah dijalankan. Tahun ajaran sengaja TIDAK diarsipkan
+      // di sini — pengarsipan terjadi saat tahun ajaran baru diaktifkan, supaya sistem
+      // tidak pernah berada dalam kondisi tanpa tahun ajaran aktif.
       const { error: taError } = await supabase.from('tahun_ajaran')
-        .update({ is_aktif: false })
+        .update({ kenaikan_kelas_pada: new Date().toISOString() })
         .eq('id', tahunAjaran.id)
-      if (taError) throw new Error(`Gagal arsip tahun ajaran: ${taError.message}`)
+      if (taError) throw new Error(`Gagal menandai kenaikan kelas: ${taError.message}`)
 
       setExecuteDone(true)
     } catch (err) {
@@ -497,38 +514,79 @@ export default function NaikKelasPage() {
         </div>
       </div>
 
-      {/* ── State 1 — Tahun ajaran belum selesai ─────────────────────────────── */}
-      {pageState === 'state1' && (
+      {/* ── State 0 — Kenaikan kelas sudah pernah dijalankan ─────────────────── */}
+      {pageState === 'state1' && sudahNaikKelas && (
+        <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #E2E8F0', borderLeft: '28px solid #059669', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '4rem 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', minHeight: 280 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle2 size={30} color="#16A34A" />
+          </div>
+          <div style={{ textAlign: 'center', maxWidth: 460 }}>
+            <div style={{ fontWeight: 800, fontSize: '1.15rem', color: '#0F172A', marginBottom: 6 }}>
+              Kenaikan kelas sudah dijalankan
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#64748B', lineHeight: 1.6 }}>
+              Proses kenaikan kelas untuk tahun ajaran <strong>{tahunAjaran?.nama ?? '—'}</strong> telah selesai
+              pada <strong>{tahunAjaran ? formatTanggal(tahunAjaran.kenaikan_kelas_pada!) : '—'}</strong>.
+              Langkah berikutnya: buat tahun ajaran baru agar periode ini pindah ke Riwayat
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.625rem', marginTop: '0.5rem' }}>
+            <Link href="/siswa/alumni"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', color: '#059669', border: '1.5px solid #059669', borderRadius: 10, padding: '0.6rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none' }}>
+              <GraduationCap size={15} /> Lihat Halaman Alumni
+            </Link>
+            <Link href="/tagihan/tahun-ajaran"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1A2C4E', color: '#fff', borderRadius: 10, padding: '0.6rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'none' }}>
+              <Calendar size={15} /> Buat Tahun Ajaran Baru
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── State 1 — Sebelum proses kenaikan dijalankan ─────────────────────── */}
+      {pageState === 'state1' && !sudahNaikKelas && (
         <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '4rem 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', minHeight: 280 }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Clock size={30} color="#94A3B8" />
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: tahunAjaranSelesai ? '#F0FDF4' : '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {tahunAjaranSelesai
+              ? <CheckCircle2 size={30} color="#16A34A" />
+              : <Clock size={30} color="#94A3B8" />}
           </div>
           <div style={{ textAlign: 'center', maxWidth: 440 }}>
             <div style={{ fontWeight: 800, fontSize: '1.15rem', color: '#0F172A', marginBottom: 6 }}>
-              Tahun ajaran belum selesai
+              {tahunAjaranSelesai ? 'Tahun ajaran telah selesai' : 'Tahun ajaran belum selesai'}
             </div>
             <div style={{ fontSize: '0.875rem', color: '#64748B', lineHeight: 1.6 }}>
-              Proses kenaikan kelas baru bisa dijalankan setelah tahun ajaran{' '}
-              <strong>{tahunAjaran?.nama ?? '—'}</strong> berakhir pada{' '}
-              <strong>{tahunAjaran ? formatTanggal(tahunAjaran.tanggal_selesai) : '—'}</strong>
+              {tahunAjaranSelesai ? (
+                <>
+                  Tahun ajaran <strong>{tahunAjaran?.nama ?? '—'}</strong> telah berakhir pada{' '}
+                  <strong>{tahunAjaran ? formatTanggal(tahunAjaran.tanggal_selesai) : '—'}</strong>.
+                  Saatnya memproses kenaikan kelas untuk seluruh siswa
+                </>
+              ) : (
+                <>
+                  Proses kenaikan kelas baru bisa dijalankan setelah tahun ajaran{' '}
+                  <strong>{tahunAjaran?.nama ?? '—'}</strong> berakhir pada{' '}
+                  <strong>{tahunAjaran ? formatTanggal(tahunAjaran.tanggal_selesai) : '—'}</strong>
+                </>
+              )}
             </div>
           </div>
 
           {/* Badge + CTA */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', marginTop: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1rem', borderRight: '1.5px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, background: '#F8FAFC', border: `1.5px solid ${tahunAjaranSelesai ? '#1A2C4E' : '#E2E8F0'}`, borderRadius: 10, overflow: 'hidden', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1rem', borderRight: tahunAjaranSelesai ? 'none' : '1.5px solid #E2E8F0' }}>
               <Calendar size={15} color="#1A2C4E" />
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1A2C4E', whiteSpace: 'nowrap' }}>
-                {sisaHari === null ? '—' : sisaHari <= 0 ? 'Tahun ajaran telah berakhir' : `${sisaHari} hari lagi hingga tahun ajaran berakhir`}
+                {badgeLabel}
               </span>
             </div>
             <button
               onClick={handleJalankanLebihAwal}
-              style={{ padding: '0.65rem 1rem', background: 'transparent', border: 'none', fontSize: '0.85rem', fontWeight: 700, color: '#1A2C4E', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
-              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#EFF6FF'}
-              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}
+              style={{ padding: '0.65rem 1rem', background: tahunAjaranSelesai ? '#1A2C4E' : 'transparent', border: 'none', fontSize: '0.85rem', fontWeight: 700, color: tahunAjaranSelesai ? '#fff' : '#1A2C4E', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
+              onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = tahunAjaranSelesai ? '#243D6A' : '#EFF6FF'}
+              onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = tahunAjaranSelesai ? '#1A2C4E' : 'transparent'}
             >
-              Jalankan lebih awal <ArrowRight size={14} />
+              {tahunAjaranSelesai ? 'Mulai Proses Kenaikan Kelas' : 'Jalankan lebih awal'} <ArrowRight size={14} />
             </button>
           </div>
         </div>
@@ -598,7 +656,7 @@ export default function NaikKelasPage() {
                   <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991B1B' }}>{menunggak} siswa masih memiliki tunggakan</div>
                   <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: 2 }}>Sebaiknya selesaikan tunggakan sebelum menjalankan proses kenaikan kelas.</div>
                 </div>
-                <a href="/tagihan/aktif" style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>Lihat Daftar</a>
+                <a href={`/tagihan/aktif?status=menunggak${maxJenjang ? `&jenjang=${encodeURIComponent(maxJenjang)}` : ''}`} style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>Lihat Daftar</a>
               </div>
             )}
 
@@ -636,7 +694,15 @@ export default function NaikKelasPage() {
                     <GraduationCap size={18} color="#16A34A" />
                   </div>
                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16A34A', lineHeight: 1 }}>{akanAlumni}</div>
-                  <div style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 600, marginTop: 4 }}>Siswa kelas tertinggi akan lulus</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginTop: 4 }}>
+                    <span style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 600 }}>Siswa kelas tertinggi akan lulus</span>
+                    {maxJenjang && akanAlumni > 0 && (
+                      <a href={`/siswa/daftar-siswa?jenjang=${encodeURIComponent(maxJenjang)}`}
+                        style={{ background: '#16A34A', color: '#fff', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.72rem', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        Lihat Daftar
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

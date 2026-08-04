@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import {
+  komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran,
+} from '@/lib/komponenTagihan'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,14 +10,18 @@ const supabaseAdmin = createClient(
 )
 
 type PaketTotalRaw = {
+  tahun_ajaran:  string
   paket_kelas:   { kelas_id: string }[]
-  paket_komponen: { komponen_id: string; nominal: number }[]
+  paket_komponen: { komponen_id: string; nominal: number; komponen: { jenis: string } | null }[]
 }
+type KompPaket = { komponen_id: string; nominal: number; jenis: string }
+type TagihanItemRaw = { komponen_id: string | null; nominal: number }
 type TagihanRaw = {
   id:            string
   total_nominal: number
   bulan:         number
   tahun:         number
+  tagihan_item:  TagihanItemRaw[]
   siswa: { id: string; kelas: { id: string } | null } | null
 }
 type BeasiswaRaw = {
@@ -42,21 +49,45 @@ async function recalculateAll(sid: string): Promise<number> {
   const [{ data: tagihanRaw }, { data: paketRaw }, { data: taData }] = await Promise.all([
     supabaseAdmin
       .from('tagihan')
-      .select('id, total_nominal, bulan, tahun, siswa:siswa_id(id, kelas:kelas_id(id))')
+      .select('id, total_nominal, bulan, tahun, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, kelas:kelas_id(id))')
       .eq('sekolah_id', sid)
       .limit(5000),
     supabaseAdmin
       .from('paket')
-      .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
+      .select('tahun_ajaran, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(jenis))')
       .eq('sekolah_id', sid),
     supabaseAdmin
       .from('tahun_ajaran')
-      .select('nama')
+      .select(`nama, ${TA_PERIODE_SELECT}`)
       .eq('is_aktif', true)
       .maybeSingle(),
   ])
 
-  const tahunAjaran = (taData as { nama: string } | null)?.nama ?? ''
+  const ta          = (taData ?? null) as (PeriodeTahunAjaran & { nama: string }) | null
+  const tahunAjaran = ta?.nama ?? ''
+
+  // Riwayat penagihan per siswa per komponen — dasar aturan sekali-per-semester
+  // dan sekali-per-tahun-ajaran.
+  const riwayat = bangunRiwayatTagih(
+    ((tagihanRaw ?? []) as unknown as TagihanRaw[]).map(r => ({
+      siswa_id:     r.siswa?.id ?? '',
+      bulan:        r.bulan,
+      tahun:        r.tahun,
+      tagihan_item: r.tagihan_item ?? [],
+    }))
+  )
+
+  // kelas_id → komponen paket beserta jenis-nya, supaya bisa difilter per bulan.
+  // Hanya paket tahun ajaran aktif: paket periode lama memetakan kelas yang sama
+  // dan akan saling menimpa secara tidak menentu.
+  const kelasKompList = new Map<string, KompPaket[]>()
+  for (const p of ((paketRaw ?? []) as unknown as PaketTotalRaw[])) {
+    if (p.tahun_ajaran !== tahunAjaran) continue
+    const komps = p.paket_komponen.map(k => ({
+      komponen_id: k.komponen_id, nominal: k.nominal, jenis: k.komponen?.jenis ?? '',
+    }))
+    for (const pk of p.paket_kelas) kelasKompList.set(pk.kelas_id, komps)
+  }
 
   // Insert tagihan bulan berjalan untuk siswa aktif yang belum punya tagihan
   if (tahunAjaran) {
@@ -74,43 +105,31 @@ async function recalculateAll(sid: string): Promise<number> {
         .filter(Boolean) as string[]
     )
 
-    // Build kelas→total map from paket
-    const kelasNominalTemp = new Map<string, number>()
-    for (const p of ((paketRaw ?? []) as unknown as PaketTotalRaw[])) {
-      const total = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
-      for (const pk of p.paket_kelas) kelasNominalTemp.set(pk.kelas_id, total)
-    }
-
     const toInsert = ((siswaAktif ?? []) as { id: string; kelas_id: string }[])
-      .filter(s => !existingSiswaIds.has(s.id) && kelasNominalTemp.has(s.kelas_id))
+      .filter(s => !existingSiswaIds.has(s.id) && kelasKompList.has(s.kelas_id))
+      // Tanpa kolom tahun_ajaran: tabel tagihan tidak punya kolom itu, dan
+      // menyertakannya membuat seluruh insert ditolak Postgres.
       .map(s => ({
         sekolah_id:    sid,
         siswa_id:      s.id,
-        tahun_ajaran:  tahunAjaran,
         bulan,
         tahun,
         status:        'belum_bayar',
-        total_nominal: kelasNominalTemp.get(s.kelas_id) ?? 0,
+        total_nominal: (kelasKompList.get(s.kelas_id) ?? [])
+          .filter(k => komponenDitagihkan(k.jenis, bulan, tahun, ta, s.id, k.komponen_id, riwayat))
+          .reduce((acc, k) => acc + k.nominal, 0),
       }))
 
     if (toInsert.length > 0) {
-      await supabaseAdmin.from('tagihan').insert(toInsert)
+      const { error } = await supabaseAdmin.from('tagihan').insert(toInsert)
+      // 23505 = unique violation, tagihan sudah dibuat proses lain — bukan kegagalan
+      if (error && error.code !== '23505') {
+        throw new Error(`Gagal membuat tagihan: ${error.message}`)
+      }
     }
   }
 
   if (!tagihanRaw || tagihanRaw.length === 0) return 0
-
-  // kelas_id → { total, kompNomMap }
-  const kelasTotal = new Map<string, number>()
-  const kelasKomps = new Map<string, Map<string, number>>()
-  for (const p of ((paketRaw ?? []) as unknown as PaketTotalRaw[])) {
-    const total      = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
-    const kompNomMap = new Map(p.paket_komponen.map(k => [k.komponen_id, k.nominal]))
-    for (const pk of p.paket_kelas) {
-      kelasTotal.set(pk.kelas_id, total)
-      kelasKomps.set(pk.kelas_id, kompNomMap)
-    }
-  }
 
   const rows     = (tagihanRaw as unknown as TagihanRaw[])
   const siswaIds = [...new Set(rows.map(r => r.siswa?.id).filter(Boolean) as string[])]
@@ -146,43 +165,45 @@ async function recalculateAll(sid: string): Promise<number> {
   }
 
   // siswa_id → individu list
-  const siswaIndividuMap = new Map<string, { jenis: string; nominal: number }[]>()
+  const siswaIndividuMap = new Map<string, { komponen_id: string; jenis: string; nominal: number }[]>()
   for (const row of ((individuRaw ?? []) as unknown as IndividuRaw[])) {
     if (!row.komponen) continue
     const list = siswaIndividuMap.get(row.siswa_id) ?? []
-    list.push({ jenis: row.komponen.jenis, nominal: row.nominal })
+    list.push({ komponen_id: row.komponen_id, jenis: row.komponen.jenis, nominal: row.nominal })
     siswaIndividuMap.set(row.siswa_id, list)
   }
 
-  // Hitung correct total per tagihan
+  // Hitung correct total per tagihan dari snapshot tagihan_item
   const toUpdate: { id: string; total: number }[] = []
   for (const r of rows) {
-    const siswaId        = r.siswa?.id ?? ''
-    const kelasId        = r.siswa?.kelas?.id ?? ''
-    const isSemesterMonth = r.bulan === 1 || r.bulan === 7
+    const siswaId = r.siswa?.id ?? ''
 
-    const paketBase  = kelasTotal.get(kelasId) ?? 0
-    const kompNomMap = kelasKomps.get(kelasId)
+    const snapshot   = r.tagihan_item ?? []
+    const paketBase  = snapshot.reduce((s, i) => s + i.nominal, 0)
+    const kompNomMap = new Map(
+      snapshot.filter(i => i.komponen_id).map(i => [i.komponen_id as string, i.nominal])
+    )
 
     const individuTotal = (siswaIndividuMap.get(siswaId) ?? [])
-      .filter(k => k.jenis === 'rutin_bulanan' || (k.jenis === 'per_semester' && isSemesterMonth))
+      .filter(k => !kompNomMap.has(k.komponen_id))
+      .filter(k => komponenDitagihkan(k.jenis, r.bulan, r.tahun, ta, siswaId, k.komponen_id, riwayat))
       .reduce((s, k) => s + k.nominal, 0)
 
+    // Potongan beasiswa hanya berlaku atas komponen yang ditagihkan bulan ini
     let deduction = 0
-    if (kompNomMap) {
-      for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
-        for (const kid of bs.komponen_ids) {
-          const kNominal = kompNomMap.get(kid)
-          if (kNominal === undefined) continue
-          deduction += bs.jenis_potongan === 'persen'
-            ? Math.round(kNominal * (bs.persen ?? 0) / 100)
-            : (bs.nominal ?? 0)
-        }
+    for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
+      for (const kid of bs.komponen_ids) {
+        const kNominal = kompNomMap.get(kid)
+        if (kNominal === undefined) continue
+        deduction += bs.jenis_potongan === 'persen'
+          ? Math.round(kNominal * (bs.persen ?? 0) / 100)
+          : (bs.nominal ?? 0)
       }
     }
 
     const correct = Math.max(0, paketBase + individuTotal - deduction)
-    if (correct !== r.total_nominal) {
+    // Number.isFinite menyaring NaN supaya total_nominal tidak terhapus jadi null
+    if (Number.isFinite(correct) && correct !== r.total_nominal) {
       toUpdate.push({ id: r.id, total: correct })
     }
   }
@@ -209,6 +230,10 @@ export async function POST(req: NextRequest) {
     .from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
   if (!profile?.sekolah_id) return NextResponse.json({ error: 'Profil tidak lengkap' }, { status: 400 })
 
-  const updated = await recalculateAll(profile.sekolah_id as string)
-  return NextResponse.json({ updated })
+  try {
+    const updated = await recalculateAll(profile.sekolah_id as string)
+    return NextResponse.json({ updated })
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
+  }
 }

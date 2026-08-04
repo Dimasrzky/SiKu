@@ -7,6 +7,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { BarChart2, Database, TrendingUp, PieChart, AlertTriangle, ChevronDown, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, type StatusTagihan } from '@/lib/statusTagihan'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,8 +49,9 @@ function monthsInRange(startIso: string, endIso: string): { bulan: number; tahun
 
 const periodKey = (bulan: number, tahun: number) => `${tahun}-${bulan}`
 
-const isPastDue = (bulan: number, tahun: number, nowBulan: number, nowTahun: number) =>
-  tahun < nowTahun || (tahun === nowTahun && bulan < nowBulan)
+// Jatuh tempo dibaca dari lib/statusTagihan supaya batasnya sama persis dengan
+// halaman tagihan aktif — definisi lama di sini bergeser satu hari.
+const isPastDue = (bulan: number, tahun: number) => lewatJatuhTempo(bulan, tahun, new Date())
 
 const METODE_LABELS: Record<string, string> = {
   tunai:    'Tunai',
@@ -161,14 +163,20 @@ interface FilterOption {
   months:   { bulan: number; tahun: number }[]
 }
 
-interface TagihanItemRaw { nama_komponen: string; nominal: number }
+interface TagihanItemRaw {
+  komponen_id:   string | null
+  nama_komponen: string
+  nominal:       number
+  /** Nama hidup dari master komponen — null kalau komponennya sudah dihapus */
+  komponen:      { nama: string } | null
+}
 interface TagihanRaw {
   id:            string
   total_nominal: number
   status:        'lunas' | 'belum_bayar' | 'cicilan'
   bulan:         number
   tahun:         number
-  siswa:         { kelas: { jenjang: string } | null } | null
+  siswa:         { status: string | null; kelas: { jenjang: string } | null } | null
   tagihan_item:  TagihanItemRaw[]
 }
 interface PembayaranRaw { tagihan_id: string; jumlah: number }
@@ -386,7 +394,7 @@ export default function LaporanPage() {
 
       const [{ data: tagihanData }, { data: pembData }, { data: taAktif }, { data: taArsip }] = await Promise.all([
         supabase.from('tagihan')
-          .select('id, total_nominal, status, bulan, tahun, siswa:siswa_id(kelas:kelas_id(jenjang)), tagihan_item(nama_komponen, nominal)')
+          .select('id, total_nominal, status, bulan, tahun, siswa:siswa_id(status, kelas:kelas_id(jenjang)), tagihan_item(komponen_id, nama_komponen, nominal, komponen:komponen_id(nama))')
           .eq('sekolah_id', sekolahId)
           .limit(5000),
         supabase.from('pembayaran')
@@ -472,7 +480,11 @@ export default function LaporanPage() {
       if (t.status === 'lunas') sudahMasuk += t.total_nominal
       const sisa = t.total_nominal - paid
       if (t.status !== 'lunas' && sisa > 0) {
-        if (isPastDue(t.bulan, t.tahun, nowBulan, nowTahun)) menunggakRp += sisa
+        // Aturan sama dengan donut, tabel, dan dashboard — termasuk alumni yang
+        // otomatis menunggak. Sebelumnya hanya memakai tanggal, sehingga tunggakan
+        // alumni jatuh ke ember "belum jatuh tempo" dan Menunggak selalu Rp 0.
+        const eff = statusEfektif(t.status, isPastDue(t.bulan, t.tahun), t.siswa?.status === 'alumni')
+        if (eff === 'menunggak') menunggakRp += sisa
         else belumJatuhTempo += sisa
       }
     }
@@ -480,24 +492,30 @@ export default function LaporanPage() {
 
     const tingkatPelunasan = totalTagihanRp > 0 ? Math.round((sudahMasuk / totalTagihanRp) * 100) : 0
 
-    return { totalPemasukan, transaksiCount, sudahMasuk, totalTagihanRp, tingkatPelunasan, belumJatuhTempo, menunggakRp, totalTunggakan: belumJatuhTempo + menunggakRp }
-  }, [periodTagihan, paidByTagihan, nowBulan, nowTahun])
+    // Tunggakan = yang sudah lewat jatuh tempo saja. Tagihan yang belum jatuh tempo
+    // bukan tunggakan — hanya tagihan berjalan yang wajarnya memang belum dibayar.
+    return { totalPemasukan, transaksiCount, sudahMasuk, totalTagihanRp, tingkatPelunasan, belumJatuhTempo, menunggakRp, totalTunggakan: menunggakRp }
+  }, [periodTagihan, paidByTagihan])
 
   const donutData = useMemo(() => {
-    let lunas = 0, cicilan = 0, belumBayar = 0, menunggak = 0
+    // Aturan sama persis dengan halaman tagihan aktif, termasuk pengecualian alumni
+    const jumlah: Record<StatusTagihan, number> = { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 }
     for (const t of periodTagihan) {
-      if (t.status === 'lunas') lunas += 1
-      else if (t.status === 'cicilan') cicilan += 1
-      else if (isPastDue(t.bulan, t.tahun, nowBulan, nowTahun)) menunggak += 1
-      else belumBayar += 1
+      const eff = statusEfektif(
+        t.status,
+        isPastDue(t.bulan, t.tahun),
+        t.siswa?.status === 'alumni',
+      )
+      jumlah[eff] += 1
     }
+    const { lunas, cicilan, belum_bayar: belumBayar, menunggak } = jumlah
     return [
-      { label: 'Lunas',       value: lunas,      color: '#22C55E' },
-      { label: 'Cicilan',     value: cicilan,    color: '#3B82F6' },
-      { label: 'Belum bayar', value: belumBayar, color: '#F59E0B' },
-      { label: 'Menunggak',   value: menunggak,  color: '#EF4444' },
+      { label: STATUS_TAGIHAN.lunas.label,       value: lunas,      color: STATUS_TAGIHAN.lunas.solid       },
+      { label: STATUS_TAGIHAN.cicilan.label,     value: cicilan,    color: STATUS_TAGIHAN.cicilan.solid     },
+      { label: STATUS_TAGIHAN.belum_bayar.label, value: belumBayar, color: STATUS_TAGIHAN.belum_bayar.solid },
+      { label: STATUS_TAGIHAN.menunggak.label,   value: menunggak,  color: STATUS_TAGIHAN.menunggak.solid   },
     ]
-  }, [periodTagihan, nowBulan, nowTahun])
+  }, [periodTagihan])
 
   const jenjangData = useMemo(() => {
     const byJenjang = new Map<string, { total: number; lunas: number }>()
@@ -515,19 +533,29 @@ export default function LaporanPage() {
   }, [periodTagihan])
 
   const komponenData = useMemo(() => {
-    const byKomponen = new Map<string, { jumlah: number; total: number }>()
+    // Dikelompokkan per komponen_id dan diberi label nama hidup dari master komponen,
+    // bukan snapshot nama_komponen. Kalau memakai snapshot, komponen yang di-rename
+    // pecah jadi dua baris (nama lama dari tagihan lama, nama baru dari tagihan baru).
+    // Komponen yang sudah dihapus tidak punya komponen_id lagi — jatuh ke snapshot.
+    const byKomponen = new Map<string, { nama: string; jumlah: number; total: number }>()
     for (const t of periodTagihan) {
       if (t.status === 'lunas') continue
       for (const item of t.tagihan_item) {
-        const cur = byKomponen.get(item.nama_komponen) ?? { jumlah: 0, total: 0 }
+        const kunci = item.komponen_id ?? `nama:${item.nama_komponen}`
+        const nama  = item.komponen?.nama ?? item.nama_komponen
+        const cur   = byKomponen.get(kunci) ?? { nama, jumlah: 0, total: 0 }
+        cur.nama    = nama
         cur.jumlah += 1
         cur.total  += item.nominal
-        byKomponen.set(item.nama_komponen, cur)
+        byKomponen.set(kunci, cur)
       }
     }
-    return Array.from(byKomponen.entries())
-      .map(([nama, v]) => ({ nama, jumlah: v.jumlah, total: v.total }))
-      .sort((a, b) => b.jumlah - a.jumlah)
+    // Diurutkan berdasarkan nilai rupiah, bukan jumlah tagihan: setiap tagihan yang
+    // belum lunas memuat komponen yang sama, jadi jumlahnya selalu seri dan urutannya
+    // jatuh ke urutan penyisipan Map. Nilai rupiah juga yang ditonjolkan di kartu.
+    return Array.from(byKomponen.values())
+      .map(v => ({ nama: v.nama, jumlah: v.jumlah, total: v.total }))
+      .sort((a, b) => b.total - a.total || b.jumlah - a.jumlah)
       .slice(0, 4)
   }, [periodTagihan])
 
@@ -708,7 +736,7 @@ export default function LaporanPage() {
     if (!sekolahId) return
 
     const tunggakanIds = allTagihan
-      .filter(t => t.status !== 'lunas' && isPastDue(t.bulan, t.tahun, nowBulan, nowTahun))
+      .filter(t => t.status !== 'lunas' && isPastDue(t.bulan, t.tahun))
       .map(t => t.id)
 
     if (tunggakanIds.length === 0) {
@@ -1058,9 +1086,8 @@ export default function LaporanPage() {
           ['Dari Transaksi', `${stats.transaksiCount} transaksi`],
           ['Tingkat Pelunasan', `${stats.tingkatPelunasan}%`],
           ['Sudah Masuk', `${fmt(stats.sudahMasuk)} dari ${fmt(stats.totalTagihanRp)}`],
-          ['Total Tunggakan', fmt(stats.totalTunggakan)],
-          ['- Belum Jatuh Tempo', fmt(stats.belumJatuhTempo)],
-          ['- Menunggak', fmt(stats.menunggakRp)],
+          ['Total Tunggakan (lewat jatuh tempo)', fmt(stats.totalTunggakan)],
+          ['Belum Jatuh Tempo', fmt(stats.belumJatuhTempo)],
         ],
         theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
@@ -1152,7 +1179,7 @@ export default function LaporanPage() {
               >
                 <span>{selectedFilter.label}</span>
                 <span style={{ color: '#CBD5E1' }}>·</span>
-                <span style={{ color: '#94A3B8' }}>{selectedFilter.sublabel}</span>
+                <span style={{ color: '#101010' }}>{selectedFilter.sublabel}</span>
                 <ChevronDown size={13} color="#94A3B8" style={{ marginLeft: 2, transform: showDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
               </button>
               {showDropdown && (
@@ -1251,7 +1278,7 @@ export default function LaporanPage() {
               {/* Total Pemasukan */}
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#6F788A' }}>Total pemasukan</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Total pemasukan</span>
                   <div style={{ width: 32, height: 32, background: '#F0FDF4', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <TrendingUp size={16} color="#22C55E" />
                   </div>
@@ -1265,7 +1292,7 @@ export default function LaporanPage() {
               {/* Tingkat Pelunasan */}
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#6F788A' }}>Tingkat pelunasan</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Tingkat pelunasan</span>
                   <div style={{ width: 32, height: 32, background: '#EFF6FF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <PieChart size={16} color="#3B82F6" />
                   </div>
@@ -1280,7 +1307,7 @@ export default function LaporanPage() {
               {/* Total Tunggakan */}
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#6F788A' }}>Total tunggakan</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Total tunggakan</span>
                   <div style={{ width: 32, height: 32, background: '#FEF2F2', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <AlertTriangle size={16} color="#EF4444" />
                   </div>
@@ -1310,12 +1337,12 @@ export default function LaporanPage() {
             {/* Row 2: Donut + Bar chart */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '0.9rem' }}>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Komposisi status pembayaran</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komposisi status pembayaran</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Distribusi per status tagihan periode ini</div>
                 <DonutChart data={donutData} />
               </div>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Tren pemasukan per bulan</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Tren pemasukan per bulan</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1rem' }}>6 bulan terakhir</div>
                 <BarChart data={monthlyTrend} />
               </div>
@@ -1324,7 +1351,7 @@ export default function LaporanPage() {
             {/* Row 3: Pelunasan per jenjang + Komponen belum dibayar */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Pelunasan per jenjang</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Pelunasan per jenjang</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Persentase tagihan lunas per tingkat kelas</div>
                 {jenjangData.length === 0 ? (
                   <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Belum ada data.</div>
@@ -1348,8 +1375,8 @@ export default function LaporanPage() {
                 )}
               </div>
               <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#6F788A', marginBottom: 4 }}>Komponen paling banyak belum dibayar</div>
-                <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan jumlah tagihan yang belum lunas</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komponen paling banyak belum dibayar</div>
+                <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan nilai tagihan yang belum lunas</div>
                 {komponenData.length === 0 ? (
                   <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Tidak ada komponen menunggak.</div>
                 ) : (

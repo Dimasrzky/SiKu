@@ -6,7 +6,7 @@ import BayarStepper from './BayarStepper'
 import TagihanReview from './TagihanReview'
 import MetodePembayaran from './MetodePembayaran'
 import TerimaKasihView from './TerimaKasihView'
-import type { BeasiswaBadge, TagihanItem } from './page'
+import type { BeasiswaBadge, TagihanItem, TunggakanItem } from './page'
 
 interface Rekening {
   bank:     string
@@ -22,6 +22,7 @@ interface Props {
   nis:            string
   kelasNama:      string
   items:          TagihanItem[]
+  tunggakan:      TunggakanItem[]
   badges:         BeasiswaBadge[]
   rekening:       Rekening | null
   namaBendahara:  string
@@ -30,7 +31,7 @@ interface Props {
 
 export default function BayarWizard({
   paymentToken, totalNominal, sisa,
-  namaSiswa, nis, kelasNama, items, badges, rekening, namaBendahara, noWaBendahara,
+  namaSiswa, nis, kelasNama, items, tunggakan, badges, rekening, namaBendahara, noWaBendahara,
 }: Props) {
   const router = useRouter()
   const [step, setStep]           = useState<1 | 2 | 3>(1)
@@ -46,6 +47,7 @@ export default function BayarWizard({
           nis={nis}
           kelasNama={kelasNama}
           items={items}
+          tunggakan={tunggakan}
           totalNominal={totalNominal}
           badges={badges}
           onLanjut={() => setStep(2)}

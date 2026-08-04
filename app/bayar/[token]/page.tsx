@@ -28,6 +28,12 @@ export interface TagihanItem {
   warna:         string
 }
 
+/** Komponen non-bulanan dari tagihan periode sebelumnya yang masih belum lunas. */
+export interface TunggakanItem extends TagihanItem {
+  bulan: number
+  tahun: number
+}
+
 type SekolahRow  = { nama: string; no_wa: string | null; yayasan: string | null }
 type StaffRow    = { nama: string; jabatan: string | null; no_wa: string | null; avatar: string | null }
 type RekeningRow = { bank: string; no_rek: string; atas_nama: string }
@@ -160,16 +166,53 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     warna:         it.komponen?.kelas_warna ?? '#94A3B8',
   }))
 
+  // Tunggakan periode sebelumnya — ditampilkan terpisah sebagai informasi.
+  // Alur pembayaran tidak berubah: tombol bayar tetap menagih tagihan bulan ini saja.
+  type TunggakanRaw = {
+    bulan: number
+    tahun: number
+    tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string; kelas_warna: string | null } | null }[]
+  }
+  const periodeIni = tagihan.tahun * 12 + tagihan.bulan
+  const { data: tunggakanRaw } = await supabase
+    .from('tagihan')
+    .select('bulan, tahun, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis, kelas_warna))')
+    .eq('sekolah_id', tagihan.sekolah_id)
+    .eq('siswa_id', tagihan.siswa_id)
+    .eq('status', 'belum_bayar')
+    .neq('id', tagihan.id)
+    .limit(24)
+
+  // Seluruh komponen tagihan lama ditampilkan, bukan hanya yang non-bulanan: nominal
+  // ini sekarang ikut ditagihkan, jadi daftarnya harus benar-benar berjumlah sama
+  // dengan sisa tagihan periode tersebut.
+  const tunggakan: TunggakanItem[] = ((tunggakanRaw ?? []) as unknown as TunggakanRaw[])
+    .filter(t => t.tahun * 12 + t.bulan < periodeIni)
+    .flatMap(t => (t.tagihan_item ?? []).map(i => ({
+      nama_komponen: i.nama_komponen,
+      nominal:       i.nominal,
+      warna:         i.komponen?.kelas_warna ?? '#94A3B8',
+      bulan:         t.bulan,
+      tahun:         t.tahun,
+    })))
+    .sort((a, b) => (a.tahun * 12 + a.bulan) - (b.tahun * 12 + b.bulan))
+
+  // Yang ditagihkan tombol bayar = sisa bulan ini + seluruh tunggakan.
+  // Statusnya belum_bayar sehingga sisa tiap tagihan lama = total_nominal penuh.
+  const totalTunggakan = tunggakan.reduce((s, t) => s + t.nominal, 0)
+  const sisaGabungan   = sisa + totalTunggakan
+
   return (
     <PageShell headerProps={headerProps} footerProps={footerProps}>
       <BayarWizard
         paymentToken={token}
-        totalNominal={tagihan.total_nominal}
-        sisa={sisa}
+        totalNominal={tagihan.total_nominal + totalTunggakan}
+        sisa={sisaGabungan}
         namaSiswa={siswa?.nama ?? ''}
         nis={siswa?.nis ?? ''}
         kelasNama={kelasNama}
         items={items}
+        tunggakan={tunggakan}
         badges={badges}
         rekening={rekening ? { bank: rekening.bank, noRek: rekening.no_rek, atasNama: rekening.atas_nama } : null}
         namaBendahara={footerProps.namaBendahara}

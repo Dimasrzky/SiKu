@@ -140,6 +140,13 @@ export default function PaketPerKelasPage() {
   const [showKelasKurangPopup,   setShowKelasKurangPopup]   = useState(false)
   const [showAllPaketedPopup,    setShowAllPaketedPopup]    = useState(false)
 
+  // Bawa paket periode sebelumnya ke tahun ajaran baru
+  const [showCarryPopup, setShowCarryPopup] = useState(false)
+  const [carryFrom,      setCarryFrom]      = useState('')
+  const [carrying,       setCarrying]       = useState(false)
+  const [carryError,     setCarryError]     = useState('')
+  const [aktifSelesai,   setAktifSelesai]   = useState('')
+
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadPaket = async (sid: string, tahun: string) => {
     const { data: paketData } = await supabase
@@ -152,6 +159,8 @@ export default function PaketPerKelasPage() {
       .eq('sekolah_id', sid)
       .order('created_at', { ascending: false })
       .limit(100)
+
+    const semuaPaket = (paketData ?? []) as unknown as PaketRawFull[]
 
     if (paketData) {
       setPaketList((paketData as unknown as PaketRawFull[]).map(p => ({
@@ -196,6 +205,12 @@ export default function PaketPerKelasPage() {
       .filter(r => r.paket_count > 0)
 
     setRiwayatList(riwayat)
+
+    return {
+      adaPaketAktif:   semuaPaket.some(p => p.tahun_ajaran === tahun),
+      // riwayat sudah terurut tanggal_mulai menurun dan hanya berisi periode yang punya paket
+      periodeTerakhir: riwayat[0]?.tahun_ajaran ?? '',
+    }
   }
 
   useEffect(() => {
@@ -214,9 +229,12 @@ export default function PaketPerKelasPage() {
       if (!sid) return
       setSekolahId(sid)
 
-      const { data: taData } = await supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle()
-      const tahun = (taData as { nama: string } | null)?.nama ?? ''
+      const { data: taData } = await supabase.from('tahun_ajaran')
+        .select('nama, tanggal_selesai').eq('is_aktif', true).maybeSingle()
+      const ta    = taData as { nama: string; tanggal_selesai: string } | null
+      const tahun = ta?.nama ?? ''
       setActiveTahunAjaran(tahun)
+      setAktifSelesai(ta?.tanggal_selesai ?? '')
 
       const [{ data: kData }, { data: kompData }] = await Promise.all([
         supabase.from('kelas').select('id, nama, jenjang, siswa(count)').order('jenjang').limit(100),
@@ -235,7 +253,15 @@ export default function PaketPerKelasPage() {
       })))
       setKomponenList((kompData ?? []) as KomponenItem[])
 
-      await loadPaket(sid, tahun)
+      const { adaPaketAktif, periodeTerakhir } = await loadPaket(sid, tahun)
+
+      // Tahun ajaran baru selalu mulai tanpa paket karena paket terikat nama periode.
+      // Tawarkan membawa paket periode sebelumnya sebelum bendahara menyusun dari nol.
+      if (tahun && !adaPaketAktif && periodeTerakhir) {
+        setCarryFrom(periodeTerakhir)
+        setShowCarryPopup(true)
+      }
+
       setLoading(false)
     })()
   }, [router])
@@ -284,6 +310,103 @@ export default function PaketPerKelasPage() {
   const closeForm = () => {
     setFormClosing(true)
     setTimeout(() => { setShowForm(false); setFormClosing(false) }, 400)
+  }
+
+  // ── Bawa paket periode sebelumnya ke tahun ajaran aktif ───────────────────
+  // Komponen ikut disalin karena komponen_tagihan juga terikat nama periode —
+  // tanpa itu paket salinan menunjuk komponen tahun lalu dan daftar pilihan
+  // komponen di form tetap kosong.
+  const handleGunakanPaketLama = async () => {
+    if (!carryFrom || !sekolahId || !activeTahunAjaran) return
+    setCarrying(true); setCarryError('')
+
+    type KompLama = {
+      id: string; jenis: string; nama: string | null; kelas_warna: string | null
+      keterangan: string | null; nominal_default: number | null; semester: string | null
+    }
+    type ItemLama     = { nama: string; nominal: number | null; urutan: number | null }
+    type PotonganLama = {
+      kelas_jenjang: string; nama_item: string
+      nominal_asli: number | null; persen_potong: number | null
+    }
+
+    try {
+      const { data: kompLama } = await supabase
+        .from('komponen_tagihan')
+        .select('id, jenis, nama, kelas_warna, keterangan, nominal_default, semester')
+        .eq('sekolah_id', sekolahId)
+        .eq('tahun_ajaran', carryFrom)
+        .limit(200)
+
+      const komponenMap = new Map<string, string>()  // id lama → id baru
+      for (const k of ((kompLama ?? []) as KompLama[])) {
+        const { data: baru, error } = await supabase.from('komponen_tagihan').insert({
+          sekolah_id:      sekolahId,
+          jenis:           k.jenis,
+          nama:            k.nama,
+          kelas_warna:     k.kelas_warna,
+          keterangan:      k.keterangan,
+          nominal_default: k.nominal_default,
+          tahun_ajaran:    activeTahunAjaran,
+          semester:        k.semester,
+        }).select('id').single()
+        if (error || !baru) throw new Error(error?.message ?? 'Gagal menyalin komponen tagihan.')
+        komponenMap.set(k.id, baru.id)
+
+        const [{ data: items }, { data: potongan }] = await Promise.all([
+          supabase.from('komponen_tagihan_item')
+            .select('nama, nominal, urutan').eq('komponen_id', k.id).limit(100),
+          supabase.from('komponen_tagihan_potongan')
+            .select('kelas_jenjang, nama_item, nominal_asli, persen_potong').eq('komponen_id', k.id).limit(100),
+        ])
+        const itemRows = (items ?? []) as ItemLama[]
+        if (itemRows.length > 0) {
+          await supabase.from('komponen_tagihan_item')
+            .insert(itemRows.map(i => ({ ...i, komponen_id: baru.id })))
+        }
+        const potonganRows = (potongan ?? []) as PotonganLama[]
+        if (potonganRows.length > 0) {
+          await supabase.from('komponen_tagihan_potongan')
+            .insert(potonganRows.map(p => ({ ...p, komponen_id: baru.id })))
+        }
+      }
+
+      const paketLama = paketList.filter(p => p.tahun_ajaran === carryFrom)
+      if (paketLama.length === 0) throw new Error('Paket periode sebelumnya tidak ditemukan.')
+
+      for (const p of paketLama) {
+        const { data: paketBaru, error } = await supabase.from('paket').insert({
+          sekolah_id:   sekolahId,
+          nama:         p.nama,
+          tahun_ajaran: activeTahunAjaran,
+          jatuh_tempo:  aktifSelesai || null,
+        }).select('id').single()
+        if (error || !paketBaru) throw new Error(error?.message ?? 'Gagal menyalin paket.')
+
+        if (p.kelas_list.length > 0) {
+          const { error: eKelas } = await supabase.from('paket_kelas')
+            .insert(p.kelas_list.map(k => ({ paket_id: paketBaru.id, kelas_id: k.id })))
+          if (eKelas) throw new Error(`Gagal menyalin kelas paket: ${eKelas.message}`)
+        }
+
+        const komps = p.komponen_list
+          .map(kl => ({
+            paket_id:    paketBaru.id,
+            komponen_id: komponenMap.get(kl.komponen_id) ?? '',
+            nominal:     kl.nominal,
+          }))
+          .filter(kl => kl.komponen_id !== '')
+        if (komps.length > 0) {
+          const { error: eKomp } = await supabase.from('paket_komponen').insert(komps)
+          if (eKomp) throw new Error(`Gagal menyalin komponen paket: ${eKomp.message}`)
+        }
+      }
+
+      window.location.reload()
+    } catch (err) {
+      setCarryError((err as Error).message)
+      setCarrying(false)
+    }
   }
 
   const toggleKelas = (id: string) =>
@@ -1020,6 +1143,52 @@ export default function PaketPerKelasPage() {
       )}
 
       {/* ── Popup kelas belum lengkap ─────────────────────────────────────────── */}
+      {/* ── Popup bawa paket periode sebelumnya ──────────────────────────── */}
+      {showCarryPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 440, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <Layers size={28} color="#D97706" />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
+              Paket per kelas periode {carryFrom} telah diarsipkan
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 1rem' }}>
+              Tahun ajaran <strong style={{ color: 'var(--navy-dark)' }}>{activeTahunAjaran}</strong> belum punya paket,
+              sehingga tagihan belum bisa dibuat. Tetap menggunakan paket per kelas periode sebelumnya?
+            </p>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '0.75rem 1rem', fontSize: '0.78rem', color: '#475569', lineHeight: 1.6, textAlign: 'left', marginBottom: '1.25rem' }}>
+              Paket dan komponen tagihan akan <strong>disalin</strong> ke {activeTahunAjaran} — data periode {carryFrom} tetap
+              utuh di Riwayat. Jatuh tempo diisi <strong>{aktifSelesai ? formatDate(aktifSelesai) : 'akhir tahun ajaran'}</strong> dan
+              bisa diubah kapan saja.
+            </div>
+
+            {carryError && (
+              <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.6rem 0.875rem', fontSize: '0.8rem', fontWeight: 600, marginBottom: '1rem', textAlign: 'left' }}>
+                {carryError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => { setShowCarryPopup(false); openForm() }}
+                disabled={carrying}
+                style={{ flex: 1, padding: '0.7rem 1rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 700, fontSize: '0.875rem', cursor: carrying ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: carrying ? 0.5 : 1 }}
+              >
+                Tidak, buat baru
+              </button>
+              <button
+                onClick={handleGunakanPaketLama}
+                disabled={carrying}
+                style={{ flex: 1, padding: '0.7rem 1rem', borderRadius: 10, border: 'none', background: carrying ? '#94A3B8' : '#1A2C4E', color: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: carrying ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {carrying ? 'Menyalin...' : 'Ya, gunakan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAllPaketedPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
           <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>

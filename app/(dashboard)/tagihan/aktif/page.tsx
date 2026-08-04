@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { Search, AlertTriangle, Eye, X, ClipboardList } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from 'next/navigation'
+import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
+import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo } from '@/lib/statusTagihan'
+import {
+  JENIS_LABEL, JENIS_WARNA, komponenDitagihkan, periodeIndex,
+  bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran,
+} from '@/lib/komponenTagihan'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -13,6 +18,9 @@ const BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+
+/** Nilai khusus dropdown tingkat untuk menyaring siswa yang sudah lulus */
+const FILTER_ALUMNI = 'Alumni'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -38,7 +46,11 @@ interface SiswaTagihanRow {
   kelas_nama:    string
   kelas_jenjang: string
   kelas_warna:   string
+  /** Siswa sudah lulus — kelas_id-nya null, kelas terakhir diambil dari snapshot teks */
+  is_alumni:     boolean
   total_nominal: number
+  /** Komponen non-bulanan belum lunas dari periode sebelumnya — hanya untuk kolom total tabel */
+  tunggakan:     number
   status:        'belum_bayar' | 'lunas' | 'cicilan'
   no_wa:         string
   nama_wali:     string
@@ -46,9 +58,9 @@ interface SiswaTagihanRow {
 }
 
 type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: string }
-type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: KelasNestedRaw | null }
-type TagihanRawRow     = { id: string; total_nominal: number; status: string; payment_token: string | null; siswa: SiswaNestedRaw | null }
-type PaketTotalRaw     = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
+type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; status: string | null; kelas_terakhir: string | null; kelas: KelasNestedRaw | null }
+type TagihanItemRaw    = { komponen_id: string | null; nominal: number }
+type TagihanRawRow     = { id: string; total_nominal: number; status: string; payment_token: string | null; tagihan_item: TagihanItemRaw[]; siswa: SiswaNestedRaw | null }
 type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type PaketKelasRaw     = { kelas_id: string }
 type PaketForGenerate  = { id: string; paket_kelas: PaketKelasRaw[]; paket_komponen: PaketKomponenRaw[] }
@@ -59,18 +71,28 @@ type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: numbe
 type CatatSiswaResult  = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: { id: string; nama: string; warna: string } | null }
 type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_bayar: string; catatan: string | null }
 type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
-type DetailKomponenRow = { nama_komponen: string; nominal: number; warna?: string }
+type DetailKomponenRow = { nama_komponen: string; nominal: number; jenis: string }
+type TunggakanRow      = { nama_komponen: string; nominal: number; jenis: string; bulan: number; tahun: number }
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG = {
-  belum_bayar: { label: 'Belum bayar', bg: '#DBEAFE', color: '#1D4ED8' },
-  lunas:       { label: 'Lunas',       bg: '#D1FAE5', color: '#065F46' },
-  cicilan:     { label: 'Cicilan',     bg: '#1A2C4E', color: '#FFFFFF' },
-  menunggak:   { label: 'Menunggak',   bg: '#FEE2E2', color: '#DC2626' },
-} as const
+const STATUS_CONFIG = STATUS_TAGIHAN
 
 type EffectiveStatus = keyof typeof STATUS_CONFIG
+
+/**
+ * Baca preset filter dari query string. `allowed` membatasi nilai yang diterima —
+ * tanpa itu nilai apa pun diterima apa adanya (dipakai jenjang, yang daftarnya dinamis).
+ *
+ * Sumbernya useSearchParams, bukan window.location: pada navigasi <Link> App Router,
+ * URL di window baru diperbarui setelah komponen tujuan dirender, sehingga preset
+ * terbaca kosong. Lewat <a href> biasa tidak terasa karena halamannya dimuat ulang.
+ */
+function readParam(sp: ReadonlyURLSearchParams, key: string, allowed?: Record<string, unknown>): string {
+  const val = sp.get(key)
+  if (!val) return 'Semua'
+  return !allowed || val in allowed ? val : 'Semua'
+}
 
 // ── Donut Chart ───────────────────────────────────────────────────────────────
 
@@ -175,11 +197,24 @@ async function runGenerate(
     .from('tagihan').select('siswa_id').eq('sekolah_id', sid).eq('bulan', bulan).eq('tahun', tahun)
   const existingIds = new Set(((existingData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
 
-  const { data: prevData } = await supabase
-    .from('tagihan').select('siswa_id').eq('sekolah_id', sid).neq('bulan', bulan)
-  const siswaWithHistory = new Set(((prevData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
+  // Riwayat penagihan per siswa per komponen — dasar aturan "sekali per semester"
+  // dan "sekali per tahun ajaran". Diambil dari tagihan_item, bukan sekadar
+  // "siswa punya tagihan di bulan lain".
+  const [{ data: riwayatRows }, { data: taPeriode }] = await Promise.all([
+    supabase
+      .from('tagihan')
+      .select('siswa_id, bulan, tahun, tagihan_item(komponen_id)')
+      .eq('sekolah_id', sid)
+      .limit(5000),
+    supabase
+      .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
+  ])
 
-  const isSemesterMonth = bulan === 1 || bulan === 7
+  const riwayat = bangunRiwayatTagih(
+    (riwayatRows ?? []) as unknown as { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }[]
+  )
+  const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
+
   const toInsert: { sekolah_id: string; siswa_id: string; bulan: number; tahun: number; total_nominal: number; status: string }[] = []
   const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; siswa_id: string }[] = []
 
@@ -188,18 +223,11 @@ async function runGenerate(
     const komps = kelasToKomponen.get(siswa.kelas_id)
     if (!komps || komps.length === 0) continue
 
-    const filtered = komps.filter(k => {
-      if (k.jenis === 'rutin_bulanan') return true
-      if (k.jenis === 'per_semester')  return isSemesterMonth
-      if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
-      return false
-    })
-    const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(k => {
-      if (k.jenis === 'rutin_bulanan') return true
-      if (k.jenis === 'per_semester')  return isSemesterMonth
-      if (k.jenis === 'sekali_bayar')  return !siswaWithHistory.has(siswa.id)
-      return false
-    })
+    const bolehTagih = (k: { jenis: string; komponen_id: string }) =>
+      komponenDitagihkan(k.jenis, bulan, tahun, ta, siswa.id, k.komponen_id, riwayat)
+
+    const filtered = komps.filter(bolehTagih)
+    const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(bolehTagih)
 
     const allKomps = [...filtered, ...individu]
     if (allKomps.length === 0) continue
@@ -218,6 +246,8 @@ async function runGenerate(
     }
 
     const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
+    // Tabel tagihan tidak punya kolom tahun_ajaran — keterikatan periode diturunkan
+    // dari bulan/tahun terhadap rentang tanggal tahun ajaran
     toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
     for (const k of allKomps) itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
   }
@@ -243,9 +273,32 @@ async function runGenerate(
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// useSearchParams wajib berada di bawah batas Suspense, kalau tidak build gagal
+// saat Next mencoba melakukan prerender statis halaman ini.
 export default function TagihanAktifPage() {
-  const router = useRouter()
-  const now      = new Date()
+  return (
+    <Suspense fallback={
+      <div className="dashboard-content">
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
+      </div>
+    }>
+      <TagihanAktifContent />
+    </Suspense>
+  )
+}
+
+function TagihanAktifContent() {
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+
+  // Jam berjalan supaya jatuh tempo, hitung mundur, dan status menunggak ikut
+  // bergeser sendiri saat tanggal berganti — tanpa perlu refresh manual
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   const bulanIni = now.getMonth() + 1
   const tahunIni = now.getFullYear()
 
@@ -257,8 +310,10 @@ export default function TagihanAktifPage() {
   const [sekolahId,      setSekolahId]      = useState('')
   const [tahunAjaran,    setTahunAjaran]    = useState('')
   const [syncing,        setSyncing]        = useState(false)
-  const [filterJenjang,     setFilterJenjang]     = useState('Semua')
-  const [filterStatus,      setFilterStatus]      = useState('Semua')
+  // Filter bisa dipreset lewat URL, mis. /tagihan/aktif?status=menunggak&jenjang=9.
+  // Dibaca sekali saat inisialisasi supaya bendahara tetap bebas mengubah dropdown.
+  const [filterJenjang,     setFilterJenjang]     = useState(() => readParam(searchParams, 'jenjang'))
+  const [filterStatus,      setFilterStatus]      = useState(() => readParam(searchParams, 'status', STATUS_CONFIG))
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
@@ -284,36 +339,64 @@ export default function TagihanAktifPage() {
   // Modal 2/3 — Detail extras
   const [detailBeasiswa,   setDetailBeasiswa]   = useState<DetailBeasiswaRow[]>([])
   const [detailKomponen,   setDetailKomponen]   = useState<DetailKomponenRow[]>([])
+  const [detailTunggakan,  setDetailTunggakan]  = useState<TunggakanRow[]>([])
   const [detailPembayaran, setDetailPembayaran] = useState<PembayaranRow[]>([])
   const [detailPaketNama,  setDetailPaketNama]  = useState('')
   const [detailLoading,    setDetailLoading]    = useState(false)
 
   // ── loadTagihan ─────────────────────────────────────────────────────────────
 
+  // Total tagihan yang sudah terbit dihitung dari snapshot tagihan_item, bukan
+  // diturunkan ulang dari paket. Paket yang diedit belakangan tidak boleh mengubah
+  // nominal tagihan yang kuitansinya sudah dipegang orang tua.
   const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> => {
-    const isSemesterMonth = bulan === 1 || bulan === 7
-
-    const [{ data: tagihanData }, { data: paketData }] = await Promise.all([
+    const [{ data: tagihanData }, { data: riwayatRows }, { data: taPeriode }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('tagihan')
-        .select('id, total_nominal, status, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, jenjang, warna))')
+        // kelas_terakhir: alias kolom teks `siswa.kelas` — snapshot kelas terakhir alumni.
+        // Perlu di-alias karena `kelas` sudah dipakai sebagai alias relasi kelas_id.
+        .select('id, total_nominal, status, payment_token, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas_terakhir:kelas, kelas:kelas_id(id, nama, jenjang, warna))')
         .eq('sekolah_id', sid)
         .eq('bulan', bulan)
         .eq('tahun', tahun)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase
-        .from('paket')
-        .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
-        .eq('sekolah_id', sid),
+        .from('tagihan')
+        .select('siswa_id, bulan, tahun, tagihan_item(komponen_id)')
+        .eq('sekolah_id', sid)
+        .limit(5000),
+      supabase
+        .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
+      // Tunggakan periode sebelumnya per siswa, untuk kolom total di tabel
+      supabase
+        .from('tagihan')
+        .select('siswa_id, bulan, tahun, tagihan_item(nominal, komponen:komponen_id(jenis))')
+        .eq('sekolah_id', sid)
+        .eq('status', 'belum_bayar')
+        .limit(2000),
     ])
 
-    const kelasTotal = new Map<string, number>()
-    const kelasKomps = new Map<string, Map<string, number>>()
-    for (const p of ((paketData ?? []) as unknown as PaketTotalRaw[])) {
-      const total      = p.paket_komponen.reduce((s, k) => s + k.nominal, 0)
-      const kompNomMap = new Map(p.paket_komponen.map(k => [k.komponen_id, k.nominal]))
-      for (const pk of p.paket_kelas) { kelasTotal.set(pk.kelas_id, total); kelasKomps.set(pk.kelas_id, kompNomMap) }
+    const riwayat = bangunRiwayatTagih(
+      (riwayatRows ?? []) as unknown as { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }[]
+    )
+    const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
+
+    // siswa_id → nominal tunggakan non-bulanan dari periode sebelum bulan ini.
+    // Definisinya sengaja sama persis dengan blok tunggakan di modal detail agar
+    // angka di tabel dan di modal tidak berselisih.
+    type TunggakanRaw = {
+      siswa_id: string; bulan: number; tahun: number
+      tagihan_item: { nominal: number; komponen: { jenis: string } | null }[]
+    }
+    const periodeIni = periodeIndex(bulan, tahun)
+    const tunggakanPerSiswa = new Map<string, number>()
+    for (const t of ((tunggakanData ?? []) as unknown as TunggakanRaw[])) {
+      if (periodeIndex(t.bulan, t.tahun) >= periodeIni) continue
+      const nom = (t.tagihan_item ?? [])
+        .filter(i => i.komponen?.jenis && i.komponen.jenis !== 'rutin_bulanan')
+        .reduce((s, i) => s + i.nominal, 0)
+      if (nom > 0) tunggakanPerSiswa.set(t.siswa_id, (tunggakanPerSiswa.get(t.siswa_id) ?? 0) + nom)
     }
 
     const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
@@ -342,41 +425,54 @@ export default function TagihanAktifPage() {
       siswaBeasiswaMap.set(row.siswa_id, list)
     }
 
-    type IndividuEntry = { jenis: string; nominal: number }
+    type IndividuEntry = { komponen_id: string; jenis: string; nominal: number }
     const siswaIndividuMap = new Map<string, IndividuEntry[]>()
     for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
       if (!row.komponen) continue
       const list = siswaIndividuMap.get(row.siswa_id) ?? []
-      list.push({ jenis: row.komponen.jenis, nominal: row.nominal })
+      list.push({ komponen_id: row.komponen_id, jenis: row.komponen.jenis, nominal: row.nominal })
       siswaIndividuMap.set(row.siswa_id, list)
     }
 
     const siswaCorrectTotal = new Map<string, number>()
     for (const r of rows) {
-      const siswaId    = r.siswa?.id ?? ''
-      const kelasId    = r.siswa?.kelas?.id ?? ''
-      const paketBase  = kelasTotal.get(kelasId) ?? 0
-      const kompNomMap = kelasKomps.get(kelasId)
+      const siswaId = r.siswa?.id ?? ''
+
+      // Dasar total = snapshot komponen yang benar-benar diterbitkan pada tagihan ini
+      const snapshot   = r.tagihan_item ?? []
+      const paketBase  = snapshot.reduce((s, i) => s + i.nominal, 0)
+      const kompNomMap = new Map(
+        snapshot.filter(i => i.komponen_id).map(i => [i.komponen_id as string, i.nominal])
+      )
+
+      // Komponen individu yang ditambahkan setelah tagihan terbit ikut dihitung,
+      // selama jenisnya memang boleh ditagih pada bulan ini
       const individuTotal = (siswaIndividuMap.get(siswaId) ?? [])
-        .filter(k => k.jenis === 'rutin_bulanan' || (k.jenis === 'per_semester' && isSemesterMonth))
+        .filter(k => !kompNomMap.has(k.komponen_id))
+        .filter(k => komponenDitagihkan(k.jenis, bulan, tahun, ta, siswaId, k.komponen_id, riwayat))
         .reduce((s, k) => s + k.nominal, 0)
+
+      // Potongan beasiswa hanya berlaku atas komponen yang ditagihkan bulan ini
       let deduction = 0
-      if (kompNomMap) {
-        for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
-          for (const kid of bs.komponen_ids) {
-            const kNom = kompNomMap.get(kid)
-            if (kNom === undefined) continue
-            deduction += bs.jenis_potongan === 'persen' ? Math.round(kNom * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0)
-          }
+      for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
+        for (const kid of bs.komponen_ids) {
+          const kNom = kompNomMap.get(kid)
+          if (kNom === undefined) continue
+          deduction += bs.jenis_potongan === 'persen' ? Math.round(kNom * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0)
         }
       }
       siswaCorrectTotal.set(siswaId, Math.max(0, paketBase + individuTotal - deduction))
     }
 
+    // Number.isFinite menyaring NaN: satu nominal yang hilang cukup untuk membuat
+    // seluruh perhitungan NaN, dan menulisnya ke database akan mengosongkan
+    // total_nominal (JSON.stringify(NaN) → null) sehingga nilai aslinya hilang.
     const toUpdate = rows.flatMap(r => {
       const siswaId = r.siswa?.id ?? ''
       const correct = siswaCorrectTotal.get(siswaId)
-      return correct !== undefined && correct !== r.total_nominal ? [{ id: r.id, total: correct }] : []
+      return correct !== undefined && Number.isFinite(correct) && correct !== r.total_nominal
+        ? [{ id: r.id, total: correct }]
+        : []
     })
     if (toUpdate.length > 0) {
       await Promise.all(toUpdate.map(({ id, total }) => supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)))
@@ -391,10 +487,13 @@ export default function TagihanAktifPage() {
         nis:           r.siswa?.nis ?? '-',
         nama:          r.siswa?.nama ?? '—',
         kelas_id:      kelas?.id ?? '',
-        kelas_nama:    kelas?.nama ?? '—',
+        // Alumni tidak punya kelas_id lagi — pakai snapshot kelas terakhirnya
+        kelas_nama:    kelas?.nama ?? r.siswa?.kelas_terakhir ?? '—',
         kelas_jenjang: kelas?.jenjang ?? '',
         kelas_warna:   kelas?.warna ?? '#1A2C4E',
+        is_alumni:     r.siswa?.status === 'alumni',
         total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
+        tunggakan:     tunggakanPerSiswa.get(siswaId) ?? 0,
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
         no_wa:         r.siswa?.no_wa ?? '',
         nama_wali:     r.siswa?.nama_wali ?? '',
@@ -472,6 +571,24 @@ export default function TagihanAktifPage() {
     return () => { supabase.removeChannel(channel) }
   }, [sekolahId, tahunAjaran, bulanIni, tahunIni, loadTagihan])
 
+  // ── Pergantian bulan saat halaman dibiarkan terbuka ──────────────────────────
+  // Tanpa ini tabel akan menampilkan baris bulan lama dengan jatuh tempo bulan baru
+  const periodeRef = useRef(`${tahunIni}-${bulanIni}`)
+  useEffect(() => {
+    const periode = `${tahunIni}-${bulanIni}`
+    if (periode === periodeRef.current) return
+    periodeRef.current = periode
+    if (!sekolahId || !tahunAjaran) return
+
+    let alive = true
+    // Lewat rantai promise, bukan setState langsung di badan effect
+    runGenerate(sekolahId, tahunAjaran, bulanIni, tahunIni)
+      .then(() => { if (alive) return loadTagihan(sekolahId, bulanIni, tahunIni) })
+      .catch(() => { /* pertahankan data lama; realtime sync akan menyusul */ })
+
+    return () => { alive = false }
+  }, [bulanIni, tahunIni, sekolahId, tahunAjaran, loadTagihan])
+
   // ── Search catat siswa ────────────────────────────────────────────────────────
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -520,25 +637,43 @@ export default function TagihanAktifPage() {
 
   const jatuhTempo   = getJatuhTempo(bulanIni, tahunIni)
   const endOfMonth   = new Date(tahunIni, bulanIni, 0)
-  const isLewatTempo = now.getTime() > endOfMonth.getTime()
+  const isLewatTempo = lewatJatuhTempo(bulanIni, tahunIni, now)
 
   const getEffStatus = (t: SiswaTagihanRow): EffectiveStatus =>
-    t.status === 'belum_bayar' && isLewatTempo ? 'menunggak' : t.status
+    statusEfektif(t.status, isLewatTempo, t.is_alumni)
 
-  const uniqueJenjang = ['Semua', ...Array.from(new Set(tagihanList.map(t => t.kelas_jenjang).filter(Boolean)))]
+  // Preset dari URL ikut dimasukkan supaya select tidak tampil kosong saat jenjang
+  // tersebut belum punya tagihan di bulan ini. Alumni ditaruh di dropdown tingkat,
+  // bukan dropdown status — status di sana khusus status pembayaran.
+  const adaAlumni = tagihanList.some(t => t.is_alumni)
+  const uniqueJenjang = [
+    'Semua',
+    ...Array.from(new Set(
+      [...tagihanList.map(t => t.kelas_jenjang), filterJenjang]
+        .filter(j => j && j !== 'Semua' && j !== FILTER_ALUMNI)
+    )),
+    ...(adaAlumni || filterJenjang === FILTER_ALUMNI ? [FILTER_ALUMNI] : []),
+  ]
 
   const filtered = tagihanList.filter(t => {
     const eff = getEffStatus(t)
-    const matchJenjang = filterJenjang === 'Semua' || t.kelas_jenjang === filterJenjang
+    const matchJenjang = filterJenjang === 'Semua'
+      || (filterJenjang === FILTER_ALUMNI ? t.is_alumni : !t.is_alumni && t.kelas_jenjang === filterJenjang)
     const matchStatus  = filterStatus  === 'Semua' || eff === filterStatus
     const matchSearch  = !searchQuery  || t.nama.toLowerCase().includes(searchQuery.toLowerCase()) || t.nis.toLowerCase().includes(searchQuery.toLowerCase())
     return matchJenjang && matchStatus && matchSearch
   })
 
-  const countLunas     = tagihanList.filter(t => t.status === 'lunas').length
-  const countCicilan   = tagihanList.filter(t => t.status === 'cicilan').length
-  const countBelum     = tagihanList.filter(t => t.status === 'belum_bayar' && !isLewatTempo).length
-  const countMenunggak = tagihanList.filter(t => t.status === 'belum_bayar' && isLewatTempo).length
+  // Diturunkan dari getEffStatus, bukan aturan tersendiri — kartu ringkasan dan
+  // badge di tabel harus mustahil berselisih.
+  const effCounts = tagihanList.reduce(
+    (acc, t) => { acc[getEffStatus(t)] += 1; return acc },
+    { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 } as Record<EffectiveStatus, number>,
+  )
+  const countLunas     = effCounts.lunas
+  const countCicilan   = effCounts.cicilan
+  const countBelum     = effCounts.belum_bayar
+  const countMenunggak = effCounts.menunggak
   const totalNominal   = tagihanList.reduce((s, t) => s + t.total_nominal, 0)
   const sudahMasuk     = tagihanList.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
   const belumMasuk     = totalNominal - sudahMasuk
@@ -629,12 +764,13 @@ export default function TagihanAktifPage() {
     setDetailSiswa(t)
     setDetailBeasiswa([])
     setDetailKomponen([])
+    setDetailTunggakan([])
     setDetailPembayaran([])
     setDetailPaketNama('')
     setDetailLoading(true)
     setShowDetailModal(true)
     const today = new Date().toISOString().split('T')[0]
-    const [{ data: bsData }, { data: itemData }, { data: paketData }] = await Promise.all([
+    const [{ data: bsData }, { data: itemData }, { data: paketData }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('beasiswa_siswa')
         .select('beasiswa:beasiswa_id(nama, jenis_potongan, persen, nominal)')
@@ -642,7 +778,7 @@ export default function TagihanAktifPage() {
         .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
       supabase
         .from('tagihan_item')
-        .select('komponen_id, nama_komponen, nominal, komponen:komponen_id(kelas_warna)')
+        .select('komponen_id, nama_komponen, nominal, komponen:komponen_id(jenis)')
         .eq('tagihan_id', t.tagihan_id)
         .order('nominal', { ascending: false }),
       supabase
@@ -650,23 +786,48 @@ export default function TagihanAktifPage() {
         .select('nama, paket_kelas(kelas_id)')
         .eq('sekolah_id', sekolahId)
         .eq('tahun_ajaran', tahunAjaran),
+      // Tagihan bulan lain yang belum dibayar sama sekali — sumber komponen tunggakan
+      supabase
+        .from('tagihan')
+        .select('id, bulan, tahun, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis))')
+        .eq('sekolah_id', sekolahId)
+        .eq('siswa_id', t.siswa_id)
+        .eq('status', 'belum_bayar')
+        .neq('id', t.tagihan_id)
+        .limit(24),
     ])
     type BsRaw = { beasiswa: DetailBeasiswaRow | null }
     setDetailBeasiswa(((bsData ?? []) as unknown as BsRaw[]).map(r => r.beasiswa).filter((b): b is DetailBeasiswaRow => b !== null))
 
     // Merge tagihan_item snapshot + komponen individu yang ditambah belakangan
-    type ItemRaw = { komponen_id: string | null; nama_komponen: string; nominal: number; komponen: { kelas_warna: string } | null }
+    type ItemRaw = { komponen_id: string | null; nama_komponen: string; nominal: number; komponen: { jenis: string } | null }
     const snapshotItems = (itemData ?? []) as ItemRaw[]
     const snapshotKompIds = new Set(snapshotItems.map(i => i.komponen_id).filter(Boolean) as string[])
     const { data: individuData } = await supabase
       .from('siswa_komponen_individu')
-      .select('komponen_id, nominal, komponen:komponen_id(nama, kelas_warna)')
+      .select('komponen_id, nominal, komponen:komponen_id(nama, jenis)')
       .eq('siswa_id', t.siswa_id)
-    type IndivRaw = { komponen_id: string; nominal: number; komponen: { nama: string; kelas_warna: string } | null }
+    type IndivRaw = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
     const extraItems: DetailKomponenRow[] = ((individuData ?? []) as unknown as IndivRaw[])
       .filter(i => i.komponen && !snapshotKompIds.has(i.komponen_id))
-      .map(i => ({ nama_komponen: i.komponen!.nama, nominal: i.nominal, warna: i.komponen!.kelas_warna }))
-    setDetailKomponen([...snapshotItems.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, warna: i.komponen?.kelas_warna })), ...extraItems])
+      .map(i => ({ nama_komponen: i.komponen!.nama, nominal: i.nominal, jenis: i.komponen!.jenis }))
+    setDetailKomponen([
+      ...snapshotItems.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '' })),
+      ...extraItems,
+    ])
+
+    // Komponen non-bulanan dari tagihan periode sebelumnya yang masih belum lunas.
+    // Hanya ditampilkan sebagai informasi — tidak ikut dijumlahkan ke total bulan ini.
+    type TunggakanRaw = { bulan: number; tahun: number; tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string } | null }[] }
+    const periodeIni = periodeIndex(bulanIni, tahunIni)
+    setDetailTunggakan(
+      ((tunggakanData ?? []) as unknown as TunggakanRaw[])
+        .filter(tg => periodeIndex(tg.bulan, tg.tahun) < periodeIni)
+        .flatMap(tg => (tg.tagihan_item ?? [])
+          .filter(i => i.komponen?.jenis && i.komponen.jenis !== 'rutin_bulanan')
+          .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen!.jenis, bulan: tg.bulan, tahun: tg.tahun })))
+        .sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
+    )
 
     type PaketRaw = { nama: string; paket_kelas: { kelas_id: string }[] }
     const paketForKelas = ((paketData ?? []) as unknown as PaketRaw[]).find(p => p.paket_kelas?.some(pk => pk.kelas_id === t.kelas_id))
@@ -824,26 +985,21 @@ export default function TagihanAktifPage() {
                   <DonutChart
                     total={tagihanList.length}
                     label="Siswa"
-                    segments={[
-                      { value: countLunas,     color: '#1A2C4E' },
-                      { value: countCicilan,   color: '#3B82F6' },
-                      { value: countBelum,     color: '#BFDBFE' },
-                      { value: countMenunggak, color: '#EF4444' },
-                    ]}
+                    segments={URUTAN_STATUS.map(s => ({
+                      value: { lunas: countLunas, cicilan: countCicilan, belum_bayar: countBelum, menunggak: countMenunggak }[s],
+                      color: STATUS_TAGIHAN[s].solid,
+                    }))}
                   />
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {([
-                      { label: 'Lunas',       count: countLunas,     color: '#1A2C4E' },
-                      { label: 'Cicilan',     count: countCicilan,   color: '#3B82F6' },
-                      { label: 'Belum bayar', count: countBelum,     color: '#BFDBFE' },
-                      { label: 'Menunggak',   count: countMenunggak, color: '#EF4444' },
-                    ] as const).map(item => (
-                      <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    {URUTAN_STATUS.map(s => (
+                      <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0, border: item.color === '#BFDBFE' ? '1px solid #93C5FD' : 'none' }} />
-                          <span style={{ fontSize: '0.8rem', color: '#374151' }}>{item.label}</span>
+                          <span style={{ width: 10, height: 10, borderRadius: 2, background: STATUS_TAGIHAN[s].solid, flexShrink: 0 }} />
+                          <span style={{ fontSize: '0.8rem', color: '#374151' }}>{STATUS_TAGIHAN[s].label}</span>
                         </div>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: item.label === 'Menunggak' ? '#EF4444' : '#1A2C4E' }}>{item.count}</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: s === 'menunggak' ? STATUS_TAGIHAN.menunggak.solid : '#1A2C4E' }}>
+                          {{ lunas: countLunas, cicilan: countCicilan, belum_bayar: countBelum, menunggak: countMenunggak }[s]}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -957,16 +1113,31 @@ export default function TagihanAktifPage() {
                           </div>
                         </td>
 
-                        {/* Kelas */}
+                        {/* Kelas — alumni tidak punya kelas aktif, tandai eksplisit */}
                         <td style={sTd}>
-                          <span style={{ background: `${avatarColor}20`, color: avatarColor, border: `1.5px solid ${avatarColor}55`, borderRadius: 8, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700 }}>
-                            {t.kelas_nama}
-                          </span>
+                          {t.is_alumni ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#EDE9FE', color: '#6D28D9', border: '1.5px solid #DDD6FE', borderRadius: 8, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                              <GraduationCap size={13} />
+                              Alumni
+                              {t.kelas_nama !== '—' && (
+                                <span style={{ fontWeight: 600, opacity: 0.75 }}>· {t.kelas_nama}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span style={{ background: `${avatarColor}20`, color: avatarColor, border: `1.5px solid ${avatarColor}55`, borderRadius: 8, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700 }}>
+                              {t.kelas_nama}
+                            </span>
+                          )}
                         </td>
 
-                        {/* Total */}
+                        {/* Total — tagihan bulan ini digabung dengan tunggakan periode sebelumnya */}
                         <td style={{ ...sTd, fontWeight: 700, color: '#1A2C4E', fontVariantNumeric: 'tabular-nums' }}>
-                          {formatRp(t.total_nominal)}
+                          {formatRp((t.total_nominal ?? 0) + (t.tunggakan ?? 0))}
+                          {t.tunggakan > 0 && (
+                            <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309', marginTop: 2, whiteSpace: 'nowrap' }}>
+                              termasuk tunggakan {formatRp(t.tunggakan)}
+                            </div>
+                          )}
                         </td>
 
                         {/* Status */}
@@ -1282,8 +1453,13 @@ export default function TagihanAktifPage() {
                   <>
                     {detailKomponen.map((k, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: k.warna ?? '#3B82F6', flexShrink: 0 }} />
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: JENIS_WARNA[k.jenis] ?? '#94A3B8', flexShrink: 0 }} />
                         <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{k.nama_komponen}</span>
+                        {JENIS_LABEL[k.jenis] && (
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: JENIS_WARNA[k.jenis], background: JENIS_WARNA[k.jenis] + '1F', padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {JENIS_LABEL[k.jenis]}
+                          </span>
+                        )}
                         <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E' }}>{formatRp(k.nominal)}</span>
                       </div>
                     ))}
@@ -1304,11 +1480,49 @@ export default function TagihanAktifPage() {
               )}
             </div>
 
-            {/* Total */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.875rem', borderTop: '1.5px solid #E2E8F0', marginTop: '0.75rem', marginBottom: '1.25rem' }}>
-              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>Total tagihan</span>
+            {/* Total bulan berjalan */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.875rem', borderTop: '1.5px solid #E2E8F0', marginTop: '0.75rem', marginBottom: detailTunggakan.length > 0 ? '1rem' : '1.25rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>
+                Total tagihan {detailTunggakan.length > 0 ? BULAN_NAMES[bulanIni] : ''}
+              </span>
               <span style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1A2C4E' }}>{formatRp(detailSiswa.total_nominal)}</span>
             </div>
+
+            {/* Tunggakan komponen non-bulanan dari periode sebelumnya (informasi, tidak masuk total di atas) */}
+            {!detailLoading && detailTunggakan.length > 0 && (() => {
+              const totalTunggakan = detailTunggakan.reduce((s, k) => s + k.nominal, 0)
+              return (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.5rem' }}>
+                    <AlertTriangle size={14} color="#D97706" />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400E' }}>Tunggakan bulan sebelumnya</span>
+                  </div>
+                  <div style={{ border: '1.5px solid #FDE68A', background: '#FFFBEB', borderRadius: 10, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+                    {detailTunggakan.map((k, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #FEF3C7' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: JENIS_WARNA[k.jenis] ?? '#94A3B8', flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{k.nama_komponen}</span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#92400E', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          {BULAN_NAMES[k.bulan]} {k.tahun}
+                        </span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400E' }}>{formatRp(k.nominal)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.6rem', marginTop: '0.5rem', borderTop: '1.5px solid #E2E8F0' }}>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      Ditagihkan terpisah di bulan asalnya — tidak dijumlahkan ke total di atas
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#92400E' }}>Total keseluruhan belum lunas</span>
+                    <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#92400E' }}>
+                      {formatRp(detailSiswa.total_nominal + totalTunggakan)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>

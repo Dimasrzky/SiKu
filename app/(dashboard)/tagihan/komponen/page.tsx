@@ -113,6 +113,7 @@ export default function KomponenTagihanPage() {
   // Delete modal
   const [deleteTarget,  setDeleteTarget]  = useState<KomponenItem | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError,   setDeleteError]   = useState('')
 
   // Detail slide panel
   const [detailTarget,  setDetailTarget]  = useState<KomponenItem | null>(null)
@@ -342,12 +343,56 @@ export default function KomponenTagihanPage() {
       .eq('id', editTarget.id)
     if (error) { setEditError(error.message); setEditSaving(false); return }
 
-    // Cascade nominal_default ke semua paket_komponen yang memakai komponen ini
+    // ── Sebarkan perubahan ke paket dan tagihan ──────────────────────────────
+    // Penyaringan cukup lewat komponen_id: satu komponen hanya milik satu sekolah.
+    type ItemTagihan = { tagihan_id: string; tagihan: { bulan: number; tahun: number; status: string } | null }
+    const { data: itemRows } = await supabase
+      .from('tagihan_item')
+      .select('tagihan_id, tagihan:tagihan_id(bulan, tahun, status)')
+      .eq('komponen_id', editTarget.id)
+      .limit(5000)
+    const items = (itemRows ?? []) as unknown as ItemTagihan[]
+
+    // Nama disebar ke semua tagihan — ini label, bukan uang, jadi aman untuk
+    // riwayat dan justru membingungkan kalau tagihan lama memakai nama usang.
+    if (editNama.trim() !== editTarget.nama) {
+      await supabase
+        .from('tagihan_item')
+        .update({ nama_komponen: editNama.trim() })
+        .eq('komponen_id', editTarget.id)
+    }
+
     if (nominalNum !== (editTarget.nominal_default ?? 0)) {
       await supabase
         .from('paket_komponen')
         .update({ nominal: nominalNum })
         .eq('komponen_id', editTarget.id)
+
+      // Nominal hanya menyentuh tagihan periode berjalan yang masih belum bayar
+      // DAN belum punya catatan pembayaran sama sekali. Tagihan periode lalu,
+      // yang lunas, dan yang sudah dicicil tetap beku pada nominal terbitnya.
+      const now = new Date()
+      const kandidat = items
+        .filter(i => i.tagihan
+          && i.tagihan.bulan  === now.getMonth() + 1
+          && i.tagihan.tahun  === now.getFullYear()
+          && i.tagihan.status === 'belum_bayar')
+        .map(i => i.tagihan_id)
+
+      if (kandidat.length > 0) {
+        const { data: bayar } = await supabase
+          .from('pembayaran').select('tagihan_id').in('tagihan_id', kandidat)
+        const sudahBayar = new Set(((bayar ?? []) as { tagihan_id: string }[]).map(p => p.tagihan_id))
+        const target = kandidat.filter(id => !sudahBayar.has(id))
+
+        if (target.length > 0) {
+          await supabase
+            .from('tagihan_item')
+            .update({ nominal: nominalNum })
+            .eq('komponen_id', editTarget.id)
+            .in('tagihan_id', target)
+        }
+      }
     }
 
     setAllKomponen(prev => prev.map(k => k.id === editTarget.id
@@ -362,13 +407,47 @@ export default function KomponenTagihanPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleteLoading(true)
-    const { error } = await supabase
-      .from('komponen_tagihan')
-      .delete()
-      .eq('id', deleteTarget.id)
-    if (!error) setAllKomponen(prev => prev.filter(k => k.id !== deleteTarget.id))
-    setDeleteTarget(null)
-    setDeleteLoading(false)
+    setDeleteError('')
+
+    const kompId = deleteTarget.id
+
+    try {
+      // Tabel lain mengacu ke komponen ini lewat foreign key, jadi selama acuannya
+      // masih ada Postgres menolak penghapusan (23503). Acuan konfigurasi dilepas,
+      // tapi riwayat tagihan TIDAK dihapus.
+      const lepasAcuan = [
+        supabase.from('paket_komponen').delete().eq('komponen_id', kompId),
+        supabase.from('siswa_komponen_individu').delete().eq('komponen_id', kompId),
+        supabase.from('beasiswa_komponen').delete().eq('komponen_id', kompId),
+        supabase.from('komponen_tagihan_item').delete().eq('komponen_id', kompId),
+        supabase.from('komponen_tagihan_potongan').delete().eq('komponen_id', kompId),
+        // tagihan_item dipertahankan — nama_komponen dan nominalnya adalah snapshot
+        // tagihan yang sudah terbit. Cukup acuannya yang dilepas.
+        supabase.from('tagihan_item').update({ komponen_id: null }).eq('komponen_id', kompId),
+      ]
+      // Sebagian tabel turunan tidak ada di semua skema — komponen_tagihan_item dan
+      // komponen_tagihan_potongan diacu kode setup tapi belum tentu pernah dibuat.
+      // Tabel yang tidak ada berarti tidak ada acuan untuk dilepas, bukan kegagalan.
+      const tabelTidakAda = (e: { code?: string; message?: string }) =>
+        e.code === 'PGRST205' || e.code === '42P01'
+        || (e.message ?? '').includes('Could not find the table')
+
+      for (const q of lepasAcuan) {
+        const { error } = await q
+        if (error && !tabelTidakAda(error)) throw new Error(error.message)
+      }
+
+      const { error } = await supabase.from('komponen_tagihan').delete().eq('id', kompId)
+      if (error) throw new Error(error.message)
+
+      setAllKomponen(prev => prev.filter(k => k.id !== kompId))
+      setDeleteTarget(null)
+      triggerRecalculate()
+    } catch (err) {
+      setDeleteError(`Gagal menghapus: ${(err as Error).message}`)
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   // ── View mode inline form handlers ────────────────────────────────────────────
@@ -1422,11 +1501,23 @@ export default function KomponenTagihanPage() {
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>
               Anda yakin ingin menghapus <strong>{deleteTarget.nama}</strong>?
             </p>
-            <p style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, margin: '0 0 1.5rem' }}>
-              Tindakan ini akan mempengaruhi tagihan aktif yang terkait.
+            <p style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, margin: '0 0 0.75rem' }}>
+              Komponen ini akan dikeluarkan dari semua paket kelas, komponen individu siswa,
+              dan kaitan beasiswa.
             </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.55 }}>
+              Tagihan yang sudah terbit tetap utuh — rincian dan nominalnya disimpan sebagai
+              riwayat. Tagihan bulan berjalan akan dihitung ulang tanpa komponen ini.
+            </p>
+
+            {deleteError && (
+              <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.6rem 0.875rem', fontSize: '0.78rem', fontWeight: 600, marginBottom: '1rem', textAlign: 'left' }}>
+                {deleteError}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button onClick={() => setDeleteTarget(null)} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
+              <button onClick={() => { setDeleteTarget(null); setDeleteError('') }} style={{ ...sBtnSecondary, flex: 1 }}>Batal</button>
               <button onClick={handleDelete} disabled={deleteLoading}
                 style={{ flex: 1, background: deleteLoading ? '#D1D5DB' : '#EF4444', color: '#fff', border: 'none', padding: '0.65rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: deleteLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {deleteLoading ? 'Menghapus...' : 'Ya, Hapus'}

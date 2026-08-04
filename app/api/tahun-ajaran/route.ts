@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ data: { ok: true }, error: null })
 }
 
-// PATCH — aktifkan tahun ajaran berdasarkan id (set yang lain jadi false)
+// PATCH — aktifkan tahun ajaran berdasarkan id; yang sebelumnya aktif diarsipkan
 export async function PATCH(req: NextRequest) {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -66,12 +66,18 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json() as { id: string }
 
-  await supabaseAdmin.from('tahun_ajaran')
-    .update({ is_aktif: false })
+  // Hanya yang sedang aktif yang diarsipkan. Menyapu semua baris akan ikut menandai
+  // tahun ajaran mendatang lain sebagai arsip.
+  const { error: arsipError } = await supabaseAdmin.from('tahun_ajaran')
+    .update({ is_aktif: false, diarsipkan_pada: new Date().toISOString() })
     .eq('sekolah_id', profile.sekolah_id)
+    .eq('is_aktif', true)
+    .neq('id', body.id)
+
+  if (arsipError) return NextResponse.json({ error: arsipError.message }, { status: 500 })
 
   const { error } = await supabaseAdmin.from('tahun_ajaran')
-    .update({ is_aktif: true })
+    .update({ is_aktif: true, diarsipkan_pada: null })
     .eq('id', body.id)
     .eq('sekolah_id', profile.sekolah_id)
 

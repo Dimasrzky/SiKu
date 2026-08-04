@@ -55,6 +55,17 @@ interface SiswaRow {
 interface BeasiswaProgram { id: string; nama: string; jenis: string; persen: number | null; nominal: number | null; count: number }
 interface SiswaBeasiswaInfo { beasiswa_id: string; nama: string; jenis: string; persen: number | null; nominal: number | null }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Preset filter tingkat dari URL, mis. /siswa/daftar-siswa?jenjang=9.
+ * String kosong berarti "semua tingkat".
+ */
+const readJenjangParam = (): string =>
+  typeof window === 'undefined'
+    ? ''
+    : new URLSearchParams(window.location.search).get('jenjang') ?? ''
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DaftarSiswaPage() {
@@ -73,7 +84,9 @@ export default function DaftarSiswaPage() {
   const [siswaList, setSiswaList] = useState<SiswaRow[]>([])
 
   // Filter & search (View Mode)
-  const [filterJenjang,       setFilterJenjang]       = useState('')
+  // Dibaca sekali saat inisialisasi — halaman menampilkan layar loading dulu,
+  // jadi filter belum ikut render awal dan tidak ada risiko hydration mismatch
+  const [filterJenjang,       setFilterJenjang]       = useState(readJenjangParam)
   const [filterBeasiswa,      setFilterBeasiswa]      = useState('')
   const [searchQuery,         setSearchQuery]         = useState('')
   const [showJenjangDropdown, setShowJenjangDropdown] = useState(false)

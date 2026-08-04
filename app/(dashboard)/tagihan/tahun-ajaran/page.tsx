@@ -22,6 +22,8 @@ interface TahunAjaranData {
   semester_ganjil_selesai: string
   semester_genap_mulai:    string
   semester_genap_selesai:  string
+  diarsipkan_pada:         string | null
+  kenaikan_kelas_pada:     string | null
 }
 
 interface StatsData {
@@ -52,7 +54,7 @@ const DEFAULT_TAHUN_AJARAN = (() => {
   return `${base}/${base + 1}`
 })()
 
-const TA_SELECT = 'id, nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai'
+const TA_SELECT = 'id, nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai, diarsipkan_pada, kenaikan_kelas_pada'
 
 const formatTgl = (iso: string) =>
   iso ? new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
@@ -176,7 +178,10 @@ export default function TahunAjaranPage() {
       const [{ data: pData }, { data: ta }, { data: upcoming }] = await Promise.all([
         supabase.from('pengaturan').select('setup_steps').maybeSingle(),
         supabase.from('tahun_ajaran').select(TA_SELECT).eq('is_aktif', true).maybeSingle(),
+        // Mendatang = belum aktif DAN belum diarsipkan. Tanpa filter arsip, tahun ajaran
+        // yang sudah lewat ikut terjaring dan justru diaktifkan ulang.
         supabase.from('tahun_ajaran').select(TA_SELECT).eq('is_aktif', false)
+          .is('diarsipkan_pada', null)
           .order('tanggal_mulai', { ascending: true }).limit(1).maybeSingle(),
       ])
 
@@ -216,7 +221,7 @@ export default function TahunAjaranPage() {
           supabase.from('komponen_tagihan').select('id', { count: 'exact', head: true }),
           supabase.from('kelas').select('id', { count: 'exact', head: true }),
           supabase.from('tahun_ajaran').select(TA_SELECT)
-            .eq('is_aktif', false)
+            .not('diarsipkan_pada', 'is', null)
             .order('tanggal_mulai', { ascending: false })
             .limit(20),
         ])
@@ -227,12 +232,9 @@ export default function TahunAjaranPage() {
           totalKelas:    kelasCount    ?? 0,
         })
 
-        const arsipFiltered = ((arsipRaw ?? []) as TahunAjaranData[]).filter(
-          a => !upcomingTyped || a.id !== upcomingTyped.id
-        )
-
+        // Arsip dan mendatang sudah saling lepas lewat filter diarsipkan_pada di query
         const arsipWithCounts = await Promise.all(
-          arsipFiltered.map(async (arsip) => {
+          ((arsipRaw ?? []) as TahunAjaranData[]).map(async (arsip) => {
             const { count } = await supabase
               .from('siswa')
               .select('id', { count: 'exact', head: true })
@@ -327,8 +329,39 @@ export default function TahunAjaranPage() {
 
   // ── VIEW MODE ─────────────────────────────────────────────────────────────
 
-  if (setupDone && taData) {
-    const handleTambah = () => setShowWarningModal(true)
+  // Setup mode hanya untuk sekolah yang benar-benar belum pernah setup. Begitu langkah
+  // tahun ajaran selesai, pembuatan periode berikutnya selalu lewat form "Tambah Ajaran
+  // Baru" di view mode — termasuk saat tidak ada tahun ajaran aktif sama sekali.
+  if (setupDone) {
+    // Tahun ajaran aktif yang tanggal selesainya sudah lewat (inklusif hari terakhir).
+    // Belum diarsipkan — pengarsipan baru terjadi saat tahun ajaran baru diaktifkan.
+    // Tanpa tahun ajaran aktif, pembuatan yang baru otomatis wajib.
+    const berakhir = !taData || (() => {
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const end   = new Date(taData.tanggal_selesai); end.setHours(0, 0, 0, 0)
+      return end <= today
+    })()
+
+    const bukaFormBaru = () => {
+      const opts = buildOptions(taData?.nama ?? DEFAULT_TAHUN_AJARAN)
+      setNewNamaOpts(opts)
+      setNewNama(opts[0] ?? '')
+      setShowWarningModal(false)
+      setNewFormClosing(false)
+      setShowNewForm(true)
+    }
+
+    // Setelah periode berakhir, kenaikan kelas wajib dijalankan lebih dulu sebelum
+    // tahun ajaran baru boleh dibuat. Syarat `taData` penting: tanpa tahun ajaran aktif
+    // tidak ada periode untuk dinaikkan, dan memblokir di situ membuat buntu.
+    const tungguKenaikanKelas = berakhir && !!taData && !taData.kenaikan_kelas_pada
+
+    // Kalau tahun ajaran sudah berakhir, membuat yang baru justru diwajibkan —
+    // jangan hadang dengan peringatan "belum saatnya".
+    const handleTambah = () => {
+      if (tungguKenaikanKelas) return
+      return berakhir ? bukaFormBaru() : setShowWarningModal(true)
+    }
 
     function calcSemesterNew(tMulai: string, tSelesai: string): SemesterState | null {
       const d1 = new Date(tMulai).getTime()
@@ -468,8 +501,8 @@ export default function TahunAjaranPage() {
       ? Math.ceil((new Date(upcomingData.tanggal_mulai).getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000))
       : 0
 
-    const ganjilProgress = calcSemesterProgress(taData.semester_ganjil_mulai, taData.semester_ganjil_selesai)
-    const genapProgress  = calcSemesterProgress(taData.semester_genap_mulai,  taData.semester_genap_selesai)
+    const ganjilProgress = taData ? calcSemesterProgress(taData.semester_ganjil_mulai, taData.semester_ganjil_selesai) : null
+    const genapProgress  = taData ? calcSemesterProgress(taData.semester_genap_mulai,  taData.semester_genap_selesai)  : null
 
     return (
       <>
@@ -498,11 +531,46 @@ export default function TahunAjaranPage() {
           </div>
           {!upcomingData && !showNewForm && (
             <button onClick={handleTambah}
-              style={{ ...sBtnPrimary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.875rem', padding: '0.6rem 1.25rem' }}>
+              disabled={tungguKenaikanKelas}
+              title={tungguKenaikanKelas ? 'Jalankan proses kenaikan kelas dulu sebelum membuat tahun ajaran baru' : undefined}
+              style={{
+                ...sBtnPrimary,
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.875rem', padding: '0.6rem 1.25rem',
+                ...(tungguKenaikanKelas && { opacity: 0.45, filter: 'grayscale(1)', cursor: 'not-allowed' }),
+              }}>
               <Plus size={15} /> Tambah Ajaran Baru
             </button>
           )}
         </div>
+
+        {/* ── Banner wajib buat tahun ajaran baru ── */}
+        {berakhir && !upcomingData && !showNewForm && (
+          <div style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1.5rem' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <AlertTriangle size={20} color="#D97706" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#92400E' }}>
+                {taData
+                  ? `Tahun ajaran ${taData.nama.replace('/', ' / ')} telah berakhir`
+                  : 'Belum ada tahun ajaran aktif'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#B45309', marginTop: 2, lineHeight: 1.5 }}>
+                {!taData
+                  ? 'Tagihan, paket kelas, dan laporan butuh tahun ajaran aktif. Buat tahun ajaran baru untuk melanjutkan.'
+                  : taData.kenaikan_kelas_pada
+                    ? 'Kenaikan kelas sudah dijalankan. Buat tahun ajaran baru untuk memindahkan periode ini ke Riwayat.'
+                    : 'Proses kenaikan kelas dulu, lalu buat tahun ajaran baru. Periode ini pindah ke Riwayat begitu yang baru diaktifkan.'}
+              </div>
+            </div>
+            {taData && !taData.kenaikan_kelas_pada && (
+              <a href="/siswa/naik-kelas"
+                style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', padding: '0.5rem 1rem', textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                Kenaikan Kelas <ChevronRight size={14} />
+              </a>
+            )}
+          </div>
+        )}
 
         {/* ── Inline Form Tambah Tahun Ajaran ── */}
         <div style={{
@@ -649,6 +717,7 @@ export default function TahunAjaranPage() {
         </div>
 
         {/* ── Card Aktif ── */}
+        {taData && ganjilProgress && genapProgress && (
         <div style={{ background: '#fff', borderLeft: '30px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow: '0 0 20px rgba(26, 44, 78, 0.77)', marginBottom: '2rem' }}>
 
           {/* Header card */}
@@ -662,9 +731,15 @@ export default function TahunAjaranPage() {
                   <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.2 }}>
                     {taData.nama.replace('/', ' / ')}
                   </div>
-                  <span style={{ background: '#69C183', border: '2.5px solid #C1E6CC', color: '#ffffff', fontSize: '0.75rem', fontWeight: 700, padding: '1px 14px', borderRadius: 20 }}>
-                    Aktif
-                  </span>
+                  {berakhir ? (
+                    <span style={{ background: '#FEF3C7', border: '2.5px solid #FDE68A', color: '#92400E', fontSize: '0.75rem', fontWeight: 700, padding: '1px 14px', borderRadius: 20 }}>
+                      Telah berakhir
+                    </span>
+                  ) : (
+                    <span style={{ background: '#69C183', border: '2.5px solid #C1E6CC', color: '#ffffff', fontSize: '0.75rem', fontWeight: 700, padding: '1px 14px', borderRadius: 20 }}>
+                      Aktif
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>
                   {formatTgl(taData.tanggal_mulai)} – {formatTgl(taData.tanggal_selesai)}
@@ -672,8 +747,16 @@ export default function TahunAjaranPage() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {/* Periode yang sudah berakhir tidak boleh diubah lagi — tanggalnya
+                  sudah dipakai sebagai dasar tagihan dan proses kenaikan kelas */}
               <button onClick={() => openEditModal('aktif')}
-                style={{ ...sBtnSecondary, display: 'flex', alignItems: 'center', gap: 15, fontSize: '0.9rem', fontWeight: 800, padding: '0.5rem 1rem' }}>
+                disabled={berakhir}
+                title={berakhir ? 'Tahun ajaran sudah berakhir dan tidak bisa diubah lagi' : undefined}
+                style={{
+                  ...sBtnSecondary,
+                  display: 'flex', alignItems: 'center', gap: 15, fontSize: '0.9rem', fontWeight: 800, padding: '0.5rem 1rem',
+                  ...(berakhir && { opacity: 0.45, filter: 'grayscale(1)', cursor: 'not-allowed', boxShadow: 'none' }),
+                }}>
                  Edit <Image src="/icons/IconEdit2.png" width={18} height={18} alt="Arrow" />
               </button>
             </div>
@@ -729,6 +812,7 @@ export default function TahunAjaranPage() {
           </div>
 
         </div>
+        )}
 
         {/* ── Card Upcoming ── */}
         {upcomingData && (
@@ -955,7 +1039,7 @@ export default function TahunAjaranPage() {
         )}
 
         {/* ── Modal Peringatan ── */}
-        {showWarningModal && (
+        {showWarningModal && taData && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}
             onClick={e => { if (e.target === e.currentTarget) setShowWarningModal(false) }}>
             <div style={{ background: '#fff', borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
@@ -981,14 +1065,7 @@ export default function TahunAjaranPage() {
                   style={{ ...sBtnSecondary, flex: 1, textAlign: 'center' }}>
                   Batal
                 </button>
-                <button onClick={() => {
-                    const opts = buildOptions(taData.nama)
-                    setNewNamaOpts(opts)
-                    setNewNama(opts[0] ?? '')
-                    setShowWarningModal(false)
-                    setNewFormClosing(false)
-                    setShowNewForm(true)
-                  }}
+                <button onClick={bukaFormBaru}
                   style={{ ...sBtnPrimary, flex: 1, textAlign: 'center' }}>
                   Buat Tetap
                 </button>

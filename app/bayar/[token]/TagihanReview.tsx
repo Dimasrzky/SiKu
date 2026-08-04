@@ -1,9 +1,12 @@
 'use client'
 
-import { Receipt, Scissors, Award } from 'lucide-react'
-import type { BeasiswaBadge, TagihanItem } from './page'
+import { Receipt, Scissors, Award, AlertTriangle } from 'lucide-react'
+import type { BeasiswaBadge, TagihanItem, TunggakanItem } from './page'
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+
+const BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 
 const getInitials = (nama: string): string => {
   const parts = nama.trim().split(' ').filter(Boolean)
@@ -16,12 +19,15 @@ interface Props {
   nis:           string
   kelasNama:     string
   items:         TagihanItem[]
+  tunggakan:     TunggakanItem[]
   totalNominal:  number
   badges:        BeasiswaBadge[]
   onLanjut:      () => void
 }
 
-export default function TagihanReview({ namaSiswa, nis, kelasNama, items, totalNominal, badges, onLanjut }: Props) {
+export default function TagihanReview({ namaSiswa, nis, kelasNama, items, tunggakan, totalNominal, badges, onLanjut }: Props) {
+  const totalTunggakan = tunggakan.reduce((s, t) => s + t.nominal, 0)
+
   return (
     <div>
       <div style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 10px #21396B', marginBottom: '1.8rem' }}>
@@ -90,6 +96,43 @@ export default function TagihanReview({ namaSiswa, nis, kelasNama, items, totalN
           {items.length > 3 && (
             <div style={{ textAlign: 'center', fontSize: 'clamp(0.64rem, 2vw, 0.72rem)', color: '#1A2C4E', margin: '2rem 2rem' }}>
               ∨ Scroll untuk lihat komponen lain
+            </div>
+          )}
+
+          {/* Tunggakan periode sebelumnya — ikut ditagihkan, jadi ditempatkan
+              sebelum total supaya urutan bacanya masuk akal */}
+          {tunggakan.length > 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <AlertTriangle size={14} color="#D97706" />
+                <span style={{ fontWeight: 700, fontSize: 'clamp(0.78rem, 2.8vw, 0.9rem)', color: '#92400E', letterSpacing: 0.5 }}>
+                  Tunggakan bulan sebelumnya
+                </span>
+              </div>
+              <div style={{ maxHeight: 150, overflowY: 'auto', border: '2px solid #FDE68A', background: '#FFFBEB', borderRadius: 8, padding: '0.5rem 1rem' }}>
+                {tunggakan.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 'clamp(0.75rem, 2.6vw, 0.85rem)', color: '#374151', padding: '0.5rem 0', borderBottom: i < tunggakan.length - 1 ? '1px dashed #FEF3C7' : 'none' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.warna, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.nama_komponen}</span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 'clamp(0.62rem, 2.2vw, 0.7rem)', color: '#92400E', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {BULAN_NAMES[t.bulan]} {t.tahun}
+                      </span>
+                      <span style={{ fontWeight: 700, color: '#92400E', whiteSpace: 'nowrap' }}>{formatRp(t.nominal)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem' }}>
+                <span style={{ fontSize: 'clamp(0.72rem, 2.5vw, 0.82rem)', color: '#92400E', fontWeight: 700 }}>Total tunggakan</span>
+                <span style={{ fontSize: 'clamp(0.85rem, 3vw, 1rem)', color: '#92400E', fontWeight: 800 }}>{formatRp(totalTunggakan)}</span>
+              </div>
+              <div style={{ fontSize: 'clamp(0.62rem, 2.2vw, 0.72rem)', color: '#94A3B8', lineHeight: 1.5, marginTop: '0.4rem' }}>
+                Sudah termasuk dalam total di bawah dan akan dilunasi bersama tagihan bulan ini.
+              </div>
+              <div style={{ height: 1.5, background: '#C1C6CF', margin: '0.9rem 0 1rem' }} />
             </div>
           )}
 

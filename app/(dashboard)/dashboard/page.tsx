@@ -11,6 +11,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
+import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif } from '@/lib/statusTagihan'
+import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
@@ -74,6 +76,7 @@ interface TagihanRaw {
   siswa: {
     id: string; nama: string; nis: string | null
     no_wa: string | null; nama_wali: string | null
+    status: string | null
     kelas: { id: string; nama: string; warna: string; jenjang: string } | null
   } | null
 }
@@ -104,7 +107,12 @@ interface Insight {
   actionHref?:  string
 }
 
+// Dua tahap berurutan setelah tahun ajaran berakhir: proses kenaikan kelas dulu,
+// lalu pembuatan tahun ajaran baru.
+type NaikKelasTahap = 'naik_kelas' | 'tahun_ajaran'
+
 interface NaikKelasAlertData {
+  tahap:           NaikKelasTahap
   tahunAjaranNama: string
   tanggalSelesai:  string
   totalSiswaAktif: number
@@ -135,6 +143,7 @@ interface DashData {
   totalSiswaRef:     number
   lunasRef:          number
   siswaTunggakanLama: number
+  siswaPeriodeAktif: number
   isLewatTempo:      boolean
   terkumpulIni:      number
   terkumpulLalu:     number
@@ -249,11 +258,12 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     { data: paketRaw },
     { data: taData },
     { data: verifikasiRaw },
+    { data: pembayaranRaw },
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
       .from('tagihan')
-      .select('id, status, total_nominal, bulan, tahun, siswa_id, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, warna, jenjang))')
+      .select('id, status, total_nominal, bulan, tahun, siswa_id, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas:kelas_id(id, nama, warna, jenjang))')
       .eq('sekolah_id', sid)
       .limit(2000),
     supabase
@@ -265,8 +275,11 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .from('paket')
       .select('paket_kelas(kelas_id), paket_komponen(nominal, komponen:komponen_id(nama, kelas_warna))')
       .eq('sekolah_id', sid),
-    supabase.from('tahun_ajaran').select('nama').eq('is_aktif', true).maybeSingle(),
+    supabase.from('tahun_ajaran').select(`nama, ${TA_PERIODE_SELECT}`).eq('is_aktif', true).maybeSingle(),
     supabase.from('verifikasi_pembayaran').select('tagihan_id').eq('sekolah_id', sid).eq('status', 'menunggu').limit(2000),
+    // Cicilan yang sudah masuk harus dikurangkan dari tunggakan — tanpa ini tagihan
+    // yang sudah dibayar sebagian tetap terhitung penuh dan angkanya menggelembung
+    supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).limit(5000),
   ])
 
   const allTagihan = (tagihanRaw ?? []) as TagihanRaw[]
@@ -296,15 +309,51 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const terkumpulLalu   = tagihanLalu.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
   const belumBayarLalu  = tagihanLalu.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0)
 
-  // ── Tunggakan (bulan-bulan sebelumnya yang belum lunas) ────────────────────
-  const tunggakanRows = allTagihan.filter(t => {
-    const isPast = t.tahun < tahunIni || (t.tahun === tahunIni && t.bulan < bulanIni)
-    return isPast && t.status !== 'lunas'
-  })
-  const totalTunggakan    = tunggakanRows.reduce((s, t) => s + t.total_nominal, 0)
-  const tunggakanSiswaIds = new Set(tunggakanRows.map(t => t.siswa_id))
+  // ── Tunggakan (tagihan yang jatuh temponya sudah lewat dan belum lunas) ────
+  // Batas jatuh tempo dan sisa-setelah-dibayar mengikuti halaman laporan &
+  // tagihan aktif supaya ketiganya menampilkan angka yang sama.
+  const dibayarPerTagihan = new Map<string, number>()
+  for (const p of ((pembayaranRaw ?? []) as { tagihan_id: string; jumlah: number }[])) {
+    dibayarPerTagihan.set(p.tagihan_id, (dibayarPerTagihan.get(p.tagihan_id) ?? 0) + p.jumlah)
+  }
+
+  // "Total Tunggakan Aktif" dibatasi ke tahun ajaran yang sedang berjalan — tagihan
+  // periode lama yang sudah diarsipkan tidak ikut menggelembungkan angkanya.
+  // Rentangnya dibaca dari tanggal tahun ajaran, bukan kolom tagihan.tahun_ajaran,
+  // karena baris lama terlanjur kosong di kolom itu.
+  const taPeriode = taData as (PeriodeTahunAjaran & { nama: string }) | null
+  const dalamPeriodeAktif = (bulan: number, tahun: number): boolean => {
+    if (!taPeriode) return true
+    const mulai   = new Date(taPeriode.tanggal_mulai)
+    const selesai = new Date(taPeriode.tanggal_selesai)
+    const idx     = periodeIndex(bulan, tahun)
+    return idx >= periodeIndex(mulai.getMonth() + 1, mulai.getFullYear())
+        && idx <= periodeIndex(selesai.getMonth() + 1, selesai.getFullYear())
+  }
+
+  // Menunggak ditentukan statusEfektif — sama persis dengan badge di tagihan aktif
+  // dan donut di laporan. Cicilan sengaja tidak ikut: pembayarannya sedang berjalan
+  // dan di kedua halaman itu pun berstatus Cicilan, bukan Menunggak.
+  const tunggakanRows = allTagihan
+    .filter(t => dalamPeriodeAktif(t.bulan, t.tahun))
+    .filter(t => statusEfektif(
+      t.status,
+      lewatJatuhTempo(t.bulan, t.tahun, now),
+      t.siswa?.status === 'alumni',
+    ) === 'menunggak')
+    .map(t => ({ ...t, sisa: t.total_nominal - (dibayarPerTagihan.get(t.id) ?? 0) }))
+    .filter(t => t.sisa > 0)
+
+  const totalTunggakan     = tunggakanRows.reduce((s, t) => s + t.sisa, 0)
+  const tunggakanSiswaIds  = new Set(tunggakanRows.map(t => t.siswa_id))
   const siswaTunggakanLama = tunggakanSiswaIds.size
-  const isLewatTempo = now.getTime() > new Date(tahunIni, bulanIni, 0).getTime()
+  const isLewatTempo       = lewatJatuhTempo(bulanIni, tahunIni, now)
+
+  // Penyebut badge di kartu yang sama: seluruh siswa yang punya tagihan di tahun
+  // ajaran aktif — termasuk alumni, karena mereka juga terhitung pada pembilangnya.
+  const siswaPeriodeAktif = new Set(
+    allTagihan.filter(t => dalamPeriodeAktif(t.bulan, t.tahun)).map(t => t.siswa_id),
+  ).size
 
   // ── Beasiswa ───────────────────────────────────────────────────────────────
   const activeBsSiswa    = bsProgs.flatMap(bs =>
@@ -394,8 +443,8 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   if (siswaTunggakanLama > 0) insights.push({
     id: 'tunggakan-lama', level: 'merah',
     judul: 'Tunggakan kritis',
-    desc: `${tunggakanRows.length} tagihan bulan-bulan sebelumnya belum lunas.`,
-    sub: `${siswaTunggakanLama} siswa memiliki tunggakan lebih dari 1 bulan.`,
+    desc: `${tunggakanRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
+    sub: `${siswaTunggakanLama} siswa berstatus menunggak.`,
     actionLabel: 'Kirim Pengingat',
   })
 
@@ -481,6 +530,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     totalSiswaRef,
     lunasRef,
     siswaTunggakanLama,
+    siswaPeriodeAktif,
     isLewatTempo,
     terkumpulIni,
     terkumpulLalu,
@@ -567,12 +617,14 @@ function InsightCard({ insight }: { insight: Insight }) {
 
 // ── Status Badge Siswa ────────────────────────────────────────────────────────
 
+// Empat status inti mengikuti palet bersama di lib/statusTagihan agar seragam dengan
+// halaman tagihan aktif dan laporan. Dua status sisanya khusus dashboard.
 const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
-  lunas:               { bg: '#DCFCE7', color: '#16A34A', label: 'Lunas' },
-  cicilan:             { bg: '#FEF3C7', color: '#D97706', label: 'Cicilan' },
-  belum_bayar:         { bg: '#d6ae2b', color: '#ffffff', label: 'Belum Bayar' },
-  tunggakan:           { bg: '#FECACA', color: '#991B1B', label: 'Tunggakan' },
-  menunggu_verifikasi: { bg: '#FEF3C7', color: '#D97706', label: 'Menunggu Verifikasi' },
+  lunas:               { ...STATUS_TAGIHAN.lunas },
+  cicilan:             { ...STATUS_TAGIHAN.cicilan },
+  belum_bayar:         { ...STATUS_TAGIHAN.belum_bayar },
+  tunggakan:           { ...STATUS_TAGIHAN.menunggak, label: 'Tunggakan' },
+  menunggu_verifikasi: { bg: '#EDE9FE', color: '#6D28D9', label: 'Menunggu Verifikasi' },
 }
 
 function StatusBadgeSiswa({ status }: { status: string }) {
@@ -728,6 +780,27 @@ function SetupBerhasilPopup({ onClose }: { onClose: () => void }) {
 function getAuthRaw()       { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
 
+// ── Animasi masuk popup alert naik kelas ──────────────────────────────────────
+
+const ALERT_CSS = `
+@keyframes nk-backdrop { from { opacity:0 } to { opacity:1 } }
+@keyframes nk-card {
+  from { opacity:0; transform:scale(0.9) translateY(20px) }
+  to   { opacity:1; transform:scale(1)   translateY(0)    }
+}
+@keyframes nk-icon {
+  0%   { opacity:0; transform:scale(0.5) }
+  70%  { opacity:1; transform:scale(1.08) }
+  100% { opacity:1; transform:scale(1)   }
+}
+.nk-backdrop { animation: nk-backdrop 0.22s ease }
+.nk-card     { animation: nk-card 0.34s cubic-bezier(0.34,1.56,0.64,1) }
+.nk-icon     { animation: nk-icon 0.4s cubic-bezier(0.34,1.56,0.64,1) 0.1s backwards }
+@media (prefers-reduced-motion: reduce) {
+  .nk-backdrop, .nk-card, .nk-icon { animation: none }
+}
+`
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -816,20 +889,29 @@ export default function DashboardPage() {
       totalRef.current = total
       setHasSiswa(total > 0)
 
-      // Cek apakah tahun ajaran sudah berakhir → tampilkan popup naik kelas
+      // Cek apakah tahun ajaran sudah berakhir → tampilkan popup sesuai tahapnya
       try {
-        const dismissed = sessionStorage.getItem('siku_naik_kelas_dismissed') === '1'
-        if (!dismissed) {
-          const { data: taRow } = await supabase
-            .from('tahun_ajaran')
-            .select('nama, tanggal_selesai')
-            .eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle()
+        const { data: taRow } = await supabase
+          .from('tahun_ajaran')
+          .select('nama, tanggal_selesai, kenaikan_kelas_pada')
+          .eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle()
 
-          if (taRow) {
-            const selesai = new Date(taRow.tanggal_selesai)
-            const today   = new Date(); today.setHours(0,0,0,0); selesai.setHours(0,0,0,0)
+        if (taRow) {
+          const selesai = new Date(taRow.tanggal_selesai)
+          const today   = new Date(); today.setHours(0,0,0,0); selesai.setHours(0,0,0,0)
 
-            if (selesai < today) {
+          // Inklusif: hari tanggal_selesai itu sendiri sudah dihitung selesai
+          if (selesai <= today) {
+            const tahap: NaikKelasTahap = taRow.kenaikan_kelas_pada ? 'tahun_ajaran' : 'naik_kelas'
+            const dismissed = sessionStorage.getItem(`siku_alert_dismissed_${tahap}`) === '1'
+            const base = {
+              tahap,
+              tahunAjaranNama: taRow.nama as string,
+              tanggalSelesai:  taRow.tanggal_selesai as string,
+              totalSiswaAktif: total,
+            }
+
+            if (!dismissed && tahap === 'naik_kelas') {
               const { data: pengRow } = await supabase
                 .from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle()
               const jenjangLevels = JENJANG_MAP[(pengRow as {jenjang_sekolah?:string}|null)?.jenjang_sekolah ?? 'SMP/MTs'] ?? JENJANG_MAP['SMP/MTs']
@@ -853,7 +935,10 @@ export default function DashboardPage() {
                   .map(t => t.siswa_id)
               ).size
 
-              setNaikKelasAlert({ tahunAjaranNama: taRow.nama as string, tanggalSelesai: taRow.tanggal_selesai as string, totalSiswaAktif: total, akanAlumni, maxJenjangLabel: maxLevel, menunggak })
+              setNaikKelasAlert({ ...base, akanAlumni, maxJenjangLabel: maxLevel, menunggak })
+              setShowNaikKelasAlert(true)
+            } else if (!dismissed) {
+              setNaikKelasAlert({ ...base, akanAlumni: 0, maxJenjangLabel: '', menunggak: 0 })
               setShowNaikKelasAlert(true)
             }
           }
@@ -866,7 +951,8 @@ export default function DashboardPage() {
           .catch(() => setData({
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
-            lunasRef: 0, siswaTunggakanLama: 0, isLewatTempo: false, terkumpulIni: 0,
+            lunasRef: 0, siswaTunggakanLama: 0, siswaPeriodeAktif: 0,
+            isLewatTempo: false, terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
             belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
             totalBeasiswaNom: 0, penerimaBeasiswa: 0,
@@ -909,8 +995,12 @@ export default function DashboardPage() {
   const dateStr  = `${dd} ${mName} ${yyyy}`
 
   const d              = data
-  const pctLunas       = d && d.totalSiswaRef > 0 ? Math.round((d.lunasRef / d.totalSiswaRef) * 100) : 0
-  const pctBelumLunas  = d && d.totalSiswaRef > 0 ? 100 - pctLunas : 0
+  // Badge di kartu tunggakan: proporsi siswa berstatus menunggak terhadap seluruh
+  // siswa bertagihan di tahun ajaran aktif — pembilangnya angka yang sama dengan
+  // "N Siswa menunggak" di kartu itu, jadi keduanya tidak mungkin berbeda
+  const pctMenunggak = d && d.siswaPeriodeAktif > 0
+    ? Math.round((d.siswaTunggakanLama / d.siswaPeriodeAktif) * 100)
+    : 0
   const pctTarget      = d && d.targetIni > 0      ? Math.round((d.terkumpulIni / d.targetIni) * 100) : 0
 
   const diffTerkumpul  = d ? d.terkumpulIni - d.terkumpulLalu : 0
@@ -976,12 +1066,14 @@ export default function DashboardPage() {
 
     {/* ── Popup Alert Naik Kelas ─────────────────────────────────────────────── */}
     {showNaikKelasAlert && naikKelasAlert && (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-        <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', padding: '2rem 2rem 1.5rem' }}>
+      <>
+      <style>{ALERT_CSS}</style>
+      <div className="nk-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+        <div className="nk-card" style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', padding: '2rem 2rem 1.5rem' }}>
 
           {/* Icon + judul */}
           <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, marginBottom: '1rem' }}>
+            <div className="nk-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, marginBottom: '1rem' }}>
               <svg viewBox="0 0 64 64" width="72" height="72" fill="none">
                 <path d="M32 4L58 54H6L32 4Z" fill="#FEE2E2" stroke="#EF4444" strokeWidth="3" strokeLinejoin="round"/>
                 <path d="M32 24V38" stroke="#EF4444" strokeWidth="3.5" strokeLinecap="round"/>
@@ -989,18 +1081,28 @@ export default function DashboardPage() {
               </svg>
             </div>
             <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#0F172A', marginBottom: '0.5rem' }}>
-              Tahun ajaran telah berakhir
+              {naikKelasAlert.tahap === 'naik_kelas' ? 'Tahun ajaran telah selesai' : 'Belum ada tahun ajaran baru'}
             </div>
             <div style={{ fontSize: '0.875rem', color: '#64748B', lineHeight: 1.65 }}>
-              Tahun ajaran <strong style={{ color: '#0F172A' }}>{naikKelasAlert.tahunAjaranNama}</strong> resmi berakhir pada{' '}
-              <strong style={{ color: '#0F172A' }}>{fmtTgl(naikKelasAlert.tanggalSelesai)}</strong>.<br />
-              Saatnya memproses kenaikan kelas untuk seluruh siswa
+              {naikKelasAlert.tahap === 'naik_kelas' ? (
+                <>
+                  Tahun ajaran <strong style={{ color: '#0F172A' }}>{naikKelasAlert.tahunAjaranNama}</strong> resmi berakhir pada{' '}
+                  <strong style={{ color: '#0F172A' }}>{fmtTgl(naikKelasAlert.tanggalSelesai)}</strong>.<br />
+                  Saatnya memproses kenaikan kelas untuk seluruh siswa
+                </>
+              ) : (
+                <>
+                  Kenaikan kelas untuk tahun ajaran <strong style={{ color: '#0F172A' }}>{naikKelasAlert.tahunAjaranNama}</strong> sudah dijalankan.<br />
+                  Buat tahun ajaran baru agar periode ini pindah ke Riwayat
+                </>
+              )}
             </div>
           </div>
 
           <div style={{ height: 1, background: '#F1F5F9', marginBottom: '1.25rem' }} />
 
-          {/* Stats card */}
+          {/* Stats card — hanya relevan pada tahap kenaikan kelas */}
+          {naikKelasAlert.tahap === 'naik_kelas' && (
           <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', marginBottom: '0.875rem' }}>
             {[
               { label: 'Total siswa aktif',  value: `${naikKelasAlert.totalSiswaAktif} siswa`,                              icon: <Users size={16} color="#64748B" /> },
@@ -1019,32 +1121,38 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+          )}
 
           {/* Info note */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', marginBottom: '1.5rem' }}>
             <span style={{ fontSize: '0.72rem', color: '#94A3B8', lineHeight: 1.5 }}>
-              ⓘ Pengingat ini akan muncul kembali saat kamu login berikutnya sampai proses kenaikan kelas selesai dijalankan
+              ⓘ Pengingat ini akan muncul kembali saat kamu login berikutnya sampai{' '}
+              {naikKelasAlert.tahap === 'naik_kelas'
+                ? 'proses kenaikan kelas selesai dijalankan'
+                : 'tahun ajaran baru dibuat dan diaktifkan'}
             </span>
           </div>
 
           {/* Buttons */}
           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
             <button
-              onClick={() => { sessionStorage.setItem('siku_naik_kelas_dismissed', '1'); setShowNaikKelasAlert(false) }}
+              onClick={() => { sessionStorage.setItem(`siku_alert_dismissed_${naikKelasAlert.tahap}`, '1'); setShowNaikKelasAlert(false) }}
               style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', color: '#475569', fontFamily: 'inherit' }}
             >
               Tutup
             </button>
             <Link
-              href="/siswa/naik-kelas"
+              href={naikKelasAlert.tahap === 'naik_kelas' ? '/siswa/naik-kelas' : '/tagihan/tahun-ajaran'}
               onClick={() => setShowNaikKelasAlert(false)}
               style={{ padding: '0.65rem 1.5rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}
             >
-              <ChevronRight size={15} /> Mulai Proses Kenaikan Kelas
+              <ChevronRight size={15} />
+              {naikKelasAlert.tahap === 'naik_kelas' ? 'Mulai Proses Kenaikan Kelas' : 'Buat Tahun Ajaran Baru'}
             </Link>
           </div>
         </div>
       </div>
+      </>
     )}
 
     <div className="dashboard-content">
@@ -1149,7 +1257,7 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap', position: 'relative', top: 8 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Users size={16} />
-                {sk(`${d?.siswaBelumBayar ?? 0} Siswa belum bayar`)}
+                {sk(`${d?.siswaTunggakanLama ?? 0} Siswa menunggak`)}
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Clock size={16} />
@@ -1187,11 +1295,11 @@ export default function DashboardPage() {
               <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
             <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
-              {sk(`${pctBelumLunas}%`)}
+              {sk(`${pctMenunggak}%`)}
             </div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa belum lunas</div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.2rem' }}>
-              {sk(`${d?.siswaBelumBayar ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
+              {sk(`${d?.siswaTunggakanLama ?? 0} dari ${d?.siswaPeriodeAktif ?? 0} siswa`)}
             </div>
           </div>
         </div>
@@ -1207,9 +1315,9 @@ export default function DashboardPage() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#fff', fontSize: '1rem', fontWeight: 600 }}>
             <AlertTriangle size={16} />
-            {d?.siswaTunggakanLama ? `${d.siswaTunggakanLama} Siswa memiliki tunggakan lebih dari 1 bulan` : 'Periksa status tunggakan siswa'}
+            {d?.siswaTunggakanLama ? `${d.siswaTunggakanLama} Siswa berstatus menunggak` : 'Periksa status tunggakan siswa'}
           </div>
-          <Link href="/tagihan/aktif" style={{
+          <Link href="/tagihan/aktif?status=menunggak" style={{
             color: '#fff', fontSize: '1rem', fontWeight: 700,
             textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4,
             opacity: 0.9, whiteSpace: 'nowrap',
