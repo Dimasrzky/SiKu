@@ -19,7 +19,7 @@ export const JENIS_WARNA: Record<string, string> = {
 /** Urutan periode untuk membandingkan bulan/tahun tagihan. */
 export const periodeIndex = (bulan: number, tahun: number): number => tahun * 12 + bulan
 
-const periodeDariISO = (iso: string): number => {
+export const periodeDariISO = (iso: string): number => {
   const d = new Date(iso)
   return periodeIndex(d.getMonth() + 1, d.getFullYear())
 }

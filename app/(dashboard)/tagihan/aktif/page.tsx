@@ -49,7 +49,7 @@ interface SiswaTagihanRow {
   /** Siswa sudah lulus — kelas_id-nya null, kelas terakhir diambil dari snapshot teks */
   is_alumni:     boolean
   total_nominal: number
-  /** Komponen non-bulanan belum lunas dari periode sebelumnya — hanya untuk kolom total tabel */
+  /** Komponen belum lunas dari periode sebelumnya — hanya untuk kolom total tabel */
   tunggakan:     number
   status:        'belum_bayar' | 'lunas' | 'cicilan'
   no_wa:         string
@@ -266,7 +266,13 @@ async function runGenerate(
   const tagItems = itemsByTempId
     .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal }))
     .filter(i => i.tagihan_id)
-  if (tagItems.length > 0) await supabase.from('tagihan_item').insert(tagItems)
+  if (tagItems.length > 0) {
+    const { error: e4 } = await supabase.from('tagihan_item').insert(tagItems)
+    // Tagihan tanpa rincian dibaca nol oleh seluruh hilir (total tabel, modal
+    // detail, halaman bayar, laporan). Lebih baik kegagalannya terlihat
+    // daripada diam-diam menerbitkan tagihan Rp 0.
+    if (e4) return { success: false, error: 'Tagihan tersimpan, tetapi rincian komponennya gagal dibuat.' }
+  }
 
   return { success: true }
 }
@@ -344,12 +350,17 @@ function TagihanAktifContent() {
   const [detailPaketNama,  setDetailPaketNama]  = useState('')
   const [detailLoading,    setDetailLoading]    = useState(false)
 
+  // Pemulihan rincian hanya boleh dicoba sekali per kunjungan — realtime sync
+  // memanggil loadTagihan berulang kali dan tanpa pagar ini repair akan
+  // dipicu terus-menerus
+  const perbaikanRincianRef = useRef(false)
+
   // ── loadTagihan ─────────────────────────────────────────────────────────────
 
   // Total tagihan yang sudah terbit dihitung dari snapshot tagihan_item, bukan
   // diturunkan ulang dari paket. Paket yang diedit belakangan tidak boleh mengubah
   // nominal tagihan yang kuitansinya sudah dipegang orang tua.
-  const loadTagihan = useCallback(async (sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> => {
+  const loadTagihan = useCallback(async function load(sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> {
     const [{ data: tagihanData }, { data: riwayatRows }, { data: taPeriode }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('tagihan')
@@ -368,10 +379,12 @@ function TagihanAktifContent() {
         .limit(5000),
       supabase
         .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
-      // Tunggakan periode sebelumnya per siswa, untuk kolom total di tabel
+      // Tunggakan periode sebelumnya per siswa, untuk kolom total di tabel.
+      // status = belum_bayar: tagihan yang sudah dicicil sebagian tidak terhitung
+      // di sini — sisanya terlacak lewat halaman Laporan Tunggakan.
       supabase
         .from('tagihan')
-        .select('siswa_id, bulan, tahun, tagihan_item(nominal, komponen:komponen_id(jenis))')
+        .select('siswa_id, bulan, tahun, tagihan_item(nominal)')
         .eq('sekolah_id', sid)
         .eq('status', 'belum_bayar')
         .limit(2000),
@@ -382,24 +395,40 @@ function TagihanAktifContent() {
     )
     const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
 
-    // siswa_id → nominal tunggakan non-bulanan dari periode sebelum bulan ini.
+    // siswa_id → nominal tunggakan dari periode sebelum bulan ini.
     // Definisinya sengaja sama persis dengan blok tunggakan di modal detail agar
     // angka di tabel dan di modal tidak berselisih.
+    //
+    // Semua jenis komponen ikut dihitung, termasuk rutin bulanan. Sebelumnya SPP
+    // yang menunggak disaring keluar, dan karena halaman ini terkunci ke bulan
+    // berjalan, tunggakan SPP jadi tidak terlihat di mana pun selain Laporan.
     type TunggakanRaw = {
       siswa_id: string; bulan: number; tahun: number
-      tagihan_item: { nominal: number; komponen: { jenis: string } | null }[]
+      tagihan_item: { nominal: number }[]
     }
     const periodeIni = periodeIndex(bulan, tahun)
     const tunggakanPerSiswa = new Map<string, number>()
     for (const t of ((tunggakanData ?? []) as unknown as TunggakanRaw[])) {
       if (periodeIndex(t.bulan, t.tahun) >= periodeIni) continue
-      const nom = (t.tagihan_item ?? [])
-        .filter(i => i.komponen?.jenis && i.komponen.jenis !== 'rutin_bulanan')
-        .reduce((s, i) => s + i.nominal, 0)
+      const nom = (t.tagihan_item ?? []).reduce((s, i) => s + i.nominal, 0)
       if (nom > 0) tunggakanPerSiswa.set(t.siswa_id, (tunggakanPerSiswa.get(t.siswa_id) ?? 0) + nom)
     }
 
     const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
+
+    // Tagihan tanpa rincian sama sekali tidak bisa ditambal dari sini — insert
+    // tagihan_item untuk baris milik siswa lain tertahan RLS. Serahkan ke
+    // /api/recalculate-tagihan yang memakai service role, lalu muat ulang.
+    if (!perbaikanRincianRef.current && rows.some(r => (r.tagihan_item ?? []).length === 0)) {
+      perbaikanRincianRef.current = true
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/recalculate-tagihan', {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+      }).catch(() => null)
+      if (res?.ok) return load(sid, bulan, tahun)
+    }
+
     const siswaIds = rows.map(r => r.siswa?.id).filter(Boolean) as string[]
     const today    = new Date().toISOString().split('T')[0]
 
@@ -461,7 +490,15 @@ function TagihanAktifContent() {
           deduction += bs.jenis_potongan === 'persen' ? Math.round(kNom * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0)
         }
       }
-      siswaCorrectTotal.set(siswaId, Math.max(0, paketBase + individuTotal - deduction))
+      const correct = Math.max(0, paketBase + individuTotal - deduction)
+
+      // Snapshot kosong bukan bukti tagihannya memang nol — bisa jadi rinciannya
+      // yang belum sempat dibuat. Baris seperti ini dipulihkan oleh backfill di
+      // /api/recalculate-tagihan, bukan dinolkan di sini: sekali total_nominal
+      // ditimpa nol, angka aslinya tidak bisa diturunkan ulang dari mana pun.
+      if (snapshot.length === 0 && correct === 0 && r.total_nominal > 0) continue
+
+      siswaCorrectTotal.set(siswaId, correct)
     }
 
     // Number.isFinite menyaring NaN: satu nominal yang hilang cukup untuk membuat
@@ -816,7 +853,8 @@ function TagihanAktifContent() {
       ...extraItems,
     ])
 
-    // Komponen non-bulanan dari tagihan periode sebelumnya yang masih belum lunas.
+    // Komponen dari tagihan periode sebelumnya yang masih belum lunas — semua jenis,
+    // sama dengan perhitungan kolom total di tabel.
     // Hanya ditampilkan sebagai informasi — tidak ikut dijumlahkan ke total bulan ini.
     type TunggakanRaw = { bulan: number; tahun: number; tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string } | null }[] }
     const periodeIni = periodeIndex(bulanIni, tahunIni)
@@ -824,8 +862,9 @@ function TagihanAktifContent() {
       ((tunggakanData ?? []) as unknown as TunggakanRaw[])
         .filter(tg => periodeIndex(tg.bulan, tg.tahun) < periodeIni)
         .flatMap(tg => (tg.tagihan_item ?? [])
-          .filter(i => i.komponen?.jenis && i.komponen.jenis !== 'rutin_bulanan')
-          .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen!.jenis, bulan: tg.bulan, tahun: tg.tahun })))
+          // jenis boleh kosong: komponen yang sudah dihapus menyisakan snapshot
+          // nama dan nominalnya di tagihan_item, dan itu tetap uang yang terutang
+          .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '', bulan: tg.bulan, tahun: tg.tahun })))
         .sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
     )
 
@@ -1488,7 +1527,7 @@ function TagihanAktifContent() {
               <span style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1A2C4E' }}>{formatRp(detailSiswa.total_nominal)}</span>
             </div>
 
-            {/* Tunggakan komponen non-bulanan dari periode sebelumnya (informasi, tidak masuk total di atas) */}
+            {/* Tunggakan komponen dari periode sebelumnya (informasi, tidak masuk total di atas) */}
             {!detailLoading && detailTunggakan.length > 0 && (() => {
               const totalTunggakan = detailTunggakan.reduce((s, k) => s + k.nominal, 0)
               return (

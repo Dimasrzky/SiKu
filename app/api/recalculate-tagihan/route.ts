@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
-  komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran,
+  komponenDitagihkan, bangunRiwayatTagih, periodeIndex, periodeDariISO, kunciRiwayat,
+  TA_PERIODE_SELECT, type PeriodeTahunAjaran,
 } from '@/lib/komponenTagihan'
 
 const supabaseAdmin = createClient(
@@ -12,9 +13,12 @@ const supabaseAdmin = createClient(
 type PaketTotalRaw = {
   tahun_ajaran:  string
   paket_kelas:   { kelas_id: string }[]
-  paket_komponen: { komponen_id: string; nominal: number; komponen: { jenis: string } | null }[]
+  paket_komponen: { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }[]
 }
-type KompPaket = { komponen_id: string; nominal: number; jenis: string }
+// `nama` ikut dibawa karena tagihan_item.nama_komponen adalah snapshot teks —
+// komponen yang dihapus belakangan tetap terbaca di kuitansi lama
+type KompPaket = { komponen_id: string; nominal: number; nama: string; jenis: string }
+type TagihanItemInsert = { tagihan_id: string; komponen_id: string; nama_komponen: string; nominal: number }
 type TagihanItemRaw = { komponen_id: string | null; nominal: number }
 type TagihanRaw = {
   id:            string
@@ -54,7 +58,7 @@ async function recalculateAll(sid: string): Promise<number> {
       .limit(5000),
     supabaseAdmin
       .from('paket')
-      .select('tahun_ajaran, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(jenis))')
+      .select('tahun_ajaran, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(nama, jenis))')
       .eq('sekolah_id', sid),
     supabaseAdmin
       .from('tahun_ajaran')
@@ -84,7 +88,8 @@ async function recalculateAll(sid: string): Promise<number> {
   for (const p of ((paketRaw ?? []) as unknown as PaketTotalRaw[])) {
     if (p.tahun_ajaran !== tahunAjaran) continue
     const komps = p.paket_komponen.map(k => ({
-      komponen_id: k.komponen_id, nominal: k.nominal, jenis: k.komponen?.jenis ?? '',
+      komponen_id: k.komponen_id, nominal: k.nominal,
+      nama: k.komponen?.nama ?? '', jenis: k.komponen?.jenis ?? '',
     }))
     for (const pk of p.paket_kelas) kelasKompList.set(pk.kelas_id, komps)
   }
@@ -105,35 +110,107 @@ async function recalculateAll(sid: string): Promise<number> {
         .filter(Boolean) as string[]
     )
 
-    const toInsert = ((siswaAktif ?? []) as { id: string; kelas_id: string }[])
+    const siswaBaru = ((siswaAktif ?? []) as { id: string; kelas_id: string }[])
       .filter(s => !existingSiswaIds.has(s.id) && kelasKompList.has(s.kelas_id))
-      // Tanpa kolom tahun_ajaran: tabel tagihan tidak punya kolom itu, dan
-      // menyertakannya membuat seluruh insert ditolak Postgres.
-      .map(s => ({
-        sekolah_id:    sid,
-        siswa_id:      s.id,
-        bulan,
-        tahun,
-        status:        'belum_bayar',
-        total_nominal: (kelasKompList.get(s.kelas_id) ?? [])
-          .filter(k => komponenDitagihkan(k.jenis, bulan, tahun, ta, s.id, k.komponen_id, riwayat))
-          .reduce((acc, k) => acc + k.nominal, 0),
-      }))
+
+    // Komponen yang benar-benar ditagihkan, dihitung sekali lalu dipakai dua kali:
+    // untuk total_nominal dan untuk snapshot tagihan_item. Menurunkannya dua kali
+    // secara terpisah adalah cara termudah membuat keduanya berselisih.
+    const kompPerSiswa = new Map<string, KompPaket[]>(
+      siswaBaru.map(s => [
+        s.id,
+        (kelasKompList.get(s.kelas_id) ?? [])
+          .filter(k => komponenDitagihkan(k.jenis, bulan, tahun, ta, s.id, k.komponen_id, riwayat)),
+      ])
+    )
+
+    // Tanpa kolom tahun_ajaran: tabel tagihan tidak punya kolom itu, dan
+    // menyertakannya membuat seluruh insert ditolak Postgres.
+    const toInsert = siswaBaru.map(s => ({
+      sekolah_id:    sid,
+      siswa_id:      s.id,
+      bulan,
+      tahun,
+      status:        'belum_bayar',
+      total_nominal: (kompPerSiswa.get(s.id) ?? []).reduce((acc, k) => acc + k.nominal, 0),
+    }))
 
     if (toInsert.length > 0) {
-      const { error } = await supabaseAdmin.from('tagihan').insert(toInsert)
+      // .select() wajib: id baris baru dibutuhkan untuk menautkan tagihan_item.
+      // Tagihan tanpa rincian akan dibaca seluruh hilir sebagai bernilai nol.
+      const { data: inserted, error } = await supabaseAdmin
+        .from('tagihan').insert(toInsert).select('id, siswa_id')
       // 23505 = unique violation, tagihan sudah dibuat proses lain — bukan kegagalan
       if (error && error.code !== '23505') {
         throw new Error(`Gagal membuat tagihan: ${error.message}`)
       }
+
+      const items: TagihanItemInsert[] = ((inserted ?? []) as { id: string; siswa_id: string }[])
+        .flatMap(t => (kompPerSiswa.get(t.siswa_id) ?? []).map(k => ({
+          tagihan_id: t.id, komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal,
+        })))
+      if (items.length > 0) {
+        const { error: itemError } = await supabaseAdmin.from('tagihan_item').insert(items)
+        if (itemError) throw new Error(`Gagal menyimpan rincian tagihan: ${itemError.message}`)
+      }
     }
   }
 
-  if (!tagihanRaw || tagihanRaw.length === 0) return 0
+  const rows = ((tagihanRaw ?? []) as unknown as TagihanRaw[])
+  if (rows.length === 0) return 0
 
-  const rows     = (tagihanRaw as unknown as TagihanRaw[])
+  // ── Backfill snapshot yang hilang ───────────────────────────────────────────
+  // Tagihan yang terbit sebelum route ini ikut menulis tagihan_item sama sekali
+  // tidak punya rincian. Rekalkulasi di bawah membaca snapshot kosong itu sebagai
+  // nol lalu menimpa total_nominal yang sudah benar — kerusakannya permanen
+  // karena runGenerate melewati siswa yang barisnya sudah ada.
+  // kelasKompList hanya memuat paket tahun ajaran aktif. Tagihan dari tahun
+  // ajaran lama karenanya harus dilewati — kelasnya bisa saja cocok, tapi
+  // komponen dan nominal yang ditambalkan akan milik periode yang salah.
+  const taMulai   = ta ? periodeDariISO(ta.tanggal_mulai)   : null
+  const taSelesai = ta ? periodeDariISO(ta.tanggal_selesai) : null
+
+  const perluBackfill = rows
+    .filter(r => (r.tagihan_item ?? []).length === 0)
+    .filter(r => r.siswa?.kelas?.id && kelasKompList.has(r.siswa.kelas.id))
+    .filter(r => {
+      if (taMulai === null || taSelesai === null) return false
+      const periode = periodeIndex(r.bulan, r.tahun)
+      return periode >= taMulai && periode <= taSelesai
+    })
+    // Kronologis: aturan sekali-per-semester dan sekali-per-tahun-ajaran
+    // bergantung pada bulan mana yang lebih dulu menagihkan komponen tsb
+    .sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
+
+  const backfillItems: TagihanItemInsert[] = []
+  for (const r of perluBackfill) {
+    const siswaId = r.siswa?.id ?? ''
+    const komps   = (kelasKompList.get(r.siswa!.kelas!.id) ?? [])
+      .filter(k => komponenDitagihkan(k.jenis, r.bulan, r.tahun, ta, siswaId, k.komponen_id, riwayat))
+    if (komps.length === 0) continue
+
+    for (const k of komps) {
+      backfillItems.push({
+        tagihan_id: r.id, komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal,
+      })
+    }
+    // Snapshot in-memory ikut diisi supaya rekalkulasi total di bawah memakai
+    // hasil backfill, bukan nol — tanpa ini perbaikannya butuh dua kali panggil
+    r.tagihan_item = komps.map(k => ({ komponen_id: k.komponen_id, nominal: k.nominal }))
+    // Riwayat ikut tumbuh supaya komponen sekali-bayar tidak diulang di bulan berikutnya
+    const periode = periodeIndex(r.bulan, r.tahun)
+    for (const k of komps) {
+      const kunci = kunciRiwayat(siswaId, k.komponen_id)
+      riwayat.set(kunci, [...(riwayat.get(kunci) ?? []), periode])
+    }
+  }
+
+  if (backfillItems.length > 0) {
+    const { error } = await supabaseAdmin.from('tagihan_item').insert(backfillItems)
+    if (error) throw new Error(`Gagal memulihkan rincian tagihan: ${error.message}`)
+  }
+
   const siswaIds = [...new Set(rows.map(r => r.siswa?.id).filter(Boolean) as string[])]
-
   if (siswaIds.length === 0) return 0
 
   const today = new Date().toISOString().split('T')[0]
@@ -202,6 +279,13 @@ async function recalculateAll(sid: string): Promise<number> {
     }
 
     const correct = Math.max(0, paketBase + individuTotal - deduction)
+
+    // Snapshot kosong bukan bukti tagihannya memang nol — bisa jadi rinciannya
+    // yang belum ada (paket kelasnya terhapus, atau backfill di atas tidak
+    // menemukan komponen). Menimpa nominal yang sudah terbit dengan nol
+    // menghapus angka yang kuitansinya mungkin sudah dipegang orang tua.
+    if (snapshot.length === 0 && correct === 0 && r.total_nominal > 0) continue
+
     // Number.isFinite menyaring NaN supaya total_nominal tidak terhapus jadi null
     if (Number.isFinite(correct) && correct !== r.total_nominal) {
       toUpdate.push({ id: r.id, total: correct })
