@@ -800,21 +800,24 @@ export default function KelasPage() {
                 const groupSiswa = group.items.reduce((sum, k) => sum + (siswaCounts[k.id] ?? 0), 0)
                 return (
                   <div key={group.jenjang}>
-                    {/* Group header */}
-                    <div style={{ background: '#A3CDFE', width: '94%', borderRadius: 6, marginLeft: 20, padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Image src="/icons/IconLayer.png" width={16} height={16} alt="Edit" />
-                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', position:'relative', right:'38%', }}>Kelas {group.jenjang}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', opacity: 0.75 }}>
-                          {group.items.length} kelas · {groupSiswa} siswa
-                        </span>
-                        <button
-                          onClick={() => openHeaderModal(group.jenjang)}
-                          style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-                          title={`Tambah identitas kelas ${group.jenjang}`}
-                        >
-                          <Plus size={15} strokeWidth={2.5} />
-                        </button>
+                    {/* Group header — sticky, dibatasi div grup ini sendiri sehingga
+                        terdorong keluar saat header jenjang berikutnya mulai membeku */}
+                    <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#fff' }}>
+                      <div style={{ background: '#A3CDFE', width: '94%', borderRadius: 6, marginLeft: 20, padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Image src="/icons/IconLayer.png" width={16} height={16} alt="Edit" />
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', position:'relative', right:'38%', }}>Kelas {group.jenjang}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', opacity: 0.75 }}>
+                            {group.items.length} kelas · {groupSiswa} siswa
+                          </span>
+                          <button
+                            onClick={() => openHeaderModal(group.jenjang)}
+                            style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 7, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                            title={`Tambah identitas kelas ${group.jenjang}`}
+                          >
+                            <Plus size={15} strokeWidth={2.5} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                     {/* Items */}

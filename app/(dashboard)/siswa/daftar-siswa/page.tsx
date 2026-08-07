@@ -22,6 +22,12 @@ const THIS_STEP_INDEX = 4
 
 const TEMPLATE_HEADERS = ['Nama Lengkap', 'NIS', 'Nama Kelas', 'Nama Orang Tua', 'No WhatsApp']
 
+/**
+ * Tinggi baris header tabel (dikunci lewat `height` di <th>) — dipakai sebagai
+ * offset sticky header jenjang supaya membeku tepat di bawahnya.
+ */
+const TABLE_HEAD_H = 44
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface KelasOption {
@@ -883,41 +889,48 @@ export default function DaftarSiswaPage() {
         <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', padding: '0 1.5rem 1.5rem' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
-              <tr style={{ background: '#1A2C4E', color: '#fff', position: 'sticky', top: 0, zIndex: 1 }}>
+              <tr style={{ background: '#1A2C4E', color: '#fff', position: 'sticky', top: 0, zIndex: 3 }}>
                 {['Nama', 'NIS', 'Kelas', 'Orang tua', 'Beasiswa/potongan', 'Aksi'].map(h => (
-                  <th key={h} style={{ padding: '0.75rem 1.25rem', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ height: TABLE_HEAD_H, padding: '0 1.25rem', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap', background: '#1A2C4E' }}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {filteredList.length === 0 ? (
+
+            {filteredList.length === 0 ? (
+              <tbody>
                 <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94A3B8' }}>Tidak ada siswa yang sesuai filter.</td></tr>
-              ) : filterJenjang ? (
-                filteredList.map(s => (
+              </tbody>
+            ) : filterJenjang ? (
+              <tbody>
+                {filteredList.map(s => (
                   <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} onView={setViewSiswa} />
-                ))
-              ) : (
-                uniqueJenjang.flatMap(j => {
-                  const groupItems = filteredList.filter(s => s.kelas?.jenjang === j)
-                  if (groupItems.length === 0) return []
-                  const kelasCount = kelasList.filter(k => k.jenjang === j).length
-                  return [
-                    <tr key={`hdr-${j}`}>
-                      <td colSpan={6} style={{ padding: '0.5rem 0.1rem' }}>
+                ))}
+              </tbody>
+            ) : (
+              /* Satu <tbody> per jenjang — sticky header dibatasi row group-nya sendiri,
+                 jadi header lama terdorong keluar saat jenjang berikutnya masuk. */
+              uniqueJenjang.map(j => {
+                const groupItems = filteredList.filter(s => s.kelas?.jenjang === j)
+                if (groupItems.length === 0) return null
+                const kelasCount = kelasList.filter(k => k.jenjang === j).length
+                return (
+                  <tbody key={`grp-${j}`}>
+                    <tr>
+                      <td colSpan={6} style={{ position: 'sticky', top: TABLE_HEAD_H, zIndex: 2, background: '#fff', padding: '0.5rem 0.1rem' }}>
                         <div style={{ background: '#A3CDFE', borderRadius: 6, padding: '0.45rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                           <Image src="/icons/IconLayer.png" width={16} height={16} alt="" />
                           <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E', flex: 1 }}>Kelas {j}</span>
                           <span style={{ fontSize: '0.8rem', color: '#1A2C4E', opacity: 0.75, fontWeight: 600 }}>{kelasCount} kelas · {groupItems.length} siswa</span>
                         </div>
                       </td>
-                    </tr>,
-                    ...groupItems.map(s => (
+                    </tr>
+                    {groupItems.map(s => (
                       <SiswaTableRow key={s.id} s={s} bsMap={siswaBeasiswaMap} onDelete={setDeleteSiswa} onEdit={openEdit} onView={setViewSiswa} />
-                    ))
-                  ]
-                })
-              )}
-            </tbody>
+                    ))}
+                  </tbody>
+                )
+              })
+            )}
           </table>
         </div>
       </div>
