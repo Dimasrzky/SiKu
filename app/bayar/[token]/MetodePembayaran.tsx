@@ -26,6 +26,7 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
   const [dragOver, setDragOver]       = useState(false)
   const [copied, setCopied]           = useState(false)
+  const [copiedNominal, setCopiedNominal] = useState(false)
   const [error, setError]             = useState('')
   const [loading, setLoading]         = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -63,6 +64,13 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
     navigator.clipboard.writeText(rekening.noRek)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Angka polos tanpa "Rp"/titik ribuan agar bisa langsung ditempel ke kolom nominal m-banking
+  const copyNominal = () => {
+    navigator.clipboard.writeText(String(totalNominal))
+    setCopiedNominal(true)
+    setTimeout(() => setCopiedNominal(false), 2000)
   }
 
   const handleSubmit = async () => {
@@ -154,7 +162,16 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
               )}
             />
             <RekeningRow label="Atas nama" value={rekening?.atasNama ?? '-'} />
-            <RekeningRow label="Nominal transfer" value={formatRp(totalNominal)} bold last />
+            <RekeningRow
+              label="Nominal transfer"
+              value={formatRp(totalNominal)}
+              bold last
+              action={(
+                <button onClick={copyNominal} style={{ padding: '0.1rem 0.65rem', background: copiedNominal ? '#D1FAE5' : '#EFF6FF', color: copiedNominal ? '#065F46' : '#1D4ED8', border: '2px solid #A3CDFE', borderRadius: 7, fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                  {copiedNominal ? 'Disalin' : 'Salin'}
+                </button>
+              )}
+            />
           </div>
 
           {/* Upload bukti transfer */}

@@ -140,6 +140,10 @@ export default function PaketPerKelasPage() {
   const [showKelasKurangPopup,   setShowKelasKurangPopup]   = useState(false)
   const [showAllPaketedPopup,    setShowAllPaketedPopup]    = useState(false)
 
+  // Rekening sekolah — paket tagihan tak ada gunanya tanpa rekening tujuan pembayaran
+  const [hasRekening,          setHasRekening]          = useState(true)
+  const [showRekeningPopup,    setShowRekeningPopup]    = useState(false)
+
   // Bawa paket periode sebelumnya ke tahun ajaran baru
   const [showCarryPopup, setShowCarryPopup] = useState(false)
   const [carryFrom,      setCarryFrom]      = useState('')
@@ -236,14 +240,21 @@ export default function PaketPerKelasPage() {
       setActiveTahunAjaran(tahun)
       setAktifSelesai(ta?.tanggal_selesai ?? '')
 
-      const [{ data: kData }, { data: kompData }] = await Promise.all([
+      const [{ data: kData }, { data: kompData }, { data: rekData }] = await Promise.all([
         supabase.from('kelas').select('id, nama, jenjang, siswa(count)').order('jenjang').limit(100),
         supabase.from('komponen_tagihan')
           .select('id, jenis, nama, kelas_warna, keterangan, nominal_default')
           .eq('tahun_ajaran', tahun)
           .order('created_at')
           .limit(100),
+        supabase.from('rekening')
+          .select('id')
+          .eq('sekolah_id', sid).eq('jenis', 'transfer').eq('aktif', true)
+          .limit(1)
+          .maybeSingle(),
       ])
+
+      setHasRekening(!!rekData)
 
       setKelasList(((kData ?? []) as KelasRaw[]).map(k => ({
         id:          k.id,
@@ -291,6 +302,9 @@ export default function PaketPerKelasPage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const openForm = () => {
+    // Tanpa rekening tujuan, tagihan yang dibuat tidak bisa dibayar orang tua
+    if (!hasRekening) { setShowRekeningPopup(true); return }
+
     const allJenjangReady = jenjangOptions.length > 0 &&
       jenjangOptions.every(j => kelasList.some(k => k.jenjang === j))
     if (!allJenjangReady) { setShowKelasKurangPopup(true); return }
@@ -1185,6 +1199,34 @@ export default function PaketPerKelasPage() {
                 {carrying ? 'Menyalin...' : 'Ya, gunakan'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showRekeningPopup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
+          <div style={{ position: 'relative', background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
+            <button
+              onClick={() => setShowRekeningPopup(false)}
+              style={{ position: 'absolute', top: 14, right: 14, width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
+            >
+              <X size={15} />
+            </button>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+              <AlertTriangle size={28} color="#DC2626" />
+            </div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
+              Rekening sekolah belum ditambahkan!
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
+              Tambahkan rekening resmi sekolah di halaman Pengaturan terlebih dahulu. Tanpa rekening tujuan, tagihan yang dibuat tidak bisa dibayar oleh orang tua.
+            </p>
+            <button
+              onClick={() => { setShowRekeningPopup(false); router.push('/pengaturan') }}
+              style={{ width: '100%', padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}
+            >
+              Tambah Rekening Sekarang
+            </button>
           </div>
         </div>
       )}
