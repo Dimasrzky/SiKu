@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 // Route yang bisa diakses tanpa login
 const PUBLIC_PATHS = [
   '/',                       // halaman login
+  '/daftar',                 // halaman registrasi — wajib bisa diakses tanpa login
   '/bayar',                  // halaman pembayaran publik (orang tua)
   '/api/bayar',              // konfirmasi upload bukti transfer dari halaman publik
   '/api/payment/create',     // buat transaksi dari halaman publik

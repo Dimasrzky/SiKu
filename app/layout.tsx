@@ -43,7 +43,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id" data-scroll-behavior="smooth">
-      <body className={`${fraunces.variable} ${jakarta.variable} ${dmSans.variable}`}>
+      <body suppressHydrationWarning className={`${fraunces.variable} ${jakarta.variable} ${dmSans.variable}`}>
         {children}
       </body>
     </html>
