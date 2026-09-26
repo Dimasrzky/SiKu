@@ -143,7 +143,6 @@ interface DashData {
   totalSiswaRef:     number
   lunasRef:          number
   siswaTunggakanLama: number
-  siswaPeriodeAktif: number
   isLewatTempo:      boolean
   terkumpulIni:      number
   terkumpulLalu:     number
@@ -344,16 +343,18 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     .map(t => ({ ...t, sisa: t.total_nominal - (dibayarPerTagihan.get(t.id) ?? 0) }))
     .filter(t => t.sisa > 0)
 
-  const totalTunggakan     = tunggakanRows.reduce((s, t) => s + t.sisa, 0)
-  const tunggakanSiswaIds  = new Set(tunggakanRows.map(t => t.siswa_id))
-  const siswaTunggakanLama = tunggakanSiswaIds.size
-  const isLewatTempo       = lewatJatuhTempo(bulanIni, tahunIni, now)
+  // "Lama" = tunggakan dari bulan-bulan sebelumnya saja — tagihan bulan berjalan
+  // yang belum lewat tempo tidak ikut dihitung di sini, itu bagian belumBayarNominal.
+  const tunggakanLamaRows    = tunggakanRows.filter(t => !(t.bulan === bulanIni && t.tahun === tahunIni))
+  const tunggakanLamaNominal = tunggakanLamaRows.reduce((s, t) => s + t.sisa, 0)
+  const tunggakanSiswaIds    = new Set(tunggakanLamaRows.map(t => t.siswa_id))
+  const siswaTunggakanLama   = tunggakanSiswaIds.size
+  const isLewatTempo         = lewatJatuhTempo(bulanIni, tahunIni, now)
 
-  // Penyebut badge di kartu yang sama: seluruh siswa yang punya tagihan di tahun
-  // ajaran aktif — termasuk alumni, karena mereka juga terhitung pada pembilangnya.
-  const siswaPeriodeAktif = new Set(
-    allTagihan.filter(t => dalamPeriodeAktif(t.bulan, t.tahun)).map(t => t.siswa_id),
-  ).size
+  // "Total Tunggakan Aktif" = kewajiban bulan ini yang belum dibayar + tunggakan
+  // lama (bulan-bulan sebelumnya yang sudah lewat jatuh tempo), supaya angkanya
+  // mencerminkan seluruh kewajiban aktif, bukan cuma yang sudah menunggak.
+  const totalTunggakan = belumBayarNominal + tunggakanLamaNominal
 
   // ── Beasiswa ───────────────────────────────────────────────────────────────
   const activeBsSiswa    = bsProgs.flatMap(bs =>
@@ -443,7 +444,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   if (siswaTunggakanLama > 0) insights.push({
     id: 'tunggakan-lama', level: 'merah',
     judul: 'Tunggakan kritis',
-    desc: `${tunggakanRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
+    desc: `${tunggakanLamaRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
     sub: `${siswaTunggakanLama} siswa berstatus menunggak.`,
     actionLabel: 'Kirim Pengingat',
   })
@@ -530,7 +531,6 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     totalSiswaRef,
     lunasRef,
     siswaTunggakanLama,
-    siswaPeriodeAktif,
     isLewatTempo,
     terkumpulIni,
     terkumpulLalu,
@@ -951,7 +951,7 @@ export default function DashboardPage() {
           .catch(() => setData({
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
-            lunasRef: 0, siswaTunggakanLama: 0, siswaPeriodeAktif: 0,
+            lunasRef: 0, siswaTunggakanLama: 0,
             isLewatTempo: false, terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
             belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
@@ -995,11 +995,9 @@ export default function DashboardPage() {
   const dateStr  = `${dd} ${mName} ${yyyy}`
 
   const d              = data
-  // Badge di kartu tunggakan: proporsi siswa berstatus menunggak terhadap seluruh
-  // siswa bertagihan di tahun ajaran aktif — pembilangnya angka yang sama dengan
-  // "N Siswa menunggak" di kartu itu, jadi keduanya tidak mungkin berbeda
-  const pctMenunggak = d && d.siswaPeriodeAktif > 0
-    ? Math.round((d.siswaTunggakanLama / d.siswaPeriodeAktif) * 100)
+  // Badge di kartu tunggakan: proporsi siswa yang sudah bayar tagihan bulan ini
+  const pctSudahBayar = d && d.totalSiswaRef > 0
+    ? Math.round((d.lunasRef / d.totalSiswaRef) * 100)
     : 0
   const pctTarget      = d && d.targetIni > 0      ? Math.round((d.terkumpulIni / d.targetIni) * 100) : 0
 
@@ -1220,31 +1218,29 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 2. Card Total Tunggakan ─────────────────────────────────────────── */}
-      <div style={{
+      <div className="card-shine card-glass" style={{
         marginTop: '2rem',
-        background: '#fff',
         borderRadius: 16,
         overflow: 'hidden',
         marginBottom: '1rem',
-        boxShadow: '0 4px 9px rgba(45, 92, 145, 0.52)',
+        position: 'relative',
       }}>
         {/* Body */}
         <div style={{ display: 'flex', padding: '1.5rem', gap: '1.25rem', position: 'relative' }}>
           {/* Watermark */}
           <AlertTriangle
             size={130}
-            style={{ position: 'absolute', right: 400, top: '50%', transform: 'translateY(-50%)', color: '#FEE2E2', pointerEvents: 'none' }}
+            style={{ position: 'absolute', right: 400, top: '50%', transform: 'translateY(-50%)', color: '#f3b5b5', pointerEvents: 'none' }}
           />
 
           {/* Left */}
           <div style={{ flex: 1, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-            <div style={{
+            <div className="badge-glass-navy" style={{
               display: 'inline-flex', alignItems: 'center', gap: 12,
-              background: '#1A2C4E', color: '#ffffff',
+              color: '#ffffff',
               padding: '6px 12px', borderRadius: 20,
               fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.03em',
               marginBottom: '0.65rem',
-              boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
             }}>
               <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#D35E5E', animation: 'dot-pulse 1.6s ease-in-out infinite' }} />
               Total Tunggakan Aktif
@@ -1257,7 +1253,7 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap', position: 'relative', top: 8 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Users size={16} />
-                {sk(`${d?.siswaTunggakanLama ?? 0} Siswa menunggak`)}
+                {sk(`${d?.siswaBelumBayar ?? 0} Siswa belum bayar`)}
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Clock size={16} />
@@ -1272,8 +1268,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Right: % badge */}
-          <div style={{
-            background: '#1A2C4E',
+          <div className="badge-glass-navy" style={{
             borderRadius: 12,
             minWidth: 138,
             textAlign: 'center',
@@ -1283,7 +1278,6 @@ export default function DashboardPage() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 4,
-            boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
           }}>
             <div style={{
               width: 40, height: 40, borderRadius: '12px',
@@ -1295,18 +1289,17 @@ export default function DashboardPage() {
               <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
             <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
-              {sk(`${pctMenunggak}%`)}
+              {sk(`${pctSudahBayar}%`)}
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa belum lunas</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah bayar</div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.2rem' }}>
-              {sk(`${d?.siswaTunggakanLama ?? 0} dari ${d?.siswaPeriodeAktif ?? 0} siswa`)}
+              {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
             </div>
           </div>
         </div>
 
         {/* Bottom alert strip */}
-        <div style={{
-          background: '#DE6666',
+        <div className="badge-glass-red" style={{
           padding: '0.6rem 1.5rem',
           display: 'flex',
           alignItems: 'center',
