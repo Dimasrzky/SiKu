@@ -1103,7 +1103,7 @@ export default function DashboardPage() {
           {naikKelasAlert.tahap === 'naik_kelas' && (
           <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', marginBottom: '0.875rem' }}>
             {[
-              { label: 'Total siswa aktif',  value: `${naikKelasAlert.totalSiswaAktif} siswa`,                              icon: <Users size={16} color="#64748B" /> },
+              { label: 'Total siswa aktif',  value: `${naikKelasAlert.totalSiswaAktif} siswa`,                              icon: <Users size={16} color="#6982a4" /> },
               { label: 'Akan jadi alumni',   value: `${naikKelasAlert.akanAlumni} siswa kelas ${naikKelasAlert.maxJenjangLabel}`, icon: <BookOpen size={16} color="#64748B" /> },
               { label: 'Masih ada tunggakan',value: `${naikKelasAlert.menunggak} siswa`,                                    icon: <AlertTriangle size={16} color="#F59E0B" /> },
             ].map((row, i) => (
@@ -1328,7 +1328,7 @@ export default function DashboardPage() {
         <StatCard title="Tahun ajaran aktif" value={sk((d?.tahunAjaranNama ?? '-').replace(/(\d{4})\/(\d{4})/, (_, y1, y2: string) => `${y1}/${y2.slice(2)}`))} icon={Calendar} valueStyle={{ marginLeft: '-1.8rem', marginTop: '0.2rem', fontSize: '2.2rem' }} />
 
         {/* Target Pembayaran */}
-        <div style={{ background: '#fff', borderRadius: 13, padding: '0.6rem 1.25rem', boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',}}>
+        <div className="card-glass" style={{ borderRadius: 13, padding: '0.6rem 1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <div style={{ fontSize: '1rem', fontWeight: 600, color: '#1A2C4E', letterSpacing: '0.05em', display: 'flex', alignItems: 'center' }}>
               <Image src="/icons/IconTarget.png" alt="Target" width={30} height={16} style={{ marginRight: 8 }} />
@@ -1337,7 +1337,7 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 6, height: 20, overflow: 'hidden', marginBottom: 5, position: 'relative' }}>
+          <div style={{ background: '#bfbfbf', borderRadius: 6, height: 20, overflow: 'hidden', marginBottom: 5, position: 'relative' }}>
             <div style={{ background: 'linear-gradient(90deg,#6366F1,#818CF8)', height: '100%', width: `${pctTarget}%`, borderRadius: 6, transition: 'width 0.6s ease', position: 'absolute', left: 0, top: 0 }} />
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, fontSize: '0.8rem', fontWeight: 600, color: '#1A2C4E', zIndex: 1 }}>
               {pctTarget}%

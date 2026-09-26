@@ -11,22 +11,17 @@ interface StatCardProps {
 
 export function StatCard({ title, value, icon: Icon, valueStyle }: StatCardProps) {
   return (
-    <div style={{
-      background: '#fff',
+    <div className="card-glass" style={{
       borderRadius: 12,
       overflow: 'hidden',
-      boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
     }}>
       {/* Header */}
-      <div style={{
-        background: '#A3CDFE',
+      <div className="badge-glass-blue" style={{
         display: 'flex',
         alignItems: 'center',
         borderRadius: '0 0 10px 10px',
-        boxShadow: '0 1px 10px rgba(32, 52, 60, 0.61)',
       }}>
-        <div style={{
-          background: '#1A2C4E',
+        <div className="badge-glass-navy" style={{
           borderRadius: 10,
           width: 50,
           height: 50,
@@ -69,7 +64,7 @@ export function StatCard({ title, value, icon: Icon, valueStyle }: StatCardProps
           position: 'absolute',
           bottom: 4,
           right: 10,
-          color: '#E0EEFF',
+          color: '#97bdeb',
           pointerEvents: 'none',
         }}>
           <Icon size={30} />

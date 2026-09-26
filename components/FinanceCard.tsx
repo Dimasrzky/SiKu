@@ -18,13 +18,11 @@ export function FinanceCard({
   progress, progressColor, progressLabel, progressSub,
 }: FinanceCardProps) {
   return (
-    <div style={{
-      background: '#fff',
+    <div className="card-glass" style={{
       borderRadius: 12,
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
       marginBottom: '0.5rem',
     }}>
       {/* Body */}
@@ -55,8 +53,7 @@ export function FinanceCard({
         paddingBottom: '0.5rem',
       }}>
         {/* Tanda — flush pojok kiri bawah */}
-        <div style={{
-          background: '#1A2C4E',
+        <div className="badge-glass-navy" style={{
           borderRadius: '0 8px 0 8px',
           position: 'relative',
           top: 8,
@@ -77,7 +74,7 @@ export function FinanceCard({
               </span>
             )}
           </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 4, height: 8, width: 200, overflow: 'hidden' }}>
+          <div style={{ background: '#bfbfbf', borderRadius: 4, height: 8, width: 200, overflow: 'hidden' }}>
             <div style={{
               background: progressColor,
               height: '100%',
