@@ -12,26 +12,22 @@ interface ChartCardProps {
 
 export function ChartCard({ title, subtitle, action, children, style }: ChartCardProps) {
   return (
-    <div style={{
-      background: '#fff',
+    <div className="card-glass" style={{
       borderRadius: 12,
       overflow: 'hidden',
-      boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
       marginBottom: '0.5rem',
       display: 'flex',
       flexDirection: 'column',
       ...style,
     }}>
       {/* Header — beradius via overflow:hidden parent */}
-      <div style={{
-        background: '#A3CDFE',
+      <div className="badge-glass-blue" style={{
         padding: '0.65rem 1rem',
         borderRadius: '0 10px 10px 0',
         maxWidth: '60%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        boxShadow: '0 3px 4px rgba(92, 135, 184, 0.67)',
       }}>
         <span style={{ fontSize: '1rem', fontWeight: 700, color: '#1A2C4E' }}>
           {title}

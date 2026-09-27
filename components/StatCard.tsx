@@ -30,7 +30,7 @@ export function StatCard({ title, value, icon: Icon, valueStyle }: StatCardProps
           justifyContent: 'center',
           flexShrink: 0,
         }}>
-          <Icon size={30} color="#fff" />
+          <Icon size={30} color="#7eb7fd" />
         </div>
         <span style={{ fontSize: '1rem', fontWeight: 700, color: '#1A2C4E', flex: 1, textAlign: 'center' }}>
           {title}
