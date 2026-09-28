@@ -562,7 +562,9 @@ function InsightCard({ insight }: { insight: Insight }) {
   const st = INSIGHT_STYLE[insight.level]
   const Icon = insight.level === 'merah' ? AlertTriangle : insight.level === 'amber' ? Clock : CheckCircle2
   return (
-    <div className={`insight-glass-${insight.level}`} style={{
+    <div style={{
+      background: st.bg,
+      border: `1px solid ${st.border}`,
       borderRadius: 12,
       padding: '1rem 1.25rem',
       display: 'flex',
@@ -625,22 +627,10 @@ const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: strin
   menunggu_verifikasi: { bg: '#EDE9FE', color: '#6D28D9', label: 'Menunggu Verifikasi' },
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.substring(0, 2), 16)
-  const g = parseInt(h.substring(2, 4), 16)
-  const b = parseInt(h.substring(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 function StatusBadgeSiswa({ status }: { status: string }) {
   const s = STATUS_BADGE_MAP[status] ?? STATUS_BADGE_MAP.belum_bayar
   return (
-    <span className="badge-glass-status" style={{
-      background: hexToRgba(s.bg, 0.55),
-      color: s.color,
-      borderRadius: 20, padding: '0.3rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap',
-    }}>
+    <span style={{ background: s.bg, color: s.color, borderRadius: 20, padding: '0.3rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
       {s.label}
     </span>
   )
@@ -826,7 +816,6 @@ export default function DashboardPage() {
   const [halamanTabel,      setHalamanTabel]      = useState(1)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
   const [ingatkanHover,     setIngatkanHover]     = useState(false)
-  const [headerScrolled,    setHeaderScrolled]    = useState(false)
 
   const sekolahIdRef = useRef<string | null>(null)
   const totalRef      = useRef(0)
@@ -845,14 +834,6 @@ export default function DashboardPage() {
         setTimeout(() => setShowSetupBerhasil(true), 0)
       }
     } catch { /* ignore */ }
-  }, [])
-
-  // Header sedikit mengecil (scale out) saat halaman discroll, kembali normal di puncak
-  useEffect(() => {
-    const onScroll = () => setHeaderScrolled(window.scrollY > 12)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
   useEffect(() => {
@@ -1175,7 +1156,8 @@ export default function DashboardPage() {
     <div className="dashboard-content">
 
       {/* ── 1. Header ──────────────────────────────────────────────────────── */}
-      <div className={`header-glass${headerScrolled ? ' header-glass--scrolled' : ''}`} style={{
+      <div style={{
+        background: '#1A2C4E',
         borderRadius: '0 0 16px 16px',
         padding: '1.25rem 1.75rem',
         margin: '-1.5rem 0 1rem',
@@ -1184,15 +1166,16 @@ export default function DashboardPage() {
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: '0.75rem',
+        boxShadow: '0 2px 8px rgba(26, 44, 78, 0.7)',
       }}>
         {/* Left */}
         <div>
-          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#000000', margin: 0, lineHeight: 1.2 }}>
+          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', margin: 0, lineHeight: 1.2 }}>
             Selamat Datang, {user?.nama ?? '—'}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', flexShrink: 0, boxShadow: '0 0 6px #22C55E' }} />
-            <span style={{ fontSize: '0.8rem', color: 'rgb(1, 1, 1)' }}>
+            <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.65)' }}>
               {user?.jabatan ?? ''}{user?.jabatan && user?.sekolah ? ' – ' : ''}{user?.sekolah ?? ''}
             </span>
           </div>
@@ -1200,8 +1183,9 @@ export default function DashboardPage() {
 
         {/* Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <div className="badge-glass-blue-dark" style={{
+          <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
+            background: '#A3CDFE', border: '1px solid #A3CDFE',
             color: '#1A2C4E', borderRadius: 10, padding: '0.45rem 0.85rem',
             fontSize: '0.8rem', fontWeight: 600,
           }}>
@@ -1234,31 +1218,34 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 2. Card Total Tunggakan ─────────────────────────────────────────── */}
-      <div className="card-shine card-glass" style={{
+      <div style={{
         marginTop: '2rem',
+        background: '#fff',
         borderRadius: 16,
         overflow: 'hidden',
         marginBottom: '1rem',
-        position: 'relative',
+        boxShadow: '0 4px 9px rgba(45, 92, 145, 0.52)',
       }}>
         {/* Body */}
         <div style={{ display: 'flex', padding: '1.5rem', gap: '1.25rem', position: 'relative' }}>
           {/* Watermark */}
           <AlertTriangle
             size={130}
-            style={{ position: 'absolute', right: 400, top: '50%', transform: 'translateY(-50%)', color: '#f3b5b5', pointerEvents: 'none' }}
+            className="watermark-float"
+            style={{ position: 'absolute', right: 400, top: '50%', color: '#FEE2E2', pointerEvents: 'none' }}
           />
 
           {/* Left */}
           <div style={{ flex: 1, position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-            <div className="badge-glass-navy" style={{
+            <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 12,
-              color: '#000000',
+              background: '#1A2C4E', color: '#ffffff',
               padding: '6px 12px', borderRadius: 20,
               fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.03em',
               marginBottom: '0.65rem',
+              boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
             }}>
-              <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#D35E5E', animation: 'dot-pulse 1.6s ease-in-out infinite' }} />
+              <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#FF5A5A', animation: 'dot-pulse-glow 1.6s ease-in-out infinite' }} />
               Total Tunggakan Aktif
             </div>
 
@@ -1284,7 +1271,8 @@ export default function DashboardPage() {
           </div>
 
           {/* Right: % badge */}
-          <div className="badge-glass-navy" style={{
+          <div style={{
+            background: '#1A2C4E',
             borderRadius: 12,
             minWidth: 138,
             textAlign: 'center',
@@ -1294,6 +1282,7 @@ export default function DashboardPage() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 4,
+            boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
           }}>
             <div style={{
               width: 40, height: 40, borderRadius: '12px',
@@ -1304,18 +1293,19 @@ export default function DashboardPage() {
             }}>
               <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
-            <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#000000', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
+            <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
               {sk(`${pctSudahBayar}%`)}
             </div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#383a3e' }}>Siswa sudah bayar</div>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#383a3e', marginLeft: '-0.2rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah bayar</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.2rem' }}>
               {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
             </div>
           </div>
         </div>
 
         {/* Bottom alert strip */}
-        <div className="badge-glass-red" style={{
+        <div style={{
+          background: '#DE6666',
           padding: '0.6rem 1.5rem',
           display: 'flex',
           alignItems: 'center',
@@ -1344,7 +1334,7 @@ export default function DashboardPage() {
         <StatCard title="Tahun ajaran aktif" value={sk((d?.tahunAjaranNama ?? '-').replace(/(\d{4})\/(\d{4})/, (_, y1, y2: string) => `${y1}/${y2.slice(2)}`))} icon={Calendar} valueStyle={{ marginLeft: '-1.8rem', marginTop: '0.2rem', fontSize: '2.2rem' }} />
 
         {/* Target Pembayaran */}
-        <div className="card-glass" style={{ borderRadius: 13, padding: '0.6rem 1.25rem' }}>
+        <div style={{ background: '#fff', borderRadius: 13, padding: '0.6rem 1.25rem', boxShadow: '0 4px 8px rgba(92, 135, 184, 0.67)',}}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <div style={{ fontSize: '1rem', fontWeight: 600, color: '#1A2C4E', letterSpacing: '0.05em', display: 'flex', alignItems: 'center' }}>
               <Image src="/icons/IconTarget.png" alt="Target" width={30} height={16} style={{ marginRight: 8 }} />
@@ -1353,7 +1343,7 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           </div>
-          <div style={{ background: '#bfbfbf', borderRadius: 6, height: 20, overflow: 'hidden', marginBottom: 5, position: 'relative' }}>
+          <div style={{ background: '#E5E7EB', borderRadius: 6, height: 20, overflow: 'hidden', marginBottom: 5, position: 'relative' }}>
             <div style={{ background: 'linear-gradient(90deg,#6366F1,#818CF8)', height: '100%', width: `${pctTarget}%`, borderRadius: 6, transition: 'width 0.6s ease', position: 'absolute', left: 0, top: 0 }} />
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6, fontSize: '0.8rem', fontWeight: 600, color: '#1A2C4E', zIndex: 1 }}>
               {pctTarget}%
@@ -1493,7 +1483,7 @@ export default function DashboardPage() {
                       </span>
                       <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{kelas.total} siswa</span>
                     </div>
-                    <div style={{ background: '#bfbfbf', borderRadius: 4, height: 7, overflow: 'hidden' }}>
+                    <div style={{ background: '#E5E7EB', borderRadius: 4, height: 7, overflow: 'hidden' }}>
                       <div style={{ background: colors[i % colors.length], height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.6s ease' }} />
                     </div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>{pct}%</div>
@@ -1509,7 +1499,7 @@ export default function DashboardPage() {
 
       {/* ── 6. Insights ─────────────────────────────────────────────────────── */}
       {(merahInsights.length > 0 || amberInsights.length > 0 || hijauInsights.length > 0) && (
-        <div className="card-glass" style={{ borderRadius: 16, padding: '1.25rem', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '1.25rem', position: 'relative', overflow: 'hidden' }}>
 
           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy-dark)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Banknote size={15} color="var(--navy)" />
@@ -1525,7 +1515,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── 7. Tabel Status Pembayaran Siswa ────────────────────────────────── */}
-      <div className="card-glass" style={{ borderRadius: 16, overflow: 'hidden', marginTop: '1.5rem' }}>
+      <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '2px 2px 8px 8px rgba(45,91,145,0.10)', marginTop: '1.5rem' }}>
 
         {/* Tab header + Search bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.2rem', marginBlock: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -1557,7 +1547,7 @@ export default function DashboardPage() {
               )
             })}
           </div>
-          <div className="card-glass" style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 14, padding: '0.45rem 0.85rem', minWidth: 260, fontWeight: 500, color: '#6F788A' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#ffffff', border: '3px solid #BABFC7', borderRadius: 14, padding: '0.45rem 0.85rem', minWidth: 260, fontWeight: 500, color: '#6F788A' }}>
             <Search size={18} color="#94A3B8" />
             <input
               type="text"
@@ -1571,29 +1561,22 @@ export default function DashboardPage() {
 
         {/* Tabel */}
         <div style={{ overflowX: 'auto', padding: '0 1rem' }}>
-          <div style={{ position: 'relative' }}>
-            {/* Overlay glass di belakang header — box-shadow di elemen tabel asli (tr/th)
-                dirender aneh oleh browser, jadi bar-nya dibuat lewat div biasa di sini. */}
-            <div className="table-header-glass" style={{
-              position: 'absolute', top: 0, left: 0, right: 0, height: 40,
-              borderRadius: 8, pointerEvents: 'none',
-            }} />
-            <table style={{ width: '100%', borderCollapse: 'collapse', position: 'relative', zIndex: 1 }}>
-              <thead>
-                <tr>
-                  {(['No', 'NIS', 'Nama', 'Kelas', 'Tagihan Bulan Ini', 'Status', 'Aksi'] as const).map(col => (
-                    <th key={col} style={{
-                      height: 40, boxSizing: 'border-box',
-                      padding: '0 1rem',
-                      textAlign: (col === 'No' || col === 'Aksi') ? 'center' : 'left',
-                      fontSize: '1rem', fontWeight: 700, color: '#000000', whiteSpace: 'nowrap',
-                    }}>
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#1A2C4E' }}>
+                {(['No', 'NIS', 'Nama', 'Kelas', 'Tagihan Bulan Ini', 'Status', 'Aksi'] as const).map((col, idx, arr) => (
+                  <th key={col} style={{
+                    padding: '0.6rem 1rem',
+                    textAlign: (col === 'No' || col === 'Aksi') ? 'center' : 'left',
+                    fontSize: '1rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
+                    borderRadius: idx === 0 ? '8px 0 0 8px' : idx === arr.length - 1 ? '0 8px 8px 0' : undefined,
+                  }}>
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
               {loading ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94A3B8', fontSize: '0.88rem' }}>
@@ -1623,10 +1606,10 @@ export default function DashboardPage() {
                     </td>
                     <td style={{ padding: '0.875rem 1.25rem' }}>
                       {siswa.kelas ? (
-                        <span className="badge-glass-status" style={{
-                          background: `${siswa.kelas.warna}33`,
+                        <span style={{
+                          background: `${siswa.kelas.warna}22`,
                           color: siswa.kelas.warna,
-                        
+                          border: `1.5px solid ${siswa.kelas.warna}`,
                           borderRadius: 8,
                           padding: '0.25rem 0.6rem',
                           fontSize: '0.78rem', fontWeight: 700,
@@ -1670,7 +1653,6 @@ export default function DashboardPage() {
               })}
             </tbody>
           </table>
-          </div>
         </div>
 
         {/* Pagination */}

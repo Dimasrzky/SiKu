@@ -266,7 +266,7 @@ function BarChart({ data }: { data: { bulan: string; nominal: number }[] }) {
         return (
           <g key={t}>
             <line x1={PX} y1={y} x2={W - PX} y2={y} stroke="#F1F5F9" strokeWidth={1} />
-            <text x={PX - 4} y={y + 3.5} textAnchor="end" fontSize={8} fill="#94A3B8">
+            <text x={PX - 4} y={y + 3.5} textAnchor="end" fontSize={10} fill="#94A3B8">
               {t === 0 ? '0' : `${Math.round((max * t) / 1_000_000)}jt`}
             </text>
           </g>
@@ -282,11 +282,11 @@ function BarChart({ data }: { data: { bulan: string; nominal: number }[] }) {
         return (
           <g key={`${d.bulan}_${i}`}>
             <rect x={x} y={y} width={bW} height={barH} rx={4} fill={isLast ? '#1A2C4E' : '#93C5FD'} />
-            <text x={x + bW / 2} y={y - 4} textAnchor="middle" fontSize={7.5}
+            <text x={x + bW / 2} y={y - 4} textAnchor="middle" fontSize={9.5}
               fill={isLast ? '#1A2C4E' : '#64748B'} fontWeight={isLast ? 700 : 400}>
               {Math.round(d.nominal / 1_000_000)}jt
             </text>
-            <text x={x + bW / 2} y={H - 4} textAnchor="middle" fontSize={9}
+            <text x={x + bW / 2} y={H - 4} textAnchor="middle" fontSize={11}
               fill={isLast ? '#1A2C4E' : '#64748B'} fontWeight={isLast ? 700 : 400}>
               {d.bulan}
             </text>
@@ -1112,7 +1112,7 @@ export default function LaporanPage() {
         startY: y,
         head: [['Bulan', 'Nominal']],
         body: monthlyTrend.map(m => [m.bulan, fmt(m.nominal)]),
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 12 },
       })
       y = getFinalY(doc) + 10
 
@@ -1156,7 +1156,7 @@ export default function LaporanPage() {
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '10px 16px 14px rgba(18,47,102,0.31)' }}>
+          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
             <BarChart2 size={30} color="#ffffff" />
           </div>
           <div>

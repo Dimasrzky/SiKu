@@ -15,7 +15,7 @@ export function StatCard({ title, value, icon: Icon, valueStyle }: StatCardProps
       background: '#fff',
       borderRadius: 12,
       overflow: 'hidden',
-      boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
+      boxShadow: '0 4px 8px rgba(92, 135, 184, 0.15)',
     }}>
       {/* Header */}
       <div style={{

@@ -174,124 +174,26 @@
   animation: dot-pulse 1.6s ease-in-out infinite;
 }
 
-/* ── Kartu tunggakan: kilau berulang menyapu kiri ke kanan ── */
-@keyframes card-shine {
-  0%   { transform: translateX(-150%) skewX(-20deg); }
-  35%  { transform: translateX(250%)  skewX(-20deg); }
-  100% { transform: translateX(250%)  skewX(-20deg); }
+/* ── Kartu tunggakan: watermark AlertTriangle mengambang naik-turun ── */
+@keyframes watermark-float {
+  0%, 100% { transform: translateY(-50%); }
+  50%      { transform: translateY(calc(-50% - 12px)); }
 }
 
-.card-shine::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  background: linear-gradient(
-    100deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.55) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  transform: translateX(-150%) skewX(-20deg);
-  animation: card-shine 3s ease-in-out infinite;
-  pointer-events: none;
+.watermark-float {
+  animation: watermark-float 3s ease-in-out infinite;
 }
 
-/* ── Kartu dasbor: glassmorphism (dipakai di semua kartu dasbor) ── */
-.header-glass {
-  background: linear-gradient(120deg, rgba(196, 212, 255, 0.673) 100%, rgba(196, 212, 255, 0.673) 100%);
-  backdrop-filter: blur(18px) saturate(200%);
-  -webkit-backdrop-filter: blur(18px) saturate(200%);
-  box-shadow: inset 0 0 24px rgba(96, 165, 250, 0.5), 0 8px 32px rgba(30, 64, 175, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 1px 4px rgba(0, 0, 0, 0.08);
-  transform: scale(1);
-  transform-origin: top center;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.header-glass--scrolled {
-  transform: scale(0);
-}
-
-.card-glass {
-  background: rgba(255, 255, 255, 0.184);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.18), inset 0 0 10px rgba(0, 0, 0, 0.104);
-}
-
-.badge-glass-navy {
-  background: linear-gradient(120deg, rgba(196, 212, 255, 0.673) 100%, rgba(196, 212, 255, 0.673) 100%);
-  backdrop-filter: blur(18px) saturate(200%);
-  -webkit-backdrop-filter: blur(18px) saturate(200%);
-  box-shadow: inset 0 0 24px rgba(96, 165, 250, 0.5), 0 8px 32px rgba(30, 64, 175, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-/* Header tabel: bukan ditaruh di <tr>/<th> (box-shadow di elemen tabel dirender aneh
-   oleh browser — bisa nyempil keluar atau malah terpisah per-cell). Ini dipakai di
-   <div> overlay absolute yang sengaja diletakkan di belakang <thead>, supaya shadow-nya
-   jadi satu bentuk utuh yang benar seperti kartu-kartu lain. */
-.table-header-glass {
-  background: linear-gradient(120deg, rgba(203, 219, 255, 0.483) 100%, rgba(203, 219, 255, 0.483) 100%);
-  backdrop-filter: blur(18px) saturate(200%);
-  -webkit-backdrop-filter: blur(18px) saturate(200%);
-  box-shadow: inset 0 0 24px rgba(96, 165, 250, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.badge-glass-red {
-  background: rgba(222, 102, 102, 0.908);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.badge-glass-blue {
-  background: rgba(163, 205, 254, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-/* Khusus pill tanggal di header — sama seperti .badge-glass-blue tapi birunya lebih gelap */
-.badge-glass-blue-dark {
-  background: rgba(96, 165, 250, 0.5);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.insight-glass-merah {
-  background: rgba(255, 245, 245, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(252, 165, 165, 0.7);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.insight-glass-amber {
-  background: rgba(255, 251, 235, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(252, 211, 77, 0.7);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.insight-glass-hijau {
-  background: rgba(240, 253, 244, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(110, 231, 183, 0.7);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-/* Badge status siswa di tabel — warnanya tetap dari STATUS_BADGE_MAP, ini cuma efek kacanya */
-.badge-glass-status {
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.194);
+/* ── Dot badge "Total Tunggakan Aktif": pulsa + nyala lebih terang ── */
+@keyframes dot-pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 6px 2px rgba(211, 94, 94, 0.9), 0 0 0 0 rgba(211, 94, 94, 0.7);
+  }
+  50% {
+    transform: scale(1.25);
+    box-shadow: 0 0 14px 5px rgba(255, 90, 90, 1), 0 0 0 8px rgba(211, 94, 94, 0);
+  }
 }
 
 /* ── Sub-menu ── */

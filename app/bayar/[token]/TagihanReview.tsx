@@ -30,7 +30,7 @@ export default function TagihanReview({ namaSiswa, nis, kelasNama, items, tungga
 
   return (
     <div>
-      <div style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', boxShadow: '0 2px 10px #21396B', marginBottom: '1.8rem' }}>
+      <div style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', boxShadow: '0 0 6px #21386b7b', marginBottom: '1.8rem' }}>
 
         {/* Card header */}
         <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', borderBottom: '2px solid #C1C6CF' }}>
@@ -82,7 +82,7 @@ export default function TagihanReview({ namaSiswa, nis, kelasNama, items, tungga
           <div style={{ fontWeight: 700, fontSize: 'clamp(0.78rem, 2.8vw, 0.9rem)', color: '#1A2C4E', letterSpacing: 0.5, marginBottom: 8 }}>
             Rincian komponen
           </div>
-          <div style={{ maxHeight: 168, overflowY: 'auto', marginBottom: 6, border: '2px solid #BABFC7', borderRadius: 8, padding: '0.5rem 1rem', boxShadow: '0 2px 10px #BABFC7' }}>
+          <div style={{ maxHeight: 168, overflowY: 'auto', marginBottom: 6, border: '2px solid #BABFC7', borderRadius: 8, padding: '0.5rem 1rem', boxShadow: '0 2px 10px #babfc76f' }}>
             {items.map((item, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'clamp(0.75rem, 2.6vw, 0.85rem)', color: '#374151', padding: '0.5rem 0', borderBottom: i < items.length - 1 ? '1px dashed #F1F5F9' : 'none' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

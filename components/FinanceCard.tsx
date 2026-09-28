@@ -24,7 +24,7 @@ export function FinanceCard({
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: '0 6px 10px rgba(92, 135, 184, 0.67)',
+      boxShadow: '0 4px 8px rgba(92, 135, 184, 0.15)',
       marginBottom: '0.5rem',
     }}>
       {/* Body */}

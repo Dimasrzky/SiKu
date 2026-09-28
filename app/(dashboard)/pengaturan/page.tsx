@@ -516,7 +516,7 @@ export default function PengaturanPage() {
           <div style={{
             width: 60, height: 60, background: '#1A2C4E', borderRadius: 14,
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            boxShadow: '10px 16px 14px rgba(18,47,102,0.31)',
+            boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)',
           }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/>
