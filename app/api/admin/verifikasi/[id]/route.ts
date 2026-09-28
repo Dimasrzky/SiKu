@@ -14,6 +14,7 @@ type VerifikasiRow = {
   sekolah_id:       string
   nominal_diajukan: number
   status:           string
+  created_at:       string
 }
 
 type TagihanRow = {
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: verifikasiData, error: vErr } = await supabase
     .from('verifikasi_pembayaran')
-    .select('id, tagihan_id, siswa_id, sekolah_id, nominal_diajukan, status')
+    .select('id, tagihan_id, siswa_id, sekolah_id, nominal_diajukan, status, created_at')
     .eq('id', id)
     .single()
 
@@ -97,7 +98,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     metode:        'transfer',
     sumber:        'manual_transfer',
     status:        'terkonfirmasi',
-    tanggal_bayar: new Date().toISOString(),
+    // Waktu orang tua mengunggah bukti, bukan waktu admin memverifikasi — verifikasi
+    // yang tertunda beberapa hari tidak boleh membuat pembayaran tercatat telat.
+    tanggal_bayar: verifikasi.created_at,
     catatan:       'Diverifikasi dari bukti transfer manual',
   })
 

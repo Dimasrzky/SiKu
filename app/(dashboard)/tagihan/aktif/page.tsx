@@ -6,7 +6,7 @@ import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'luc
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
-import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo } from '@/lib/statusTagihan'
+import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
   JENIS_LABEL, JENIS_WARNA, komponenDitagihkan, periodeIndex,
   bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran,
@@ -23,11 +23,6 @@ const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 const FILTER_ALUMNI = 'Alumni'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getJatuhTempo(bulan: number, tahun: number): string {
-  const d = new Date(tahun, bulan, 0)
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-}
 
 function getInitials(nama: string): string {
   const parts = nama.trim().split(' ').filter(Boolean)
@@ -52,6 +47,8 @@ interface SiswaTagihanRow {
   /** Komponen belum lunas dari periode sebelumnya — hanya untuk kolom total tabel */
   tunggakan:     number
   status:        'belum_bayar' | 'lunas' | 'cicilan'
+  /** Snapshot dari paket kelas saat tagihan dibuat — tiap kelas bisa berbeda */
+  jatuh_tempo:   string | null
   no_wa:         string
   nama_wali:     string
   payment_token: string
@@ -60,7 +57,7 @@ interface SiswaTagihanRow {
 type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: string }
 type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; status: string | null; kelas_terakhir: string | null; kelas: KelasNestedRaw | null }
 type TagihanItemRaw    = { komponen_id: string | null; nominal: number }
-type TagihanRawRow     = { id: string; total_nominal: number; status: string; payment_token: string | null; tagihan_item: TagihanItemRaw[]; siswa: SiswaNestedRaw | null }
+type TagihanRawRow     = { id: string; total_nominal: number; status: string; jatuh_tempo: string | null; payment_token: string | null; tagihan_item: TagihanItemRaw[]; siswa: SiswaNestedRaw | null }
 type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type PaketKelasRaw     = { kelas_id: string }
 type PaketForGenerate  = { id: string; paket_kelas: PaketKelasRaw[]; paket_komponen: PaketKomponenRaw[] }
@@ -246,8 +243,9 @@ async function runGenerate(
     }
 
     const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
-    // Tabel tagihan tidak punya kolom tahun_ajaran — keterikatan periode diturunkan
-    // dari bulan/tahun terhadap rentang tanggal tahun ajaran
+    // kelas_id, tahun_ajaran_id, dan jatuh_tempo sengaja tidak dikirim — trigger
+    // database tagihan_isi_snapshot mengisinya dari siswa, rentang tahun ajaran,
+    // dan tanggal jatuh tempo paket kelasnya
     toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
     for (const k of allKomps) itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
   }
@@ -366,7 +364,7 @@ function TagihanAktifContent() {
         .from('tagihan')
         // kelas_terakhir: alias kolom teks `siswa.kelas` — snapshot kelas terakhir alumni.
         // Perlu di-alias karena `kelas` sudah dipakai sebagai alias relasi kelas_id.
-        .select('id, total_nominal, status, payment_token, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas_terakhir:kelas, kelas:kelas_id(id, nama, jenjang, warna))')
+        .select('id, total_nominal, status, jatuh_tempo, payment_token, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas_terakhir:kelas, kelas:kelas_id(id, nama, jenjang, warna))')
         .eq('sekolah_id', sid)
         .eq('bulan', bulan)
         .eq('tahun', tahun)
@@ -532,6 +530,7 @@ function TagihanAktifContent() {
         total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
         tunggakan:     tunggakanPerSiswa.get(siswaId) ?? 0,
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
+        jatuh_tempo:   r.jatuh_tempo,
         no_wa:         r.siswa?.no_wa ?? '',
         nama_wali:     r.siswa?.nama_wali ?? '',
         payment_token: r.payment_token ?? '',
@@ -672,12 +671,12 @@ function TagihanAktifContent() {
 
   // ── Derived ───────────────────────────────────────────────────────────────────
 
-  const jatuhTempo   = getJatuhTempo(bulanIni, tahunIni)
-  const endOfMonth   = new Date(tahunIni, bulanIni, 0)
-  const isLewatTempo = lewatJatuhTempo(bulanIni, tahunIni, now)
+  // Jatuh tempo dibaca per tagihan, bukan per bulan — paket tiap kelas bisa
+  // punya tanggalnya sendiri, jadi satu bulan bisa berisi beberapa batas waktu.
+  const waktuTagihan = (t: SiswaTagihanRow) => ({ jatuh_tempo: t.jatuh_tempo, bulan: bulanIni, tahun: tahunIni })
 
   const getEffStatus = (t: SiswaTagihanRow): EffectiveStatus =>
-    statusEfektif(t.status, isLewatTempo, t.is_alumni)
+    statusEfektif(t.status, lewatJatuhTempo(waktuTagihan(t), now), t.is_alumni, t.total_nominal)
 
   // Preset dari URL ikut dimasukkan supaya select tidak tampil kosong saat jenjang
   // tersebut belum punya tagihan di bulan ini. Alumni ditaruh di dropdown tingkat,
@@ -717,9 +716,10 @@ function TagihanAktifContent() {
 
   const anyModalOpen = showCatatModal || showDetailModal
 
-  // ── Countdown to end of month ─────────────────────────────────────────────────
+  // ── Hitung mundur ke jatuh tempo tagihan ──────────────────────────────────────
 
-  const hDays = Math.max(0, Math.floor((endOfMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+  const sisaHari = (t: SiswaTagihanRow) =>
+    Math.max(0, Math.floor((batasJatuhTempo(waktuTagihan(t)).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
 
   // ── Detail modal computed values ──────────────────────────────────────────────
 
@@ -745,7 +745,8 @@ function TagihanAktifContent() {
     setCatatSelected(siswa)
     setCatatResults([])
     setCatatQuery(siswa.nama)
-    setCatatTanggal(new Date().toISOString().split('T')[0])
+    // Tanggal lokal, bukan UTC — toISOString() memberi tanggal kemarin sebelum pukul 07.00 WIB
+    setCatatTanggal(new Date().toLocaleDateString('en-CA'))
     const { data: tRow } = await supabase
       .from('tagihan')
       .select('id, total_nominal, status')
@@ -1188,7 +1189,7 @@ function TagihanAktifContent() {
 
                         {/* Jatuh tempo */}
                         <td style={{ ...sTd, color: '#374151', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-                          {jatuhTempo}
+                          {formatJatuhTempo(waktuTagihan(t))}
                         </td>
 
                         {/* Aksi */}
@@ -1197,7 +1198,7 @@ function TagihanAktifContent() {
                             {eff === 'cicilan' ? (
                               <>
                                 <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                                  H-{hDays}
+                                  H-{sisaHari(t)}
                                 </span>
                                 {hasWa && (
                                   <button
@@ -1444,7 +1445,7 @@ function TagihanAktifContent() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #F1F5F9' }}>
               {[
                 { label: 'Paket berlaku', val: detailLoading ? '...' : detailPaketNama },
-                { label: 'Jatuh tempo',   val: jatuhTempo },
+                { label: 'Jatuh tempo',   val: formatJatuhTempo(waktuTagihan(detailSiswa)) },
                 { label: 'Orang tua',     val: detailSiswa.nama_wali || '—' },
                 { label: 'No WA',         val: detailSiswa.no_wa || '—' },
               ].map(row => (

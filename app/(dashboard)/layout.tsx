@@ -24,6 +24,7 @@ import {
   GraduationCap,
   ChevronsUp,
   Lock,
+  Database,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import './dashboard.css'
@@ -239,12 +240,147 @@ function ResetDemoPopup({
   )
 }
 
+/* ─── Isi Data Contoh Popup ─────────────────────────────────────── */
+
+const ISI_CONTOH_ITEMS = [
+  'Tahun ajaran lalu dan tahun ajaran aktif',
+  '12 kelas dan ±290 siswa, termasuk alumni',
+  'Tagihan dan pembayaran 12 bulan terakhir',
+  'Pola bayar lancar, telat, cicilan, dan menunggak',
+]
+
+function IsiDataContohPopup({
+  mengisi,
+  galat,
+  onClose,
+  onConfirm,
+}: {
+  mengisi:   boolean
+  galat:     string
+  onClose:   () => void
+  onConfirm: () => void
+}) {
+  return (
+    <>
+      <style>{RESET_CSS}</style>
+      <div
+        style={{
+          position: 'fixed', inset: 0, zIndex: 999,
+          background: 'rgba(8,16,34,0.75)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'rd-backdrop 0.28s ease forwards',
+        }}
+        onClick={() => { if (!mengisi) onClose() }}
+      >
+        <div
+          style={{
+            background: '#fff', borderRadius: 24, padding: '2.5rem 2.75rem',
+            maxWidth: 440, width: '90%',
+            boxShadow: '0 40px 100px rgba(0,0,0,0.32)',
+            animation: 'rd-card 0.56s cubic-bezier(0.34,1.56,0.64,1) forwards',
+            overflow: 'hidden', position: 'relative',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg,#1A2C4E,#3C75B7)' }} />
+
+          <div style={{
+            width: 68, height: 68, borderRadius: '50%', background: '#EFF6FF',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem',
+          }}>
+            <Database size={30} color="#1A2C4E" />
+          </div>
+
+          <h2 style={{
+            fontSize: '1.45rem', fontWeight: 800, color: '#0F172A', textAlign: 'center',
+            margin: '0 0 0.5rem', fontFamily: 'var(--font-dm-sans), sans-serif',
+            animation: 'rd-fade-up 0.4s ease 0.15s backwards',
+          }}>
+            Isi Data Contoh 12 Bulan?
+          </h2>
+
+          <p style={{
+            textAlign: 'center', color: '#64748B', fontSize: '0.9rem', lineHeight: 1.6,
+            margin: '0 0 1.25rem', animation: 'rd-fade-up 0.4s ease 0.25s backwards',
+          }}>
+            Semua data demo saat ini <strong style={{ color: '#0F172A' }}>diganti</strong> dengan data contoh.
+            Nama sekolah dan rekening tetap. Prosesnya sekitar 20 detik.
+          </p>
+
+          <ul style={{
+            margin: '0 0 1.5rem', padding: 0, listStyle: 'none',
+            display: 'flex', flexDirection: 'column', gap: '0.4rem',
+            animation: 'rd-fade-up 0.4s ease 0.32s backwards',
+          }}>
+            {ISI_CONTOH_ITEMS.map(item => (
+              <li key={item} style={{
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8,
+                padding: '0.45rem 0.75rem', fontSize: '0.875rem', color: '#1E293B',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3C75B7', flexShrink: 0 }} />
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          {galat && (
+            <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 10, padding: '0.6rem 0.85rem', fontSize: '0.82rem', lineHeight: 1.5, marginBottom: '1rem' }}>
+              {galat}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', animation: 'rd-fade-up 0.4s ease 0.42s backwards' }}>
+            <button
+              onClick={onClose}
+              disabled={mengisi}
+              style={{
+                flex: 1, background: '#F1F5F9', color: '#475569', border: 'none', borderRadius: 12,
+                padding: '0.8rem', fontSize: '0.9rem', fontWeight: 600, cursor: mengisi ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-dm-sans), sans-serif', opacity: mengisi ? 0.5 : 1,
+              }}
+            >
+              Batal
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={mengisi}
+              style={{
+                flex: 1, background: mengisi ? '#5B6B8C' : '#1A2C4E', color: '#fff', border: 'none', borderRadius: 12,
+                padding: '0.8rem', fontSize: '0.9rem', fontWeight: 700, cursor: mengisi ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-dm-sans), sans-serif',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              }}
+            >
+              {mengisi ? (
+                <>
+                  <span style={{
+                    width: 14, height: 14, borderRadius: '50%',
+                    border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+                    display: 'inline-block', animation: 'rd-spin 0.7s linear infinite',
+                  }} />
+                  Mengisi...
+                </>
+              ) : 'Ya, Isi Data'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter()
   const pathname = usePathname()
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [showResetModal,  setShowResetModal]  = useState(false)
   const [resetting,       setResetting]       = useState(false)
+  const [showContohModal, setShowContohModal] = useState(false)
+  const [mengisiContoh,   setMengisiContoh]   = useState(false)
+  const [galatContoh,     setGalatContoh]     = useState('')
   const [tagihanOpen, setTagihanOpen] = useState(() => pathname.startsWith('/tagihan'))
   const [siswaOpen,   setSiswaOpen]   = useState(() => pathname.startsWith('/siswa'))
   const [prevPath,    setPrevPath]    = useState(pathname)
@@ -549,7 +685,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {allDone ? (
             <Link
               href="/laporan"
-              className={`sidebar-item${pathname === '/laporan' ? ' active' : ''}`}
+              className={`sidebar-item${pathname === '/laporan' || pathname.startsWith('/laporan/') ? ' active' : ''}`}
             >
               <BarChart2 size={18} className="sidebar-icon" />
               <span>Laporan</span>
@@ -577,6 +713,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* ── Bottom (kuning) ── */}
         <div className="sidebar-bottom">
+          {isDemo && (
+            <button
+              className="sidebar-bottom-item"
+              onClick={() => { setGalatContoh(''); setShowContohModal(true) }}
+            >
+              <Database size={18} />
+              <span>Isi Data Contoh</span>
+            </button>
+          )}
           {isDemo && (
             <button
               className="sidebar-bottom-item"
@@ -621,6 +766,44 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
         </div>
+      )}
+
+      {/* Isi Data Contoh Modal */}
+      {showContohModal && (
+        <IsiDataContohPopup
+          mengisi={mengisiContoh}
+          galat={galatContoh}
+          onClose={() => setShowContohModal(false)}
+          onConfirm={async () => {
+            setMengisiContoh(true)
+            setGalatContoh('')
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              const res  = await fetch('/api/demo-seed', {
+                method:  'POST',
+                headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+              })
+              // Batas waktu fungsi dibalas halaman HTML, bukan JSON
+              const json = await res.json().catch(() => ({ error: `Server membalas status ${res.status}. Coba lagi.` })) as { error: string | null }
+              if (!res.ok || json.error) {
+                setGalatContoh(json.error ?? 'Gagal mengisi data contoh.')
+                return
+              }
+              // Semua langkah setup sudah terisi — cache checklist ikut diperbarui, dan
+              // penanda selesai dipasang supaya popup "setup selesai" tidak muncul
+              localStorage.setItem('siku_setup_steps', JSON.stringify({
+                profil_sekolah: true, tahun_ajaran: true, komponen_tagihan: true, buat_kelas: true, import_siswa: true,
+              }))
+              localStorage.setItem('siku_setup_done', new Date().toISOString())
+              // Muat ulang penuh: setiap halaman menyimpan datanya sendiri di state
+              window.location.href = '/laporan'
+            } catch {
+              setGalatContoh('Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.')
+            } finally {
+              setMengisiContoh(false)
+            }
+          }}
+        />
       )}
 
       {/* Reset Demo Modal */}

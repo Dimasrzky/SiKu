@@ -125,7 +125,8 @@ async function recalculateAll(sid: string): Promise<number> {
     )
 
     // Tanpa kolom tahun_ajaran: tabel tagihan tidak punya kolom itu, dan
-    // menyertakannya membuat seluruh insert ditolak Postgres.
+    // menyertakannya membuat seluruh insert ditolak Postgres. kelas_id,
+    // tahun_ajaran_id, dan jatuh_tempo diisi trigger tagihan_isi_snapshot.
     const toInsert = siswaBaru.map(s => ({
       sekolah_id:    sid,
       siswa_id:      s.id,

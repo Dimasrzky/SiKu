@@ -11,7 +11,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
-import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif } from '@/lib/statusTagihan'
+import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
@@ -71,6 +71,7 @@ interface TagihanRaw {
   total_nominal: number
   bulan:         number
   tahun:         number
+  jatuh_tempo:   string | null
   siswa_id:      string
   payment_token: string | null
   siswa: {
@@ -128,6 +129,8 @@ interface SiswaBayarRow {
   kelas:                    { id: string; nama: string; warna: string; jenjang: string } | null
   tagihan_bulan_ini:        number
   status:                   'lunas' | 'belum_bayar' | 'cicilan'
+  /** Per tagihan — jatuh tempo paket tiap kelas bisa berbeda dalam bulan yang sama */
+  lewat_tempo:              boolean
   has_verifikasi_menunggu:  boolean
   no_wa:                    string | null
   nama_wali:                string | null
@@ -143,7 +146,6 @@ interface DashData {
   totalSiswaRef:     number
   lunasRef:          number
   siswaTunggakanLama: number
-  isLewatTempo:      boolean
   terkumpulIni:      number
   terkumpulLalu:     number
   targetIni:         number
@@ -262,7 +264,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
       .from('tagihan')
-      .select('id, status, total_nominal, bulan, tahun, siswa_id, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas:kelas_id(id, nama, warna, jenjang))')
+      .select('id, status, total_nominal, bulan, tahun, jatuh_tempo, siswa_id, payment_token, siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas:kelas_id(id, nama, warna, jenjang))')
       .eq('sekolah_id', sid)
       .limit(2000),
     supabase
@@ -281,7 +283,10 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).limit(5000),
   ])
 
-  const allTagihan = (tagihanRaw ?? []) as TagihanRaw[]
+  // Tagihan Rp 0 (beasiswa penuh) dibaca lunas oleh semua hitungan di bawah —
+  // barisnya berstatus belum_bayar selamanya karena memang tidak ada yang dibayar
+  const allTagihan = ((tagihanRaw ?? []) as TagihanRaw[])
+    .map(t => (tanpaKewajiban(t.total_nominal) ? { ...t, status: 'lunas' as const } : t))
   const bsProgs    = (beasiswaRaw ?? []) as BeasiswaProgRaw[]
   const pakets     = (paketRaw ?? []) as unknown as PaketKomposisiRaw[]
   const verifikasiTagihanIds = new Set(((verifikasiRaw ?? []) as { tagihan_id: string }[]).map(v => v.tagihan_id))
@@ -337,8 +342,9 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     .filter(t => dalamPeriodeAktif(t.bulan, t.tahun))
     .filter(t => statusEfektif(
       t.status,
-      lewatJatuhTempo(t.bulan, t.tahun, now),
+      lewatJatuhTempo(t, now),
       t.siswa?.status === 'alumni',
+      t.total_nominal,
     ) === 'menunggak')
     .map(t => ({ ...t, sisa: t.total_nominal - (dibayarPerTagihan.get(t.id) ?? 0) }))
     .filter(t => t.sisa > 0)
@@ -349,7 +355,6 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const tunggakanLamaNominal = tunggakanLamaRows.reduce((s, t) => s + t.sisa, 0)
   const tunggakanSiswaIds    = new Set(tunggakanLamaRows.map(t => t.siswa_id))
   const siswaTunggakanLama   = tunggakanSiswaIds.size
-  const isLewatTempo         = lewatJatuhTempo(bulanIni, tahunIni, now)
 
   // "Total Tunggakan Aktif" = kewajiban bulan ini yang belum dibayar + tunggakan
   // lama (bulan-bulan sebelumnya yang sudah lewat jatuh tempo), supaya angkanya
@@ -515,6 +520,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       kelas:                   t.siswa!.kelas,
       tagihan_bulan_ini:       t.total_nominal,
       status:                  t.status,
+      lewat_tempo:             lewatJatuhTempo(t, now),
       has_verifikasi_menunggu: t.status !== 'lunas' && verifikasiTagihanIds.has(t.id),
       no_wa:                   t.siswa!.no_wa,
       nama_wali:               t.siswa!.nama_wali,
@@ -531,7 +537,6 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     totalSiswaRef,
     lunasRef,
     siswaTunggakanLama,
-    isLewatTempo,
     terkumpulIni,
     terkumpulLalu,
     targetIni,
@@ -926,12 +931,12 @@ export default function DashboardPage() {
 
               const now2 = new Date()
               const { data: tagihanRows } = await supabase
-                .from('tagihan').select('siswa_id, bulan, tahun')
+                .from('tagihan').select('siswa_id, bulan, tahun, jatuh_tempo, total_nominal')
                 .eq('sekolah_id', sekolahId).eq('status', 'belum_bayar').limit(5000)
 
               const menunggak = new Set(
-                ((tagihanRows ?? []) as {siswa_id:string;bulan:number;tahun:number}[])
-                  .filter(t => t.tahun < now2.getFullYear() || (t.tahun === now2.getFullYear() && t.bulan < now2.getMonth()+1))
+                ((tagihanRows ?? []) as {siswa_id:string;bulan:number;tahun:number;jatuh_tempo:string|null;total_nominal:number}[])
+                  .filter(t => !tanpaKewajiban(t.total_nominal) && lewatJatuhTempo(t, now2))
                   .map(t => t.siswa_id)
               ).size
 
@@ -952,7 +957,7 @@ export default function DashboardPage() {
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
             lunasRef: 0, siswaTunggakanLama: 0,
-            isLewatTempo: false, terkumpulIni: 0,
+            terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
             belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
             totalBeasiswaNom: 0, penerimaBeasiswa: 0,
@@ -1014,10 +1019,9 @@ export default function DashboardPage() {
   const sk = (val: string) => loading ? '—' : val
 
   // ── Tabel siswa: filter + pagination ────────────────────────────────────────
-  const isLewatTempo      = d?.isLewatTempo ?? false
   const siswaBayarList   = d?.siswaBayarList ?? []
   const filteredSiswa    = siswaBayarList.filter(s => {
-    const isTunggakan = isLewatTempo && s.status === 'belum_bayar'
+    const isTunggakan = s.lewat_tempo && s.status === 'belum_bayar'
     const eff = s.has_verifikasi_menunggu ? 'menunggu_verifikasi' : isTunggakan ? 'tunggakan' : s.status
     if (tabAktif !== 'semua') {
       if (tabAktif === 'tunggakan' && !isTunggakan) return false
@@ -1592,7 +1596,7 @@ export default function DashboardPage() {
               ) : paginatedSiswa.map((siswa, i) => {
                 const effStatus = siswa.has_verifikasi_menunggu
                   ? 'menunggu_verifikasi'
-                  : (isLewatTempo && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
+                  : (siswa.lewat_tempo && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
                 return (
                   <tr key={siswa.id} /* style={{ borderBottom: '1px solid #F1F5F9' }} */>
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', fontSize: '0.85rem', color: '#6B7280' }}>

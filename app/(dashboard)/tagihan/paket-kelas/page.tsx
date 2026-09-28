@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight, X } from 'lucide-react'
+import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight, X, CalendarDays } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const JENJANG_MAP: Record<string, string[]> = {
@@ -20,6 +20,17 @@ const formatDate = (iso: string | null) => {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }
+
+// Jatuh tempo paket berupa tanggal yang berulang setiap bulan, bukan satu tanggal
+// kalender. Kosong = akhir bulan. Trigger database menyalinnya ke tagihan.jatuh_tempo
+// saat tagihan dibuat; tanggal 29–31 jatuh ke hari terakhir di bulan yang lebih pendek.
+const PILIHAN_TANGGAL_JATUH_TEMPO = Array.from({ length: 31 }, (_, i) => i + 1)
+
+const labelJatuhTempo = (tanggal: number | null) =>
+  tanggal ? `Tanggal ${tanggal} setiap bulan` : 'Akhir bulan'
+
+/** Nilai <select> ('' atau '1'–'31') → kolom paket.tanggal_jatuh_tempo */
+const keTanggalJatuhTempo = (nilai: string): number | null => (nilai ? Number(nilai) : null)
 
 const jenisBadgeMap: Record<string, string> = {
   rutin_bulanan: 'Rutin bulanan',
@@ -62,7 +73,7 @@ interface PaketItem {
   id:            string
   nama:          string
   tahun_ajaran:  string
-  jatuh_tempo:   string | null
+  tanggal_jatuh_tempo: number | null
   kelas_list:    PaketKelasData[]
   komponen_list: PaketKomponenData[]
 }
@@ -84,7 +95,7 @@ type PaketRawFull = {
   id:            string
   nama:          string
   tahun_ajaran:  string
-  jatuh_tempo:   string | null
+  tanggal_jatuh_tempo: number | null
   paket_kelas:   PaketKelasNested[]
   paket_komponen: PaketKomponenNested[]
 }
@@ -149,14 +160,13 @@ export default function PaketPerKelasPage() {
   const [carryFrom,      setCarryFrom]      = useState('')
   const [carrying,       setCarrying]       = useState(false)
   const [carryError,     setCarryError]     = useState('')
-  const [aktifSelesai,   setAktifSelesai]   = useState('')
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadPaket = async (sid: string, tahun: string) => {
     const { data: paketData } = await supabase
       .from('paket')
       .select(`
-        id, nama, tahun_ajaran, jatuh_tempo,
+        id, nama, tahun_ajaran, tanggal_jatuh_tempo,
         paket_kelas(kelas_id, kelas:kelas_id(id, nama, jenjang, siswa(count))),
         paket_komponen(id, komponen_id, nominal, komponen:komponen_id(nama, kelas_warna))
       `)
@@ -171,7 +181,7 @@ export default function PaketPerKelasPage() {
         id:           p.id,
         nama:         p.nama,
         tahun_ajaran: p.tahun_ajaran,
-        jatuh_tempo:  p.jatuh_tempo ?? null,
+        tanggal_jatuh_tempo: p.tanggal_jatuh_tempo ?? null,
         kelas_list:   p.paket_kelas
           .map(pk => ({
             id:          pk.kelas?.id ?? '',
@@ -234,11 +244,10 @@ export default function PaketPerKelasPage() {
       setSekolahId(sid)
 
       const { data: taData } = await supabase.from('tahun_ajaran')
-        .select('nama, tanggal_selesai').eq('is_aktif', true).maybeSingle()
-      const ta    = taData as { nama: string; tanggal_selesai: string } | null
+        .select('nama').eq('is_aktif', true).maybeSingle()
+      const ta    = taData as { nama: string } | null
       const tahun = ta?.nama ?? ''
       setActiveTahunAjaran(tahun)
-      setAktifSelesai(ta?.tanggal_selesai ?? '')
 
       const [{ data: kData }, { data: kompData }, { data: rekData }] = await Promise.all([
         supabase.from('kelas').select('id, nama, jenjang, siswa(count)').order('jenjang').limit(100),
@@ -393,7 +402,8 @@ export default function PaketPerKelasPage() {
           sekolah_id:   sekolahId,
           nama:         p.nama,
           tahun_ajaran: activeTahunAjaran,
-          jatuh_tempo:  aktifSelesai || null,
+          // Tanggal jatuh tempo berulang tiap bulan, jadi tetap berlaku di tahun ajaran baru
+          tanggal_jatuh_tempo: p.tanggal_jatuh_tempo,
         }).select('id').single()
         if (error || !paketBaru) throw new Error(error?.message ?? 'Gagal menyalin paket.')
 
@@ -453,7 +463,7 @@ export default function PaketPerKelasPage() {
 
     const { data: paket, error: e1 } = await supabase
       .from('paket')
-      .insert({ sekolah_id: sekolahId, nama: formNama.trim(), tahun_ajaran: activeTahunAjaran, jatuh_tempo: formJatuhTempo || null })
+      .insert({ sekolah_id: sekolahId, nama: formNama.trim(), tahun_ajaran: activeTahunAjaran, tanggal_jatuh_tempo: keTanggalJatuhTempo(formJatuhTempo) })
       .select('id').single()
     if (e1 || !paket) { setFormError(e1?.message ?? 'Gagal menyimpan paket.'); setFormSaving(false); return }
     const paketId = (paket as { id: string }).id
@@ -498,7 +508,7 @@ export default function PaketPerKelasPage() {
   const openEdit = (p: PaketItem) => {
     setEditTarget(p)
     setEditNama(p.nama)
-    setEditJatuhTempo(p.jatuh_tempo ?? '')
+    setEditJatuhTempo(p.tanggal_jatuh_tempo ? String(p.tanggal_jatuh_tempo) : '')
     const map: Record<string, number> = {}
     p.komponen_list.forEach(kp => { map[kp.id] = kp.nominal })
     setEditNominalMap(map)
@@ -526,7 +536,7 @@ export default function PaketPerKelasPage() {
     // Update nama & jatuh tempo
     const { error: e1 } = await supabase
       .from('paket')
-      .update({ nama: editNama.trim(), jatuh_tempo: editJatuhTempo || null })
+      .update({ nama: editNama.trim(), tanggal_jatuh_tempo: keTanggalJatuhTempo(editJatuhTempo) })
       .eq('id', editTarget.id)
     if (e1) { setEditError(e1.message); setEditSaving(false); return }
 
@@ -766,12 +776,15 @@ export default function PaketPerKelasPage() {
                     />
                   </div>
                   <div>
-                    <label style={sLabel}>Tentukan jatuh tempo</label>
-                    <input
-                      type="date"
+                    <label style={sLabel}>Jatuh tempo setiap bulan</label>
+                    <select
                       value={formJatuhTempo} onChange={e => setFormJatuhTempo(e.target.value)}
                       style={sInput}
-                    />
+                    >
+                      <option value="">Akhir bulan</option>
+                      {PILIHAN_TANGGAL_JATUH_TEMPO.map(n => <option key={n} value={n}>Tanggal {n}</option>)}
+                    </select>
+                    <p style={sHint}>Tanggal 29–31 memakai hari terakhir pada bulan yang lebih pendek.</p>
                   </div>
                 </div>
 
@@ -890,6 +903,9 @@ export default function PaketPerKelasPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 500 }}>
                     <Layers size={14} /> {p.komponen_list.length} komponen
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 500 }}>
+                    <CalendarDays size={14} /> Jatuh tempo: {labelJatuhTempo(p.tanggal_jatuh_tempo).toLowerCase()}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 500 }}>
                     <Pencil size={14} /> Tidak ada override
@@ -1026,11 +1042,15 @@ export default function PaketPerKelasPage() {
                 />
               </div>
               <div>
-                <label style={sLabel}>Jatuh tempo</label>
-                <input
-                  type="date" value={editJatuhTempo} onChange={e => setEditJatuhTempo(e.target.value)}
+                <label style={sLabel}>Jatuh tempo setiap bulan</label>
+                <select
+                  value={editJatuhTempo} onChange={e => setEditJatuhTempo(e.target.value)}
                   style={sInput}
-                />
+                >
+                  <option value="">Akhir bulan</option>
+                  {PILIHAN_TANGGAL_JATUH_TEMPO.map(n => <option key={n} value={n}>Tanggal {n}</option>)}
+                </select>
+                <p style={sHint}>Berlaku untuk tagihan berikutnya. Tagihan yang sudah terbit tetap memakai tanggal lamanya.</p>
               </div>
             </div>
 
@@ -1173,7 +1193,7 @@ export default function PaketPerKelasPage() {
             </p>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '0.75rem 1rem', fontSize: '0.78rem', color: '#475569', lineHeight: 1.6, textAlign: 'left', marginBottom: '1.25rem' }}>
               Paket dan komponen tagihan akan <strong>disalin</strong> ke {activeTahunAjaran} — data periode {carryFrom} tetap
-              utuh di Riwayat. Jatuh tempo diisi <strong>{aktifSelesai ? formatDate(aktifSelesai) : 'akhir tahun ajaran'}</strong> dan
+              utuh di Riwayat. Tanggal jatuh tempo setiap bulan ikut disalin dari paket lama dan
               bisa diubah kapan saja.
             </div>
 
@@ -1309,5 +1329,6 @@ export default function PaketPerKelasPage() {
 
 const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 4 }
 const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', boxShadow: '6px 6px 8px rgba(18,47,102,0.19)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-dark)', outline: 'none', background: '#fff', boxSizing: 'border-box' }
+const sHint:  React.CSSProperties = { fontSize: '0.75rem', fontWeight: 500, color: '#6F788A', margin: '0.4rem 0 0', lineHeight: 1.4 }
 const sCard:  React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
 const sBtn:   React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }

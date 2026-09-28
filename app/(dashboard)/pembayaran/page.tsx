@@ -153,7 +153,8 @@ export default function PembayaranPage() {
   const [modal,        setModal]        = useState<DisplayRow | null>(null)
   const [jumlahBayar,  setJumlahBayar]  = useState('')
   const [metodeBayar,  setMetodeBayar]  = useState('tunai')
-  const [tanggalBayar, setTanggalBayar] = useState(now.toISOString().split('T')[0])
+  // Tanggal lokal, bukan UTC — toISOString() memberi tanggal kemarin sebelum pukul 07.00 WIB
+  const [tanggalBayar, setTanggalBayar] = useState(now.toLocaleDateString('en-CA'))
   const [keterangan,   setKeterangan]   = useState('')
   const [saving,       setSaving]       = useState(false)
   const [saveError,    setSaveError]    = useState('')

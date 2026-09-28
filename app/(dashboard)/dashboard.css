@@ -893,6 +893,29 @@
 
 
 /* ═══════════════════════════════════════════
+   LAPORAN — baris yang bisa diklik untuk drill-down
+   (Sekolah › Jenjang › Kelas)
+═══════════════════════════════════════════ */
+.laporan-baris-tautan { transition: background 0.12s; cursor: pointer; }
+.laporan-baris-tautan:hover { background: #F8FAFC; }
+.laporan-baris-tautan:focus-visible { outline: 2px solid #3C75B7; outline-offset: 2px; }
+
+/* Grafik tren: pergantian grafik ↔ tabel, baris tabel berurutan, batang tumbuh dari garis dasar */
+@keyframes tren-masuk  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes tren-tumbuh { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.tren-ganti { animation: tren-masuk 0.24s ease-out both; }
+/* Kartu memanjang ke bawah saat masuk mode tabel, menyusut saat kembali ke grafik */
+.tren-wadah { transition: height 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.tren-baris { animation: tren-masuk 0.22s ease-out both; }
+/* transform-origin diisi per batang (koordinat SVG di garis dasar), jadi pakai view-box */
+.tren-kolom { transform-box: view-box; animation: tren-tumbuh 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .tren-ganti, .tren-baris, .tren-kolom { animation: none; }
+  .tren-wadah { transition: none; }
+}
+
+
+/* ═══════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════ */
 @media (max-width: 900px) {

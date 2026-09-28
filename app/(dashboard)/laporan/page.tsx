@@ -1,24 +1,29 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useMemo, Suspense } from 'react'
+import Link from 'next/link'
 import Image from 'next/image'
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { BarChart2, Database, TrendingUp, PieChart, AlertTriangle, ChevronDown, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
+import { BarChart2, Database, AlertTriangle, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, type StatusTagihan } from '@/lib/statusTagihan'
+import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, batasJatuhTempo, tanpaKewajiban, type StatusTagihan, type WaktuTagihan } from '@/lib/statusTagihan'
+import {
+  hitungRingkasan, hitungPemasukan, umurTunggakan, trenTagihanRealisasi, adalahTunggakan,
+  type KelompokUmur,
+} from '@/lib/metrikLaporan'
+import { BULAN_PANJANG as BULAN_NAMES_FULL, formatRupiah as fmt, formatRingkas as fmtRingkas, formatPersen as fmtPersen } from '@/lib/formatLaporan'
+import { useDataLaporan } from '@/lib/useDataLaporan'
+import { useFilterLaporan, monthsInRange } from '@/lib/useFilterLaporan'
+import { HeaderLaporan } from '@/components/laporan/HeaderLaporan'
+import { FilterLaporan } from '@/components/laporan/FilterLaporan'
+import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
+import { TrenTagihanChart } from '@/components/laporan/TrenTagihanChart'
+import { CariSiswa, type SiswaCari } from '@/components/laporan/CariSiswa'
+import { sKartu, sBingkai, sJudulPanel, sSubjudulPanel } from '@/components/laporan/gayaLaporan'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const BULAN_NAMES = [
-  '', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
-]
-const BULAN_NAMES_FULL = [
-  '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-]
 
 // Sama seperti naik-kelas & dashboard — dipakai untuk menurunkan angkatan dari posisi jenjang siswa.
 const JENJANG_MAP: Record<string, string[]> = {
@@ -29,29 +34,11 @@ const JENJANG_MAP: Record<string, string[]> = {
   'SMK':     ['10', '11', '12'],
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
-
-function monthsInRange(startIso: string, endIso: string): { bulan: number; tahun: number }[] {
-  const start = new Date(startIso)
-  const end   = new Date(endIso)
-  const out: { bulan: number; tahun: number }[] = []
-  let y = start.getFullYear()
-  let m = start.getMonth() + 1
-  while (y < end.getFullYear() || (y === end.getFullYear() && m <= end.getMonth() + 1)) {
-    out.push({ bulan: m, tahun: y })
-    m += 1
-    if (m > 12) { m = 1; y += 1 }
-  }
-  return out
-}
+// Umur tunggakan = satu hue merah, makin tua makin gelap (diuji dengan validator
+// palet dataviz, ordinal, permukaan terang)
+const WARNA_UMUR = ['#F87171', '#EF4444', '#B91C1C', '#7F1D1D']
 
 const periodKey = (bulan: number, tahun: number) => `${tahun}-${bulan}`
-
-// Jatuh tempo dibaca dari lib/statusTagihan supaya batasnya sama persis dengan
-// halaman tagihan aktif — definisi lama di sini bergeser satu hari.
-const isPastDue = (bulan: number, tahun: number) => lewatJatuhTempo(bulan, tahun, new Date())
 
 const METODE_LABELS: Record<string, string> = {
   tunai:    'Tunai',
@@ -112,8 +99,111 @@ async function buildPaketByKelasMap(sekolahId: string): Promise<Map<string, Pake
   return map
 }
 
+// Font bawaan jsPDF (helvetica) tidak menjamin tanda pisah en/em — kode PDF lama di
+// halaman ini pun sengaja memakai "-" biasa
+const teksPdf = (s: string) => s.replace(/[–—]/g, '-')
+
 function getFinalY(doc: jsPDF): number {
   return (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 20
+}
+
+type FormatEkspor = 'excel' | 'pdf'
+
+interface TabelEkspor {
+  format:       FormatEkspor
+  /** Tanpa ekstensi — .xlsx / .pdf ditambahkan sesuai format */
+  namaFile:     string
+  namaSheet:    string
+  /** Judul dan keterangan cakupan di kop PDF */
+  judul:        string
+  keterangan:   string
+  namaSekolah:  string
+  headers:      string[]
+  baris:        (string | number)[][]
+  /** Lebar kolom Excel (wch) */
+  lebarKolom:   number[]
+  /** Indeks kolom Rupiah: angka mentah di Excel, "Rp …" rata kanan dan dijumlah di PDF */
+  kolomRupiah?: number[]
+}
+
+/**
+ * Tulis satu tabel laporan sebagai Excel atau PDF dari baris yang SAMA, supaya isi
+ * kedua format tidak mungkin berselisih. PDF: kop sekolah, lanskap otomatis untuk
+ * tabel lebar, baris total untuk kolom Rupiah, dan nomor halaman.
+ */
+function unduhTabel(t: TabelEkspor): void {
+  if (t.format === 'excel') {
+    const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.baris])
+    ws['!cols'] = t.lebarKolom.map(wch => ({ wch }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, t.namaSheet)
+    XLSX.writeFile(wb, `${t.namaFile}.xlsx`)
+    return
+  }
+
+  const doc = new jsPDF({ orientation: t.headers.length > 8 ? 'landscape' : 'portrait' })
+  const lebarHalaman  = doc.internal.pageSize.getWidth()
+  const tinggiHalaman = doc.internal.pageSize.getHeight()
+  const navy: [number, number, number] = [26, 44, 78]
+  const kini = new Date()
+
+  let y = 16
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14)
+  doc.text(teksPdf(t.namaSekolah || 'Sekolah'), lebarHalaman / 2, y, { align: 'center' })
+  y += 7
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11)
+  doc.text(teksPdf(t.judul), lebarHalaman / 2, y, { align: 'center' })
+  y += 6
+  doc.setFontSize(9); doc.setTextColor(100)
+  doc.text(teksPdf(t.keterangan), lebarHalaman / 2, y, { align: 'center' })
+  y += 5
+  doc.text(
+    `Dibuat pada ${kini.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}, ${kini.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`,
+    lebarHalaman / 2, y, { align: 'center' },
+  )
+  doc.setTextColor(0)
+  y += 6
+
+  const rupiah = new Set(t.kolomRupiah ?? [])
+  const kanan  = { halign: 'right' as const }
+  const body   = t.baris.map(b => b.map((sel, i) => (
+    rupiah.has(i) && typeof sel === 'number' ? { content: fmt(sel), styles: kanan } : teksPdf(String(sel))
+  )))
+
+  // Baris total: label "Total" membentang sampai kolom Rupiah pertama
+  const pertamaRp = rupiah.size > 0 ? Math.min(...rupiah) : -1
+  const foot = pertamaRp > 0
+    ? [[
+        { content: 'Total', colSpan: pertamaRp },
+        ...t.headers.slice(pertamaRp).map((_, j) => {
+          const i = pertamaRp + j
+          if (!rupiah.has(i)) return ''
+          const jumlah = t.baris.reduce((s, b) => s + (typeof b[i] === 'number' ? (b[i] as number) : 0), 0)
+          return { content: fmt(jumlah), styles: kanan }
+        }),
+      ]]
+    : undefined
+
+  autoTable(doc, {
+    startY:     y,
+    head:       [t.headers],
+    body,
+    foot,
+    showFoot:   'lastPage',
+    theme:      'grid',
+    headStyles: { fillColor: navy, fontSize: 8 },
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
+    styles:     { fontSize: 8, cellPadding: 1.5 },
+    margin:     { left: 10, right: 10 },
+  })
+
+  const jumlahHalaman = doc.getNumberOfPages()
+  for (let p = 1; p <= jumlahHalaman; p++) {
+    doc.setPage(p)
+    doc.setFontSize(8); doc.setTextColor(120)
+    doc.text(`Halaman ${p} dari ${jumlahHalaman}`, lebarHalaman - 10, tinggiHalaman - 8, { align: 'right' })
+  }
+  doc.save(`${t.namaFile}.pdf`)
 }
 
 // Data sekolah demo cuma isi NIS, belum isi NISN — fallback ke NIS supaya kolom tidak kosong.
@@ -138,48 +228,13 @@ function formatDateLocal(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-// Jatuh tempo = akhir bulan tagihan — konvensi yang sama dipakai di tagihan/aktif & dashboard.
-function getJatuhTempoTanggal(bulan: number, tahun: number): string {
-  return formatDateLocal(new Date(tahun, bulan, 0))
+// Jatuh tempo per tagihan (snapshot paket kelasnya), ditulis sebagai tanggal WIB
+// YYYY-MM-DD — batasJatuhTempo berupa 23:59:59 WIB, jadi tanggalnya dibaca di zona itu.
+function getJatuhTempoTanggal(t: WaktuTagihan): string {
+  return batasJatuhTempo(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-interface TahunAjaranRow {
-  id:                      string
-  nama:                    string
-  tanggal_mulai:           string
-  tanggal_selesai:         string
-  semester_ganjil_mulai:   string
-  semester_ganjil_selesai: string
-  semester_genap_mulai:    string
-  semester_genap_selesai:  string
-}
-
-interface FilterOption {
-  label:    string
-  sublabel: string
-  value:    string
-  months:   { bulan: number; tahun: number }[]
-}
-
-interface TagihanItemRaw {
-  komponen_id:   string | null
-  nama_komponen: string
-  nominal:       number
-  /** Nama hidup dari master komponen — null kalau komponennya sudah dihapus */
-  komponen:      { nama: string } | null
-}
-interface TagihanRaw {
-  id:            string
-  total_nominal: number
-  status:        'lunas' | 'belum_bayar' | 'cicilan'
-  bulan:         number
-  tahun:         number
-  siswa:         { status: string | null; kelas: { jenjang: string } | null } | null
-  tagihan_item:  TagihanItemRaw[]
-}
-interface PembayaranRaw { tagihan_id: string; jumlah: number }
 
 interface ExportTagihanNested {
   id:           string
@@ -212,6 +267,7 @@ interface TunggakanTagihanRaw {
   tahun:         number
   status:        'lunas' | 'belum_bayar' | 'cicilan'
   total_nominal: number
+  jatuh_tempo:   string | null
   siswa:         { nama: string; nis: string | null; nisn: string | null; kelas: { id: string; nama: string } | null } | null
   tagihan_item:  { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[]
 }
@@ -251,49 +307,29 @@ interface TahunAjaranFullRaw {
   is_aktif:        boolean
 }
 
-// ── Bar Chart ─────────────────────────────────────────────────────────────────
+// ── Umur tunggakan ────────────────────────────────────────────────────────────
 
-function BarChart({ data }: { data: { bulan: string; nominal: number }[] }) {
-  const max    = Math.max(1, ...data.map(d => d.nominal))
-  const W      = 520; const H = 170; const PX = 30; const PY = 14; const BOT = 26
-  const barW   = (W - PX * 2) / data.length
-  const innerH = H - PY - BOT
-
+function UmurTunggakanList({ data }: { data: KelompokUmur[] }) {
+  const maks = Math.max(1, ...data.map(k => k.nominal))
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {[0, 0.5, 1].map(t => {
-        const y = PY + innerH * (1 - t)
-        return (
-          <g key={t}>
-            <line x1={PX} y1={y} x2={W - PX} y2={y} stroke="#F1F5F9" strokeWidth={1} />
-            <text x={PX - 4} y={y + 3.5} textAnchor="end" fontSize={10} fill="#94A3B8">
-              {t === 0 ? '0' : `${Math.round((max * t) / 1_000_000)}jt`}
-            </text>
-          </g>
-        )
-      })}
-      {data.map((d, i) => {
-        const pct    = d.nominal / max
-        const barH   = innerH * pct
-        const x      = PX + i * barW + barW * 0.2
-        const bW     = barW * 0.6
-        const y      = PY + innerH - barH
-        const isLast = i === data.length - 1
-        return (
-          <g key={`${d.bulan}_${i}`}>
-            <rect x={x} y={y} width={bW} height={barH} rx={4} fill={isLast ? '#1A2C4E' : '#93C5FD'} />
-            <text x={x + bW / 2} y={y - 4} textAnchor="middle" fontSize={9.5}
-              fill={isLast ? '#1A2C4E' : '#64748B'} fontWeight={isLast ? 700 : 400}>
-              {Math.round(d.nominal / 1_000_000)}jt
-            </text>
-            <text x={x + bW / 2} y={H - 4} textAnchor="middle" fontSize={11}
-              fill={isLast ? '#1A2C4E' : '#64748B'} fontWeight={isLast ? 700 : 400}>
-              {d.bulan}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {data.map((k, i) => (
+        <div key={k.label}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.375rem' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{k.label}</span>
+            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>
+              {fmt(k.nominal)}
+              <span style={{ fontWeight: 500, color: '#6F788A' }}> · {k.jumlahSiswa} siswa</span>
+            </span>
+          </div>
+          <div style={{ height: 10 }}>
+            {k.nominal > 0 && (
+              <div style={{ height: '100%', width: `${(k.nominal / maks) * 100}%`, minWidth: 4, background: WARNA_UMUR[i], borderRadius: '0 4px 4px 0' }} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -340,173 +376,83 @@ function DonutChart({ data }: { data: { label: string; value: number; color: str
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// useSearchParams wajib berada di bawah batas Suspense, kalau tidak build gagal
+// saat Next mencoba melakukan prerender statis halaman ini.
 export default function LaporanPage() {
-  const [sekolahId,    setSekolahId]    = useState('')
-  const [loading,      setLoading]      = useState(true)
-  const [allTagihan,   setAllTagihan]   = useState<TagihanRaw[]>([])
-  const [allPembayaran, setAllPembayaran] = useState<PembayaranRaw[]>([])
-  const [activeTA,     setActiveTA]     = useState<TahunAjaranRow | null>(null)
-  const [archivedTAs,  setArchivedTAs]  = useState<TahunAjaranRow[]>([])
+  return (
+    <Suspense fallback={
+      <div className="dashboard-content">
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
+      </div>
+    }>
+      <LaporanContent />
+    </Suspense>
+  )
+}
 
-  const [showDropdown, setShowDropdown] = useState(false)
-  const [selectedValue, setSelectedValue] = useState('bulan-ini')
+function LaporanContent() {
+  // Data dan filter dipakai bersama semua level drill-down — lib/useDataLaporan
+  // dan lib/useFilterLaporan. Filter tinggal di URL (?ta=&periode=).
+  const { sekolahId, namaSekolah, loading, rows: metrikRows, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
+  const filter = useFilterLaporan(activeTA, archivedTAs, sekarang)
+  const { taTerpilih, taArsipTerpilih, selectedFilter, dalamPeriode, qsFilter } = filter
+
   const [exportingTransaksi, setExportingTransaksi] = useState(false)
   const [exportingTunggakan, setExportingTunggakan] = useState(false)
   const [exportingSiswaAktif, setExportingSiswaAktif] = useState(false)
   const [exportingAlumni, setExportingAlumni] = useState(false)
   const [exportingKeuanganTahunan, setExportingKeuanganTahunan] = useState(false)
+  // Format yang sedang diproses — supaya "Memproses..." muncul di tombol yang diklik saja
+  const [formatEkspor, setFormatEkspor] = useState<FormatEkspor>('excel')
   const [exportNotice, setExportNotice] = useState('')
   const [generatingUtama, setGeneratingUtama] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function onOutsideClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', onOutsideClick)
-    return () => document.removeEventListener('mousedown', onOutsideClick)
-  }, [])
-
-  // ── Load profile ──────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: p } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
-      if (p?.sekolah_id) setSekolahId(p.sekolah_id as string)
-    }
-    init()
-  }, [])
-
-  // ── Load data ─────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!sekolahId) return
-    let cancelled = false
-
-    const TA_SELECT = 'id, nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai'
-
-    const load = async () => {
-      setLoading(true)
-
-      const [{ data: tagihanData }, { data: pembData }, { data: taAktif }, { data: taArsip }] = await Promise.all([
-        supabase.from('tagihan')
-          .select('id, total_nominal, status, bulan, tahun, siswa:siswa_id(status, kelas:kelas_id(jenjang)), tagihan_item(komponen_id, nama_komponen, nominal, komponen:komponen_id(nama))')
-          .eq('sekolah_id', sekolahId)
-          .limit(5000),
-        supabase.from('pembayaran')
-          .select('tagihan_id, jumlah')
-          .eq('sekolah_id', sekolahId)
-          .limit(10000),
-        supabase.from('tahun_ajaran').select(TA_SELECT).eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle(),
-        supabase.from('tahun_ajaran').select(TA_SELECT).eq('sekolah_id', sekolahId).eq('is_aktif', false)
-          .order('tanggal_mulai', { ascending: false }).limit(5),
-      ])
-
-      if (cancelled) return
-      setAllTagihan((tagihanData ?? []) as unknown as TagihanRaw[])
-      setAllPembayaran((pembData ?? []) as PembayaranRaw[])
-      setActiveTA((taAktif ?? null) as TahunAjaranRow | null)
-      setArchivedTAs((taArsip ?? []) as TahunAjaranRow[])
-      setLoading(false)
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [sekolahId])
-
-  // ── Filter periode options ────────────────────────────────────────────────
-
-  const filterOptions = useMemo<FilterOption[]>(() => {
-    const now       = new Date()
-    const bulanIni  = now.getMonth() + 1
-    const tahunIni  = now.getFullYear()
-    const bulanLalu = bulanIni === 1 ? 12 : bulanIni - 1
-    const tahunLalu = bulanIni === 1 ? tahunIni - 1 : tahunIni
-
-    const opts: FilterOption[] = [
-      { label: 'Bulan ini',  sublabel: `${BULAN_NAMES_FULL[bulanIni]} ${tahunIni}`,   value: 'bulan-ini',  months: [{ bulan: bulanIni, tahun: tahunIni }] },
-      { label: 'Bulan lalu', sublabel: `${BULAN_NAMES_FULL[bulanLalu]} ${tahunLalu}`, value: 'bulan-lalu', months: [{ bulan: bulanLalu, tahun: tahunLalu }] },
-    ]
-
-    if (activeTA) {
-      opts.push({ label: 'Semester Ganjil', sublabel: activeTA.nama, value: `sem-ganjil-${activeTA.id}`, months: monthsInRange(activeTA.semester_ganjil_mulai, activeTA.semester_ganjil_selesai) })
-      opts.push({ label: 'Semester Genap',  sublabel: activeTA.nama, value: `sem-genap-${activeTA.id}`,  months: monthsInRange(activeTA.semester_genap_mulai, activeTA.semester_genap_selesai) })
-      opts.push({ label: 'Tahun ajaran',    sublabel: activeTA.nama, value: `ta-${activeTA.id}`,          months: monthsInRange(activeTA.tanggal_mulai, activeTA.tanggal_selesai) })
-    }
-    for (const ta of archivedTAs) {
-      opts.push({ label: 'Tahun ajaran', sublabel: ta.nama, value: `ta-${ta.id}`, months: monthsInRange(ta.tanggal_mulai, ta.tanggal_selesai) })
-    }
-    return opts
-  }, [activeTA, archivedTAs])
-
-  const selectedFilter = filterOptions.find(o => o.value === selectedValue) ?? filterOptions[0]
 
   // ── Data untuk periode terpilih ───────────────────────────────────────────
 
-  const periodTagihan = useMemo(() => {
-    if (!selectedFilter) return []
-    const monthSet = new Set(selectedFilter.months.map(m => periodKey(m.bulan, m.tahun)))
-    return allTagihan.filter(t => monthSet.has(periodKey(t.bulan, t.tahun)))
-  }, [allTagihan, selectedFilter])
-
-  const paidByTagihan = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const p of allPembayaran) {
-      map.set(p.tagihan_id, (map.get(p.tagihan_id) ?? 0) + p.jumlah)
-    }
-    return map
-  }, [allPembayaran])
+  const periodTagihan = useMemo(() => metrikRows.filter(dalamPeriode), [metrikRows, dalamPeriode])
 
   const now      = new Date()
-  const nowBulan = now.getMonth() + 1
   const nowTahun = now.getFullYear()
 
-  const stats = useMemo(() => {
-    let totalPemasukan = 0
-    let transaksiCount = 0
-    let sudahMasuk     = 0
-    let totalTagihanRp = 0
-    let belumJatuhTempo = 0
-    let menunggakRp     = 0
+  // Pelunasan, akan masuk, ketepatan waktu, tunggakan — semua dari lib/metrikLaporan
+  const ringkasan = useMemo(() => hitungRingkasan(periodTagihan, sekarang), [periodTagihan, sekarang])
+  const pemasukan = useMemo(() => hitungPemasukan(periodTagihan), [periodTagihan])
 
-    for (const t of periodTagihan) {
-      const paid = paidByTagihan.get(t.id) ?? 0
-      totalPemasukan += paid
-      totalTagihanRp += t.total_nominal
-      if (t.status === 'lunas') sudahMasuk += t.total_nominal
-      const sisa = t.total_nominal - paid
-      if (t.status !== 'lunas' && sisa > 0) {
-        // Aturan sama dengan donut, tabel, dan dashboard — termasuk alumni yang
-        // otomatis menunggak. Sebelumnya hanya memakai tanggal, sehingga tunggakan
-        // alumni jatuh ke ember "belum jatuh tempo" dan Menunggak selalu Rp 0.
-        const eff = statusEfektif(t.status, isPastDue(t.bulan, t.tahun), t.siswa?.status === 'alumni')
-        if (eff === 'menunggak') menunggakRp += sisa
-        else belumJatuhTempo += sisa
-      }
+  // Umur tunggakan tidak mengikuti filter apa pun: piutang lama tidak hilang hanya
+  // karena periode atau tahun ajarannya diganti. Tren tidak mengikuti periode, tapi
+  // mengikuti tahun ajaran: 12 bulan yang berakhir di akhir tahun ajaran terpilih,
+  // tidak pernah melewati bulan ini — untuk tahun ajaran aktif = 12 bulan terakhir.
+  const akhirTA        = taTerpilih?.tanggal_selesai ?? null
+  const semuaTunggakan = useMemo(() => hitungRingkasan(metrikRows, sekarang), [metrikRows, sekarang])
+  const umur           = useMemo(() => umurTunggakan(metrikRows, sekarang), [metrikRows, sekarang])
+  const tren           = useMemo(
+    () => trenTagihanRealisasi(metrikRows, sekarang, akhirTA ? new Date(akhirTA) : sekarang),
+    [metrikRows, sekarang, akhirTA],
+  )
+
+  // Daftar siswa untuk pencarian — kelas diambil dari tagihan terbarunya
+  const daftarCariSiswa = useMemo<SiswaCari[]>(() => {
+    const terbaru = new Map<string, (typeof metrikRows)[number]>()
+    for (const t of metrikRows) {
+      const lama = terbaru.get(t.siswa_id)
+      if (!lama || t.tahun * 12 + t.bulan > lama.tahun * 12 + lama.bulan) terbaru.set(t.siswa_id, t)
     }
-    transaksiCount = periodTagihan.reduce((s, t) => s + (paidByTagihan.get(t.id) ? 1 : 0), 0)
-
-    const tingkatPelunasan = totalTagihanRp > 0 ? Math.round((sudahMasuk / totalTagihanRp) * 100) : 0
-
-    // Tunggakan = yang sudah lewat jatuh tempo saja. Tagihan yang belum jatuh tempo
-    // bukan tunggakan — hanya tagihan berjalan yang wajarnya memang belum dibayar.
-    return { totalPemasukan, transaksiCount, sudahMasuk, totalTagihanRp, tingkatPelunasan, belumJatuhTempo, menunggakRp, totalTunggakan: menunggakRp }
-  }, [periodTagihan, paidByTagihan])
+    return [...terbaru.values()]
+      .map(t => ({
+        id:       t.siswa_id,
+        nama:     t.siswa?.nama ?? '—',
+        nis:      t.siswa?.nis ?? null,
+        kelas:    t.is_alumni ? 'Alumni' : (t.kelas_id ? kelas.get(t.kelas_id)?.nama ?? '—' : '—'),
+        isAlumni: t.is_alumni,
+      }))
+      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+  }, [metrikRows, kelas])
 
   const donutData = useMemo(() => {
     // Aturan sama persis dengan halaman tagihan aktif, termasuk pengecualian alumni
     const jumlah: Record<StatusTagihan, number> = { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 }
     for (const t of periodTagihan) {
-      const eff = statusEfektif(
-        t.status,
-        isPastDue(t.bulan, t.tahun),
-        t.siswa?.status === 'alumni',
-      )
-      jumlah[eff] += 1
+      jumlah[statusEfektif(t.status, lewatJatuhTempo(t, sekarang), t.is_alumni, t.total_nominal)] += 1
     }
     const { lunas, cicilan, belum_bayar: belumBayar, menunggak } = jumlah
     return [
@@ -515,22 +461,36 @@ export default function LaporanPage() {
       { label: STATUS_TAGIHAN.belum_bayar.label, value: belumBayar, color: STATUS_TAGIHAN.belum_bayar.solid },
       { label: STATUS_TAGIHAN.menunggak.label,   value: menunggak,  color: STATUS_TAGIHAN.menunggak.solid   },
     ]
-  }, [periodTagihan])
+  }, [periodTagihan, sekarang])
 
+  // Rumus yang sama dengan kartu tingkat pelunasan (Rupiah, hanya tagihan jatuh
+  // tempo), dikelompokkan menurut kelas saat tagihan dibuat — bukan kelas siswa
+  // sekarang, yang sudah bergeser setelah naik kelas. Tagihan tanpa snapshot kelas
+  // (tahun ajaran sebelum kolom itu ada) hanya ikut di angka sekolah.
   const jenjangData = useMemo(() => {
-    const byJenjang = new Map<string, { total: number; lunas: number }>()
+    const perJenjang = new Map<string, typeof periodTagihan>()
     for (const t of periodTagihan) {
-      const jenjang = t.siswa?.kelas?.jenjang
+      const jenjang = t.kelas_id ? kelas.get(t.kelas_id)?.jenjang : undefined
       if (!jenjang) continue
-      const cur = byJenjang.get(jenjang) ?? { total: 0, lunas: 0 }
-      cur.total += 1
-      if (t.status === 'lunas') cur.lunas += 1
-      byJenjang.set(jenjang, cur)
+      const daftar = perJenjang.get(jenjang)
+      if (daftar) daftar.push(t)
+      else perJenjang.set(jenjang, [t])
     }
-    return Array.from(byJenjang.entries())
-      .map(([jenjang, v]) => ({ jenjang: `Jenjang ${jenjang}`, pct: v.total > 0 ? Math.round((v.lunas / v.total) * 100) : 0 }))
-      .sort((a, b) => a.jenjang.localeCompare(b.jenjang, 'id', { numeric: true }))
-  }, [periodTagihan])
+    return Array.from(perJenjang.entries())
+      .map(([kode, rows]) => {
+        const r = hitungRingkasan(rows, sekarang)
+        return {
+          kode,
+          jenjang:   `Jenjang ${kode}`,
+          pct:       r.tingkatPelunasan,
+          terbayar:  r.terbayarJatuhTempo,
+          nilai:     r.nilaiJatuhTempo,
+          ketepatan: r.ketepatanWaktu,
+          tunggakan: r.tunggakanBerjalan,
+        }
+      })
+      .sort((a, b) => a.kode.localeCompare(b.kode, 'id', { numeric: true }))
+  }, [periodTagihan, kelas, sekarang])
 
   const komponenData = useMemo(() => {
     // Dikelompokkan per komponen_id dan diberi label nama hidup dari master komponen,
@@ -539,7 +499,7 @@ export default function LaporanPage() {
     // Komponen yang sudah dihapus tidak punya komponen_id lagi — jatuh ke snapshot.
     const byKomponen = new Map<string, { nama: string; jumlah: number; total: number }>()
     for (const t of periodTagihan) {
-      if (t.status === 'lunas') continue
+      if (t.status === 'lunas' || tanpaKewajiban(t.total_nominal)) continue
       for (const item of t.tagihan_item) {
         const kunci = item.komponen_id ?? `nama:${item.nama_komponen}`
         const nama  = item.komponen?.nama ?? item.nama_komponen
@@ -559,28 +519,11 @@ export default function LaporanPage() {
       .slice(0, 4)
   }, [periodTagihan])
 
-  // Tren 6 bulan terakhir — independen dari filter periode
-  const monthlyTrend = useMemo(() => {
-    const months: { bulan: number; tahun: number }[] = []
-    let y = nowTahun, m = nowBulan
-    for (let i = 0; i < 6; i++) {
-      months.unshift({ bulan: m, tahun: y })
-      m -= 1
-      if (m < 1) { m = 12; y -= 1 }
-    }
-    return months.map(({ bulan, tahun }) => {
-      const nominal = allTagihan
-        .filter(t => t.bulan === bulan && t.tahun === tahun)
-        .reduce((s, t) => s + (paidByTagihan.get(t.id) ?? 0), 0)
-      return { bulan: BULAN_NAMES[bulan], nominal }
-    })
-  }, [allTagihan, paidByTagihan, nowBulan, nowTahun])
-
   const hasData = periodTagihan.length > 0
 
-  // ── Export Laporan Transaksi (Excel) ─────────────────────────────────────
+  // ── Export Laporan Transaksi (Excel / PDF) ───────────────────────────────
 
-  const handleExportTransaksi = async () => {
+  const handleExportTransaksi = async (format: FormatEkspor) => {
     if (!selectedFilter || !sekolahId) return
 
     const sortedMonths = [...selectedFilter.months].sort((a, b) => a.tahun - b.tahun || a.bulan - b.bulan)
@@ -694,10 +637,16 @@ export default function LaporanPage() {
 
       rows.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime())
 
-      const headers = ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', 'Nominal', 'Biaya Admin', 'Total Bayar', 'Status']
-      const aoa: (string | number)[][] = [headers]
-      rows.forEach((r, i) => {
-        aoa.push([
+      const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
+      unduhTabel({
+        format,
+        namaFile:    `Laporan_Transaksi_${periodeLabel}`,
+        namaSheet:   'Laporan Transaksi',
+        judul:       'Laporan Transaksi',
+        keterangan:  `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel} (menurut tanggal transaksi)`,
+        namaSekolah,
+        headers:     ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', 'Nominal', 'Biaya Admin', 'Total Bayar', 'Status'],
+        baris:       rows.map((r, i) => [
           i + 1,
           formatTanggalExcel(r.tanggal),
           generateIdTransaksi(r.tanggal, i + 1),
@@ -710,34 +659,26 @@ export default function LaporanPage() {
           r.biayaAdmin,
           r.nominal + r.biayaAdmin,
           r.status,
-        ])
+        ]),
+        lebarKolom:  [5, 16, 16, 14, 24, 10, 26, 16, 14, 12, 14, 18],
+        kolomRupiah: [8, 9, 10],
       })
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 10 },
-        { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 18 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Transaksi')
-
-      const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
-      XLSX.writeFile(wb, `Laporan_Transaksi_${periodeLabel}.xlsx`)
     } finally {
       setExportingTransaksi(false)
     }
   }
 
-  // ── Export Laporan Tunggakan (Excel) ──────────────────────────────────────
+  // ── Export Laporan Tunggakan (Excel / PDF) ────────────────────────────────
   // Selalu semua tunggakan outstanding sampai hari ini — tidak terikat filter periode dropdown,
   // karena tunggakan bersifat akumulatif (piutang lintas bulan), bukan snapshot satu periode.
+  // Isinya sama persis dengan kartu Umur tunggakan: predikat adalahTunggakan yang sama.
 
-  const handleExportTunggakan = async () => {
+  const handleExportTunggakan = async (format: FormatEkspor) => {
     if (!sekolahId) return
 
-    const tunggakanIds = allTagihan
-      .filter(t => t.status !== 'lunas' && isPastDue(t.bulan, t.tahun))
-      .map(t => t.id)
+    const tunggakanRows     = metrikRows.filter(t => adalahTunggakan(t, sekarang))
+    const tunggakanIds      = tunggakanRows.map(t => t.id)
+    const terbayarPerTagihan = new Map(tunggakanRows.map(t => [t.id, t.terbayar]))
 
     if (tunggakanIds.length === 0) {
       setExportNotice('Tidak ada tunggakan saat ini.')
@@ -749,7 +690,7 @@ export default function LaporanPage() {
       const [{ data: tagihanData, error }, paketByKelas] = await Promise.all([
         supabase
           .from('tagihan')
-          .select('id, bulan, tahun, status, total_nominal, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))')
+          .select('id, bulan, tahun, status, total_nominal, jatuh_tempo, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)),tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))')
           .in('id', tunggakanIds)
           .limit(5000),
         buildPaketByKelasMap(sekolahId),
@@ -766,8 +707,8 @@ export default function LaporanPage() {
           kelas:      t.siswa?.kelas?.nama ?? '-',
           jenis:      resolveJenisLabel(t.tagihan_item, t.bulan, t.tahun, t.siswa?.kelas?.id ?? null, paketByKelas),
           periode:    `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}`,
-          nominal:    t.total_nominal - (paidByTagihan.get(t.id) ?? 0),
-          jatuhTempo: getJatuhTempoTanggal(t.bulan, t.tahun),
+          nominal:    t.total_nominal - (terbayarPerTagihan.get(t.id) ?? 0),
+          jatuhTempo: getJatuhTempoTanggal(t),
           status:     t.status === 'cicilan' ? 'Cicilan' : 'Belum Bayar',
           bulan:      t.bulan,
           tahun:      t.tahun,
@@ -779,32 +720,29 @@ export default function LaporanPage() {
         return
       }
 
-      const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', 'Nominal Tunggakan', 'Jatuh Tempo', 'Status']
-      const aoa: (string | number)[][] = [headers]
-      rows.forEach((r, i) => {
-        aoa.push([i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode, r.nominal, r.jatuhTempo, r.status])
+      unduhTabel({
+        format,
+        namaFile:    `Laporan_Tunggakan_${formatDateLocal(now)}`,
+        namaSheet:   'Laporan Tunggakan',
+        judul:       'Laporan Tunggakan',
+        keterangan:  `Semua tunggakan yang sudah lewat jatuh tempo per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+        namaSekolah,
+        headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', 'Nominal Tunggakan', 'Jatuh Tempo', 'Status'],
+        baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode, r.nominal, r.jatuhTempo, r.status]),
+        lebarKolom:  [5, 14, 24, 10, 32, 16, 18, 14, 14],
+        kolomRupiah: [6],
       })
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 32 },
-        { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 14 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Tunggakan')
-
-      XLSX.writeFile(wb, `Laporan_Tunggakan_${formatDateLocal(now)}.xlsx`)
     } finally {
       setExportingTunggakan(false)
     }
   }
 
-  // ── Export Laporan Data Siswa Aktif (Excel) ───────────────────────────────
+  // ── Export Laporan Data Siswa Aktif (Excel / PDF) ─────────────────────────
   // Angkatan tidak tersimpan untuk siswa aktif — diturunkan dari posisi jenjang siswa
   // dalam JENJANG_MAP dikurangkan dari tahun mulai tahun ajaran aktif (pola sama dgn naik-kelas).
   // Status "Nonaktif" mencakup alumni yang keluar/pindah sebelum lulus (jenis_alumni pindah/keluar).
 
-  const handleExportSiswaAktif = async () => {
+  const handleExportSiswaAktif = async (format: FormatEkspor) => {
     if (!sekolahId) return
 
     setExportingSiswaAktif(true)
@@ -854,33 +792,30 @@ export default function LaporanPage() {
         return
       }
 
-      const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Angkatan', 'Nama Orang Tua', 'No. WhatsApp', 'Status']
-      const aoa: (string | number)[][] = [headers]
-      rows.forEach((r, i) => {
-        aoa.push([i + 1, r.nisn, r.nama, r.kelas, r.angkatan, r.namaOrtu, r.noWa, r.status])
+      unduhTabel({
+        format,
+        namaFile:    `Laporan_Siswa_Aktif_${formatDateLocal(now)}`,
+        namaSheet:   'Siswa Aktif',
+        judul:       'Laporan Data Siswa Aktif',
+        keterangan:  `Data per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} · termasuk siswa pindah/keluar (Nonaktif)`,
+        namaSekolah,
+        headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Angkatan', 'Nama Orang Tua', 'No. WhatsApp', 'Status'],
+        baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.kelas, r.angkatan, r.namaOrtu, r.noWa, r.status]),
+        lebarKolom:  [5, 14, 24, 10, 12, 22, 16, 12],
       })
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 12 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Siswa Aktif')
-
-      XLSX.writeFile(wb, `Laporan_Siswa_Aktif_${formatDateLocal(now)}.xlsx`)
     } finally {
       setExportingSiswaAktif(false)
     }
   }
 
-  // ── Export Laporan Alumni (Excel) ─────────────────────────────────────────
+  // ── Export Laporan Alumni (Excel / PDF) ───────────────────────────────────
   // Total Tagihan/Terbayar dihitung dari SELURUH tagihan siswa sejak awal masuk hingga sebelum
   // jadi alumni (bukan cuma periode tertentu) — karena tagihan berhenti dibuat begitu siswa
   // jadi alumni (kelas_id dikosongkan), jumlah semua tagihan siswa itu = riwayat penuhnya.
   // Angkatan = tahun lulus dikurangi jumlah level jenjang (pola sama dgn Laporan Siswa Aktif,
   // dihitung dari sisi lulus, bukan sisi aktif).
 
-  const handleExportAlumni = async () => {
+  const handleExportAlumni = async (format: FormatEkspor) => {
     if (!sekolahId) return
 
     setExportingAlumni(true)
@@ -945,32 +880,30 @@ export default function LaporanPage() {
         })
         .sort((a, b) => a.tahunLulus.localeCompare(b.tahunLulus) || a.nama.localeCompare(b.nama, 'id'))
 
-      const headers = ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', 'Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan', 'Status Pelunasan']
-      const aoa: (string | number)[][] = [headers]
-      rows.forEach((r, i) => {
-        aoa.push([i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus, r.totalTagihan, r.totalBayar, r.sisa, r.status])
+      unduhTabel({
+        format,
+        namaFile:    `Laporan_Alumni_${formatDateLocal(now)}`,
+        namaSheet:   'Laporan Alumni',
+        judul:       'Laporan Alumni',
+        keterangan:  'Seluruh alumni yang lulus · total dari semua tagihan sejak masuk hingga lulus',
+        namaSekolah,
+        headers:     ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', 'Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan', 'Status Pelunasan'],
+        baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus, r.totalTagihan, r.totalBayar, r.sisa, r.status]),
+        lebarKolom:  [5, 14, 24, 10, 12, 16, 16, 16, 16],
+        kolomRupiah: [5, 6, 7],
       })
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 14 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Laporan Alumni')
-
-      XLSX.writeFile(wb, `Laporan_Alumni_${formatDateLocal(now)}.xlsx`)
     } finally {
       setExportingAlumni(false)
     }
   }
 
-  // ── Export Laporan Keuangan Tahunan (Excel) ───────────────────────────────
+  // ── Export Laporan Keuangan Tahunan (Excel / PDF) ─────────────────────────
   // Satu baris per tahun ajaran (fetch ulang semua tahun ajaran tanpa batas — bukan reuse
   // activeTA/archivedTAs yang di halaman ini sengaja dibatasi 5 utk dropdown). Target/Realisasi
   // dihitung dari tagihan yg bulan/tahunnya masuk rentang tahun ajaran tsb (pola monthsInRange
   // yang sama dipakai utk filter dropdown periode).
 
-  const handleExportKeuanganTahunan = async () => {
+  const handleExportKeuanganTahunan = async (format: FormatEkspor) => {
     if (!sekolahId) return
 
     setExportingKeuanganTahunan(true)
@@ -1021,29 +954,27 @@ export default function LaporanPage() {
         }
       })
 
-      const headers = ['No', 'Tahun Ajaran', 'Total Target', 'Total Realisasi', 'Total Tunggakan', 'Jumlah Transaksi', 'Status Audit']
-      const aoa: (string | number)[][] = [headers]
-      rows.forEach((r, i) => {
-        aoa.push([i + 1, r.tahunAjaran, r.totalTarget, r.totalRealisasi, r.totalTunggakan, r.jumlahTransaksi, r.statusAudit])
+      unduhTabel({
+        format,
+        namaFile:    `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}`,
+        namaSheet:   'Keuangan Tahunan',
+        judul:       'Laporan Keuangan Tahunan',
+        keterangan:  'Semua tahun ajaran · target = tagihan yang terbit, realisasi = yang sudah dibayar',
+        namaSekolah,
+        headers:     ['No', 'Tahun Ajaran', 'Total Target', 'Total Realisasi', 'Total Tunggakan', 'Jumlah Transaksi', 'Status Audit'],
+        baris:       rows.map((r, i) => [i + 1, r.tahunAjaran, r.totalTarget, r.totalRealisasi, r.totalTunggakan, r.jumlahTransaksi, r.statusAudit]),
+        lebarKolom:  [5, 14, 16, 16, 16, 16, 14],
+        kolomRupiah: [2, 3, 4],
       })
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
-      ]
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Keuangan Tahunan')
-
-      XLSX.writeFile(wb, `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}.xlsx`)
     } finally {
       setExportingKeuanganTahunan(false)
     }
   }
 
   // ── Generate Laporan Utama (PDF) ───────────────────────────────────────────
-  // Merangkum seluruh blok "Ringkasan periode ini" yang tampil di layar (stats, komposisi
-  // status, tren 6 bulan, pelunasan per jenjang, komponen belum dibayar) jadi satu dokumen PDF
-  // sesuai periode yang lagi dipilih di dropdown atas.
+  // Merangkum seluruh blok "Ringkasan periode ini" yang tampil di layar (kartu metrik,
+  // komposisi status, tagihan vs realisasi, umur tunggakan, pelunasan per jenjang,
+  // komponen belum dibayar) jadi satu dokumen PDF sesuai periode di dropdown atas.
 
   const handleGenerateLaporanUtama = async () => {
     if (!selectedFilter || !sekolahId) return
@@ -1082,12 +1013,19 @@ export default function LaporanPage() {
         startY: y,
         head: [['Ringkasan', 'Nilai']],
         body: [
-          ['Total Pemasukan', fmt(stats.totalPemasukan)],
-          ['Dari Transaksi', `${stats.transaksiCount} transaksi`],
-          ['Tingkat Pelunasan', `${stats.tingkatPelunasan}%`],
-          ['Sudah Masuk', `${fmt(stats.sudahMasuk)} dari ${fmt(stats.totalTagihanRp)}`],
-          ['Total Tunggakan (lewat jatuh tempo)', fmt(stats.totalTunggakan)],
-          ['Belum Jatuh Tempo', fmt(stats.belumJatuhTempo)],
+          ['Total Pemasukan', fmt(pemasukan.total)],
+          ['Dari Transaksi', `${pemasukan.transaksi} transaksi`],
+          ['Tingkat Pelunasan (tagihan jatuh tempo)', ringkasan.tingkatPelunasan === null
+            ? 'Belum ada tagihan jatuh tempo'
+            : `${fmtPersen(ringkasan.tingkatPelunasan)} (${fmt(ringkasan.terbayarJatuhTempo)} dari ${fmt(ringkasan.nilaiJatuhTempo)})`],
+          ['Ketepatan Waktu', ringkasan.ketepatanWaktu === null
+            ? 'Belum ada tagihan jatuh tempo'
+            : `${fmtPersen(ringkasan.ketepatanWaktu)} (${ringkasan.jumlahTepatWaktu} dari ${ringkasan.jumlahDinilai} tagihan)`],
+          ['Rata-rata Keterlambatan', ringkasan.rataHariTelat === null
+            ? 'Tidak ada yang telat'
+            : `${Math.round(ringkasan.rataHariTelat)} hari (${ringkasan.jumlahTelat} tagihan lunas telat)`],
+          ['Tunggakan (lewat jatuh tempo)', `${fmt(ringkasan.tunggakanBerjalan)} (${ringkasan.siswaMenunggak} siswa)`],
+          ['Akan Masuk (belum jatuh tempo)', fmt(ringkasan.akanMasuk)],
         ],
         theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
@@ -1106,25 +1044,42 @@ export default function LaporanPage() {
 
       if (y > 250) { doc.addPage(); y = 18 }
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-      doc.text('Tren Pemasukan (6 Bulan Terakhir)', 14, y)
+      doc.text('Tagihan vs Realisasi per Bulan Jatuh Tempo (12 Bulan Terakhir)', 14, y)
       y += 4
       autoTable(doc, {
         startY: y,
-        head: [['Bulan', 'Nominal']],
-        body: monthlyTrend.map(m => [m.bulan, fmt(m.nominal)]),
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 12 },
+        head: [['Bulan', 'Tagihan', 'Terbayar', 'Pelunasan']],
+        body: tren.map(t => [
+          `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}${t.berjalan ? ' (berjalan)' : ''}`,
+          fmt(t.tagihan),
+          fmt(t.terbayar),
+          t.tagihan > 0 ? `${Math.round((t.terbayar / t.tagihan) * 100)}%` : '-',
+        ]),
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
+      })
+      y = getFinalY(doc) + 10
+
+      if (y > 250) { doc.addPage(); y = 18 }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+      doc.text('Umur Tunggakan (semua tunggakan per hari ini)', 14, y)
+      y += 4
+      autoTable(doc, {
+        startY: y,
+        head: [['Umur', 'Nominal', 'Jumlah Siswa', 'Jumlah Tagihan']],
+        body: umur.map(k => [teksPdf(k.label), fmt(k.nominal), String(k.jumlahSiswa), String(k.jumlahTagihan)]),
+        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
       y = getFinalY(doc) + 10
 
       if (jenjangData.length > 0) {
         if (y > 250) { doc.addPage(); y = 18 }
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-        doc.text('Pelunasan per Jenjang', 14, y)
+        doc.text('Pelunasan per Jenjang (tagihan jatuh tempo)', 14, y)
         y += 4
         autoTable(doc, {
           startY: y,
-          head: [['Jenjang', 'Persentase Lunas']],
-          body: jenjangData.map(j => [j.jenjang, `${j.pct}%`]),
+          head: [['Jenjang', 'Tingkat Pelunasan', 'Terbayar', 'Nilai Jatuh Tempo']],
+          body: jenjangData.map(j => [j.jenjang, teksPdf(fmtPersen(j.pct)), fmt(j.terbayar), fmt(j.nilai)]),
           theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
         })
         y = getFinalY(doc) + 10
@@ -1154,63 +1109,21 @@ export default function LaporanPage() {
     <div className="dashboard-content">
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
-            <BarChart2 size={30} color="#ffffff" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>
-              Laporan
-            </h1>
-            <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-              Analisis keuangan dan unduhan laporan per periode
-            </p>
-          </div>
-        </div>
-
-        {!loading && selectedFilter && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            {/* Filter Periode */}
-            <div style={{ position: 'relative' }} ref={dropdownRef}>
-              <button
-                onClick={() => setShowDropdown(p => !p)}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '0.55rem 0.875rem', fontSize: '0.82rem', fontWeight: 600, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-              >
-                <span>{selectedFilter.label}</span>
-                <span style={{ color: '#CBD5E1' }}>·</span>
-                <span style={{ color: '#101010' }}>{selectedFilter.sublabel}</span>
-                <ChevronDown size={13} color="#94A3B8" style={{ marginLeft: 2, transform: showDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-              </button>
-              {showDropdown && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', minWidth: 220, zIndex: 100, overflow: 'hidden' }}>
-                  {filterOptions.map(opt => {
-                    const isActive = selectedValue === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => { setSelectedValue(opt.value); setShowDropdown(false) }}
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem', border: 'none', background: isActive ? '#F8FAFC' : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
-                      >
-                        <span style={{ fontSize: '0.82rem', fontWeight: isActive ? 700 : 600, color: isActive ? '#1A2C4E' : '#374151' }}>{opt.label}</span>
-                        <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>{opt.sublabel}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Generate Laporan */}
+      <HeaderLaporan
+        judul="Laporan"
+        subjudul="Analisis keuangan dan unduhan laporan per periode"
+        kanan={!loading && (
+          <>
+            <FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />
             <button
               onClick={handleGenerateLaporanUtama}
               disabled={generatingUtama}
               style={{ display: 'flex', alignItems: 'center', gap: 12, background: generatingUtama ? '#5B6B8C' : '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, cursor: generatingUtama ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
               <Download size={20} /> {generatingUtama ? 'Memproses...' : 'Generate Laporan Utama'}
             </button>
-          </div>
+          </>
         )}
-      </div>
+      />
 
       {/* ── Loading ── */}
       {loading && (
@@ -1247,134 +1160,95 @@ export default function LaporanPage() {
       {!loading && hasData && (
         <>
           {/* Semua baris stat dalam satu wrapper card border-left */}
-          <div style={{
-            background: '#fff',
-            borderRadius: 14,
-            borderTop: '1.5px solid #F1F5F9',
-            borderRight: '1.5px solid #F1F5F9',
-            borderBottom: '1.5px solid #F1F5F9',
-            borderLeft: '28px solid #1A2C4E',
-            boxShadow: '0 0 18px rgba(39, 74, 156, 0.51)',
-            padding: '1.25rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.875rem',
-          }}>
+          <div style={sBingkai}>
 
-            {/* Section header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1rem' }}>
-              <div style={{ width: 60, height: 50, background: '#1A2C4E', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Image src="/icons/Grafik.png" alt="Bar Chart" width={20} height={20} />
+            {/* Section header + pencarian siswa langsung (prinsip 5 draft) */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+                <div style={{ width: 60, height: 50, background: '#1A2C4E', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Image src="/icons/Grafik.png" alt="Bar Chart" width={20} height={20} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1.3rem', color: '#0F172A' }}>Ringkasan periode ini</div>
+                  <div style={{ fontSize: '1rem', color: '#747474' }}>Analisis status dan kondisi pembayaran berdasarkan periode yang dipilih</div>
+                </div>
               </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: '1.3rem', color: '#0F172A' }}>Ringkasan periode ini</div>
-                <div style={{ fontSize: '1rem', color: '#747474' }}>Analisis status dan kondisi pembayaran berdasarkan periode yang dipilih</div>
-              </div>
+              <CariSiswa siswa={daftarCariSiswa} qsFilter={qsFilter} />
             </div>
 
-            {/* Row 1: 3 stat cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '0.9rem' }}>
+            {/* Row 1: kartu metrik — semuanya mengikuti filter periode */}
+            <KartuRingkasan ringkasan={ringkasan} pemasukan={pemasukan} />
 
-              {/* Total Pemasukan */}
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Total pemasukan</span>
-                  <div style={{ width: 32, height: 32, background: '#F0FDF4', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <TrendingUp size={16} color="#22C55E" />
-                  </div>
-                </div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.35rem' }}>
-                  {fmt(stats.totalPemasukan)}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#6F788A' }}>Dari {stats.transaksiCount} transaksi</div>
-              </div>
-
-              {/* Tingkat Pelunasan */}
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Tingkat pelunasan</span>
-                  <div style={{ width: 32, height: 32, background: '#EFF6FF', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <PieChart size={16} color="#3B82F6" />
-                  </div>
-                </div>
-                <div style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.75rem' }}>{stats.tingkatPelunasan}%</div>
-                <div style={{ height: 18, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden', marginBottom: '0.5rem' }}>
-                  <div style={{ height: '100%', width: `${stats.tingkatPelunasan}%`, background: '#69C183', borderRadius: 99 }} />
-                </div>
-                <div style={{ fontSize: '0.76rem', color: '#6F788A' }}>{fmt(stats.sudahMasuk)} dari {fmt(stats.totalTagihanRp)}</div>
-              </div>
-
-              {/* Total Tunggakan */}
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: '#101010' }}>Total tunggakan</span>
-                  <div style={{ width: 32, height: 32, background: '#FEF2F2', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <AlertTriangle size={16} color="#EF4444" />
-                  </div>
-                </div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: '0.875rem' }}>
-                  {fmt(stats.totalTunggakan)}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.76rem', color: '#64748B' }}>Belum jatuh tempo</span>
-                    </div>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#0F172A' }}>{fmt(stats.belumJatuhTempo)}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.76rem', color: '#64748B' }}>Menunggak</span>
-                    </div>
-                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#EF4444' }}>{fmt(stats.menunggakRp)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 2: Donut + Bar chart */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '0.9rem' }}>
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
+            {/* Row 2: Donut + Tagihan vs realisasi */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)', gap: '1.5rem', marginBottom: '0.9rem' }}>
+              <div style={sKartu}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komposisi status pembayaran</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Distribusi per status tagihan periode ini</div>
                 <DonutChart data={donutData} />
               </div>
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Tren pemasukan per bulan</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1rem' }}>6 bulan terakhir</div>
-                <BarChart data={monthlyTrend} />
+              <div style={sKartu}>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Tagihan vs realisasi</div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '0.75rem' }}>
+                  {taArsipTerpilih
+                    ? `Per bulan jatuh tempo, 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
+                    : 'Per bulan jatuh tempo, 12 bulan terakhir · tidak mengikuti filter periode'}
+                </div>
+                <TrenTagihanChart data={tren} />
               </div>
             </div>
 
-            {/* Row 3: Pelunasan per jenjang + Komponen belum dibayar */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Pelunasan per jenjang</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Persentase tagihan lunas per tingkat kelas</div>
+            {/* Row 3: Umur tunggakan + Pelunasan per jenjang + Komponen belum dibayar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+              <div style={sKartu}>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Umur tunggakan</div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '0.9rem' }}>Semua tunggakan per hari ini, dari semua tahun ajaran · tidak mengikuti filter</div>
+                {semuaTunggakan.tunggakanBerjalan === 0 ? (
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Tidak ada tunggakan.</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A' }}>{fmt(semuaTunggakan.tunggakanBerjalan)}</span>
+                      <span style={{ fontSize: '0.78rem', color: '#6F788A' }}>{semuaTunggakan.siswaMenunggak} siswa</span>
+                    </div>
+                    <UmurTunggakanList data={umur} />
+                  </>
+                )}
+              </div>
+              <div style={sKartu}>
+                <div style={sJudulPanel}>Perbandingan jenjang</div>
+                <div style={{ ...sSubjudulPanel, marginBottom: '1rem' }}>Pelunasan tagihan jatuh tempo, menurut kelas saat ditagih · klik untuk rincian per kelas</div>
                 {jenjangData.length === 0 ? (
                   <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Belum ada data.</div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                     {jenjangData.map(j => {
-                      const color = j.pct >= 80 ? '#22C55E' : j.pct >= 60 ? '#3B82F6' : '#F59E0B'
+                      const pct   = j.pct ?? 0
+                      const color = pct >= 80 ? '#22C55E' : pct >= 60 ? '#3B82F6' : '#F59E0B'
                       return (
-                        <div key={j.jenjang}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{j.jenjang}</span>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#6F788A' }}>{j.pct}%</span>
+                        <Link key={j.kode} href={`/laporan/jenjang/${encodeURIComponent(j.kode)}${qsFilter}`}
+                          className="laporan-baris-tautan"
+                          style={{ display: 'block', padding: '0.55rem 0.6rem', margin: '0 -0.6rem', borderRadius: 8, textDecoration: 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              {j.jenjang} <ChevronRight size={13} color="#94A3B8" />
+                            </span>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A' }}>{fmtPersen(j.pct)}</span>
                           </div>
                           <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${j.pct}%`, background: color, borderRadius: 99 }} />
+                            {j.pct !== null && <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99 }} />}
                           </div>
-                        </div>
+                          <div style={{ fontSize: '0.72rem', color: '#6F788A', marginTop: '0.3rem' }}>
+                            {j.pct === null
+                              ? 'Belum ada tagihan yang jatuh tempo'
+                              : `Rp ${fmtRingkas(j.terbayar)} dari Rp ${fmtRingkas(j.nilai)} · tepat waktu ${fmtPersen(j.ketepatan)} · tunggakan Rp ${fmtRingkas(j.tunggakan)}`}
+                          </div>
+                        </Link>
                       )
                     })}
                   </div>
                 )}
               </div>
-              <div style={{ background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf' }}>
+              <div style={sKartu}>
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komponen paling banyak belum dibayar</div>
                 <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan nilai tagihan yang belum lunas</div>
                 {komponenData.length === 0 ? (
@@ -1415,28 +1289,38 @@ export default function LaporanPage() {
                 icon: <Receipt size={22} color="#fff" />,
                 title: 'Laporan transaksi',
                 subtitle: 'Rekap seluruh transaksi pembayaran periode ini',
+                sedang: exportingTransaksi,
+                ekspor: handleExportTransaksi,
               },
               {
                 icon: <AlertTriangle size={22} color="#fff" />,
                 title: 'Laporan tunggakan',
                 subtitle: 'Daftar siswa yang masih memiliki tunggakan',
+                sedang: exportingTunggakan,
+                ekspor: handleExportTunggakan,
               },
               {
                 icon: <Users size={22} color="#fff" />,
                 title: 'Laporan data siswa aktif',
                 subtitle: 'Data lengkap seluruh siswa yang aktif saat ini',
+                sedang: exportingSiswaAktif,
+                ekspor: handleExportSiswaAktif,
               },
               {
                 icon: <GraduationCap size={22} color="#fff" />,
                 title: 'Laporan alumni',
                 subtitle: 'Data alumni per angkatan beserta status pelunasan',
+                sedang: exportingAlumni,
+                ekspor: handleExportAlumni,
               },
               {
                 icon: <BarChart2 size={22} color="#fff" />,
                 title: 'Laporan keuangan tahunan',
                 subtitle: 'Rekap pemasukan keseluruhan per tahun ajaran, siap audit',
+                sedang: exportingKeuanganTahunan,
+                ekspor: handleExportKeuanganTahunan,
               },
-            ] as const).map((item, i) => (
+            ]).map((item, i) => (
               <div key={i} style={{ background: '#fff', borderRadius: 14, padding: '1rem 1.25rem', boxShadow: '0 0 10px rgba(39, 74, 156, 0.51)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 {/* Icon */}
                 <div style={{ width: 55, height: 55, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1449,51 +1333,20 @@ export default function LaporanPage() {
                   <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>{item.subtitle}</div>
                 </div>
 
-                {/* Buttons */}
+                {/* Buttons — PDF dan Excel memakai data yang sama (unduhTabel) */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                  <button style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: '#fff', border: '2px solid #1A2C4E', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <FileText size={13} color="#64748B" /> PDF
+                  <button
+                    onClick={() => { setFormatEkspor('pdf'); void item.ekspor('pdf') }}
+                    disabled={item.sedang}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: item.sedang && formatEkspor === 'pdf' ? '#F1F5F9' : '#fff', border: '2px solid #1A2C4E', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#374151', cursor: item.sedang ? 'default' : 'pointer', fontFamily: 'inherit', opacity: item.sedang && formatEkspor !== 'pdf' ? 0.5 : 1 }}>
+                    <FileText size={13} color="#64748B" /> {item.sedang && formatEkspor === 'pdf' ? 'Memproses...' : 'PDF'}
                   </button>
-                  {i === 0 ? (
-                    <button
-                      onClick={handleExportTransaksi}
-                      disabled={exportingTransaksi}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingTransaksi ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingTransaksi ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingTransaksi ? 'Memproses...' : 'Excel'}
-                    </button>
-                  ) : i === 1 ? (
-                    <button
-                      onClick={handleExportTunggakan}
-                      disabled={exportingTunggakan}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingTunggakan ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingTunggakan ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingTunggakan ? 'Memproses...' : 'Excel'}
-                    </button>
-                  ) : i === 2 ? (
-                    <button
-                      onClick={handleExportSiswaAktif}
-                      disabled={exportingSiswaAktif}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingSiswaAktif ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingSiswaAktif ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingSiswaAktif ? 'Memproses...' : 'Excel'}
-                    </button>
-                  ) : i === 3 ? (
-                    <button
-                      onClick={handleExportAlumni}
-                      disabled={exportingAlumni}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingAlumni ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingAlumni ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingAlumni ? 'Memproses...' : 'Excel'}
-                    </button>
-                  ) : i === 4 ? (
-                    <button
-                      onClick={handleExportKeuanganTahunan}
-                      disabled={exportingKeuanganTahunan}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: exportingKeuanganTahunan ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: exportingKeuanganTahunan ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> {exportingKeuanganTahunan ? 'Memproses...' : 'Excel'}
-                    </button>
-                  ) : (
-                    <button style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <FileSpreadsheet size={13} color="#1A1A1A" /> Excel
-                    </button>
-                  )}
+                  <button
+                    onClick={() => { setFormatEkspor('excel'); void item.ekspor('excel') }}
+                    disabled={item.sedang}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: item.sedang && formatEkspor === 'excel' ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: item.sedang ? 'default' : 'pointer', fontFamily: 'inherit', opacity: item.sedang && formatEkspor !== 'excel' ? 0.5 : 1 }}>
+                    <FileSpreadsheet size={13} color="#1A1A1A" /> {item.sedang && formatEkspor === 'excel' ? 'Memproses...' : 'Excel'}
+                  </button>
                 </div>
               </div>
             ))}

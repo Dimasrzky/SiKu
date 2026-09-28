@@ -75,4 +75,62 @@ export function buildPesanTagihanText(p: PesanTagihanParams): string {
   return lines.join('\n')
 }
 
+export interface PesanTunggakanParams {
+  namaWali:     string
+  namaSiswa:    string
+  kelasNama:    string
+  /** Tagihan yang sudah lewat jatuh tempo beserta sisanya, terlama dulu */
+  daftar:       { bulan: number; tahun: number; sisa: number }[]
+  namaSekolah?: string
+  /** Tautan tagihan belum lunas terbaru — halaman bayar ikut menampilkan tunggakan sebelumnya */
+  paymentUrl?:  string
+}
+
+// Pengingat dari laporan level Kelas: satu pesan merangkum semua bulan yang menunggak,
+// bukan satu pesan per tagihan
+export function buildPesanTunggakanText(p: PesanTunggakanParams): string {
+  const wali    = p.namaWali || 'Orang Tua/Wali'
+  const sekolah = p.namaSekolah || 'Admin Sekolah'
+  const total   = p.daftar.reduce((s, d) => s + d.sisa, 0)
+
+  const lines = [
+    `Assalamualaikum wr. wb.`,
+    ``,
+    `Yth. Bapak/Ibu *${wali}*`,
+    ``,
+    `Kami dari ${sekolah} mengingatkan tagihan pendidikan yang sudah melewati jatuh tempo:`,
+    ``,
+    `*Nama Siswa* : ${p.namaSiswa}`,
+    `*Kelas*       : ${p.kelasNama}`,
+    ``,
+    ...p.daftar.map(d => `• ${BULAN_NAMES[d.bulan]} ${d.tahun}: ${formatRp(d.sisa)}`),
+    ``,
+    `*Total* : *${formatRp(total)}*`,
+    ``,
+  ]
+
+  if (p.paymentUrl) {
+    lines.push(
+      `Rincian dan pembayaran dapat dilakukan melalui link berikut:`,
+      ``,
+      `${p.paymentUrl}`,
+      ``,
+    )
+  } else {
+    lines.push(
+      `Mohon melakukan pembayaran dan konfirmasi kepada pihak sekolah.`,
+      ``,
+    )
+  }
+
+  lines.push(
+    `Apabila sudah membayar, mohon abaikan pesan ini. Terima kasih atas perhatian dan kerja samanya.`,
+    ``,
+    `_Hormat kami,_`,
+    `_${sekolah}_`,
+  )
+
+  return lines.join('\n')
+}
+
 
