@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -6,6 +7,10 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import AdminLogoutButton from '../AdminLogoutButton'
 import NotificationBell from './NotificationBell'
+
+export const metadata: Metadata = {
+  title: 'Verifikasi Pembayaran',
+}
 
 type SekolahJoin = { id: string; nama: string } | null
 type VerifRow    = { sekolah: SekolahJoin }

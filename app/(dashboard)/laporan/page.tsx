@@ -1193,7 +1193,7 @@ function LaporanContent() {
                     ? `Per bulan jatuh tempo, 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
                     : 'Per bulan jatuh tempo, 12 bulan terakhir · tidak mengikuti filter periode'}
                 </div>
-                <TrenTagihanChart data={tren} />
+                <TrenTagihanChart data={tren} ringkasAwalPakai />
               </div>
             </div>
 

@@ -1,8 +1,13 @@
+import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import VerifikasiTable, { type VerifikasiItem } from '../VerifikasiTable'
+
+export const metadata: Metadata = {
+  title: 'Verifikasi Pembayaran',
+}
 
 type SiswaJoin  = { nama: string; nis: string | null }
 type TagihanJoin = { total_nominal: number }

@@ -94,7 +94,7 @@ interface PaketKomposisiRaw {
   paket_komponen: { nominal: number; komponen: { nama: string; kelas_warna: string | null } | null }[]
 }
 
-interface TrenItem      { short: string; terkumpul: number; tunggakan: number }
+interface TrenItem      { short: string; bulanTahun: string; berjalan: boolean; terkumpul: number; tunggakan: number }
 interface KomposisiItem { nama: string; nominal: number; persen: number }
 interface KelasItem     { nama: string; lunas: number; total: number }
 
@@ -145,7 +145,7 @@ interface DashData {
   siswaBelumBayar:   number
   totalSiswaRef:     number
   lunasRef:          number
-  siswaTunggakanLama: number
+  siswaMenunggak:    number
   terkumpulIni:      number
   terkumpulLalu:     number
   targetIni:         number
@@ -166,6 +166,8 @@ interface DashData {
 // ── SVG: Bar Chart ─────────────────────────────────────────────────────────────
 
 function BarChart({ data }: { data: TrenItem[] }) {
+  // Hook harus dipanggil sebelum return bersyarat di bawah
+  const [aktif, setAktif] = useState<number | null>(null)
   if (!data.length) return null
   const max    = Math.max(...data.map(d => Math.max(d.terkumpul, d.tunggakan)), 1)
   const bW     = 60
@@ -175,23 +177,68 @@ function BarChart({ data }: { data: TrenItem[] }) {
   const cH     = 600
   const padX   = 12
   const chartW = padX * 2 + data.length * gW + (data.length - 1) * gGap
-  const chartH = cH + 24
+  const chartH = cH + 34
+  // Pita per bulan = kelompok dua batang + separuh celah di kiri-kanannya, jadi saat
+  // kursor bergeser antarbulan tidak ada titik mati tanpa tooltip
+  const pitaX  = (i: number) => padX + i * (gW + gGap) - gGap / 2
+  const pitaW  = gW + gGap
+
+  const titikAktif = aktif === null ? null : data[aktif]
 
   return (
-    <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block', marginBottom: 16 }}>
-      {data.map((d, i) => {
-        const x  = padX + i * (gW + gGap)
-        const h1 = (d.terkumpul / max) * cH
-        const h2 = (d.tunggakan / max) * cH
-        return (
-          <g key={d.short}>
-            <rect x={x}             y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={5} fill="#10B981" opacity={0.85} />
-            <rect x={x + bW + bGap} y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={5} fill="#EF4444" opacity={0.75} />
-            <text x={x + bW}        y={cH + 18} textAnchor="middle" fontSize={11} fill="#9CA3AF">{d.short}</text>
-          </g>
-        )
-      })}
-    </svg>
+    <div style={{ position: 'relative' }} onMouseLeave={() => setAktif(null)}>
+      <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block', marginBottom: 16 }}>
+        {aktif !== null && (
+          <rect x={pitaX(aktif)} y={0} width={pitaW} height={cH} fill="#F1F5F9" />
+        )}
+        {data.map((d, i) => {
+          const x  = padX + i * (gW + gGap)
+          const h1 = (d.terkumpul / max) * cH
+          const h2 = (d.tunggakan / max) * cH
+          return (
+            <g key={d.short}>
+              <rect x={x}             y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={5} fill="#10B981" opacity={0.85} />
+              <rect x={x + bW + bGap} y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={5} fill="#EF4444" opacity={0.75} />
+              <text x={x + bW}        y={cH + 28} textAnchor="middle" fontSize={20} fontWeight="semi-bold" fill="#3c3f45">{d.short}</text>
+            </g>
+          )
+        })}
+
+        {/* Area hover selebar pita bulan — lebih besar dari batangnya, termasuk label bulan */}
+        {data.map((d, i) => (
+          <rect key={`hit-${d.short}`}
+            x={pitaX(i)} y={0} width={pitaW} height={chartH}
+            fill="transparent" tabIndex={0} style={{ outline: 'none', cursor: 'default' }}
+            aria-label={`${d.bulanTahun}: terkumpul ${rpFull(d.terkumpul)}, tunggakan ${rpFull(d.tunggakan)}`}
+            onMouseEnter={() => setAktif(i)} onFocus={() => setAktif(i)} onBlur={() => setAktif(null)} />
+        ))}
+      </svg>
+
+      {titikAktif && aktif !== null && (
+        <div style={{
+          position: 'absolute', top: 0, pointerEvents: 'none', whiteSpace: 'nowrap',
+          left: `${((padX + aktif * (gW + gGap) + gW / 2) / chartW) * 100}%`,
+          // Tooltip di bulan paling pinggir digeser ke dalam supaya tidak keluar kartu
+          transform: aktif < 2 ? 'translateX(-12%)' : aktif > data.length - 3 ? 'translateX(-88%)' : 'translateX(-50%)',
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, boxShadow: '0 6px 18px rgba(15,23,42,0.12)',
+          padding: '0.55rem 0.7rem', minWidth: 190, fontSize: '0.8rem', zIndex: 5,
+        }}>
+          <div style={{ color: '#64748B', marginBottom: 6 }}>
+            {titikAktif.bulanTahun}{titikAktif.berjalan ? ' · bulan berjalan' : ''}
+          </div>
+          {[
+            { warna: '#10B981', nilai: titikAktif.terkumpul, label: 'terkumpul' },
+            { warna: '#EF4444', nilai: titikAktif.tunggakan, label: 'tunggakan' },
+          ].map(r => (
+            <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span style={{ width: 12, height: 2, borderRadius: 1, background: r.warna, flexShrink: 0 }} />
+              <strong style={{ color: '#0F172A' }}>{rpFull(r.nilai)}</strong>
+              <span style={{ color: '#64748B' }}>{r.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -353,8 +400,12 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   // yang belum lewat tempo tidak ikut dihitung di sini, itu bagian belumBayarNominal.
   const tunggakanLamaRows    = tunggakanRows.filter(t => !(t.bulan === bulanIni && t.tahun === tahunIni))
   const tunggakanLamaNominal = tunggakanLamaRows.reduce((s, t) => s + t.sisa, 0)
-  const tunggakanSiswaIds    = new Set(tunggakanLamaRows.map(t => t.siswa_id))
-  const siswaTunggakanLama   = tunggakanSiswaIds.size
+
+  // Jumlah siswa menunggak dihitung dari SEMUA tagihan menunggak, termasuk bulan ini
+  // yang sudah lewat jatuh tempo — sama dengan isi filter Menunggak di Tagihan Aktif,
+  // tujuan tautan "Ingatkan sekarang". Nominalnya tetap dari tunggakan lama saja
+  // supaya tidak terhitung dua kali dengan belumBayarNominal.
+  const siswaMenunggak = new Set(tunggakanRows.map(t => t.siswa_id)).size
 
   // "Total Tunggakan Aktif" = kewajiban bulan ini yang belum dibayar + tunggakan
   // lama (bulan-bulan sebelumnya yang sudah lewat jatuh tempo), supaya angkanya
@@ -373,13 +424,15 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   }, 0)
 
   // ── Tren 6 bulan ──────────────────────────────────────────────────────────
-  const trenData: TrenItem[] = last6.map(({ short }, idx) => {
+  const trenData: TrenItem[] = last6.map(({ short, bulan, tahun }, idx) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
     const b = d.getMonth() + 1
     const y = d.getFullYear()
     const mRows = allTagihan.filter(t => t.bulan === b && t.tahun === y)
     return {
       short,
+      bulanTahun: `${bulan} ${tahun}`,
+      berjalan:   idx === last6.length - 1,
       terkumpul: mRows.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0),
       tunggakan: mRows.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0),
     }
@@ -446,11 +499,11 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     actionLabel: 'Kirim Pengingat',
   })
 
-  if (siswaTunggakanLama > 0) insights.push({
+  if (siswaMenunggak > 0) insights.push({
     id: 'tunggakan-lama', level: 'merah',
     judul: 'Tunggakan kritis',
-    desc: `${tunggakanLamaRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
-    sub: `${siswaTunggakanLama} siswa berstatus menunggak.`,
+    desc: `${tunggakanRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
+    sub: `${siswaMenunggak} siswa berstatus menunggak.`,
     actionLabel: 'Kirim Pengingat',
   })
 
@@ -536,7 +589,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     siswaBelumBayar,
     totalSiswaRef,
     lunasRef,
-    siswaTunggakanLama,
+    siswaMenunggak,
     terkumpulIni,
     terkumpulLalu,
     targetIni,
@@ -956,7 +1009,7 @@ export default function DashboardPage() {
           .catch(() => setData({
             totalSiswaAktif: total, totalKelas: 0, tahunAjaranNama: '-',
             totalTunggakan: 0, siswaBelumBayar: 0, totalSiswaRef: total,
-            lunasRef: 0, siswaTunggakanLama: 0,
+            lunasRef: 0, siswaMenunggak: 0,
             terkumpulIni: 0,
             terkumpulLalu: 0, targetIni: 0, belumBayarNominal: 0,
             belumBayarLalu: 0, menungguVerifikasiNominal: 0, menungguVerifikasiCount: 0,
@@ -1236,7 +1289,7 @@ export default function DashboardPage() {
           <AlertTriangle
             size={130}
             className="watermark-float"
-            style={{ position: 'absolute', right: 400, top: '50%', color: '#FEE2E2', pointerEvents: 'none' }}
+            style={{ position: 'absolute', right: 400, top: '50%', color: '#e16060', pointerEvents: 'none' }}
           />
 
           {/* Left */}
@@ -1318,7 +1371,7 @@ export default function DashboardPage() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#fff', fontSize: '1rem', fontWeight: 600 }}>
             <AlertTriangle size={16} />
-            {d?.siswaTunggakanLama ? `${d.siswaTunggakanLama} Siswa berstatus menunggak` : 'Periksa status tunggakan siswa'}
+            {d?.siswaMenunggak ? `${d.siswaMenunggak} Siswa berstatus menunggak` : 'Periksa status tunggakan siswa'}
           </div>
           <Link href="/tagihan/aktif?status=menunggak" style={{
             color: '#fff', fontSize: '1rem', fontWeight: 700,
@@ -1529,7 +1582,6 @@ export default function DashboardPage() {
               { key: 'belum_bayar',         label: 'Belum Bayar' },
               { key: 'cicilan',             label: 'Cicilan' },
               { key: 'lunas',               label: 'Lunas' },
-              { key: 'tunggakan',           label: 'Tunggakan Lama' },
               { key: 'menunggu_verifikasi', label: 'Menunggu Verifikasi' },
             ] as const).map(tab => {
               const active = tabAktif === tab.key

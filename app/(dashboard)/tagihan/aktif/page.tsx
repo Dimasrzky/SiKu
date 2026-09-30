@@ -5,7 +5,8 @@ import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from 'next/n
 import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
+import { ambilSemua } from '@/lib/ambilSemua'
+import { buildPesanTagihanText, buildPesanTunggakanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
   JENIS_LABEL, JENIS_WARNA, komponenDitagihkan, periodeIndex,
@@ -30,6 +31,82 @@ function getInitials(nama: string): string {
   return (nama.slice(0, 2)).toUpperCase()
 }
 
+/**
+ * Tagihan periode sebelumnya yang dihitung sebagai tunggakan siswa — aturan yang sama
+ * dengan kartu "Total Tunggakan Aktif" di dashboard: menurut statusEfektif Menunggak
+ * (belum dibayar dan lewat jatuh tempo). Tagihan Rp 0 karena beasiswa penuh dibaca
+ * lunas, dan cicilan tidak ikut — sisanya terlacak lewat halaman Laporan.
+ */
+function adalahTunggakanLama(
+  t: { status: string; bulan: number; tahun: number; jatuh_tempo: string | null; total_nominal: number },
+  periodeIni: number,
+  sekarang: Date,
+  isAlumni: boolean,
+): boolean {
+  return periodeIndex(t.bulan, t.tahun) < periodeIni
+    && statusEfektif(t.status, lewatJatuhTempo(t, sekarang), isAlumni, t.total_nominal) === 'menunggak'
+}
+
+/** "Agustus–Oktober 2026", atau "Juli 2026–Februari 2027" kalau tahunnya berbeda */
+function labelRentang(awal: BulanTahun | null, akhir: BulanTahun | null): string {
+  if (!awal || !akhir) return ''
+  const ujung = `${BULAN_NAMES[akhir.bulan]} ${akhir.tahun}`
+  if (awal.bulan === akhir.bulan && awal.tahun === akhir.tahun) return ujung
+  return awal.tahun === akhir.tahun
+    ? `${BULAN_NAMES[awal.bulan]}–${ujung}`
+    : `${BULAN_NAMES[awal.bulan]} ${awal.tahun}–${ujung}`
+}
+
+/**
+ * Ringkasan nilai tagihan satu periode: tahun ajaran aktif sampai bulan berjalan —
+ * rentang yang sama dengan kartu "Total Tunggakan Aktif" di dashboard. Tanpa tahun
+ * ajaran aktif, seluruh tagihan yang sudah terbit ikut dihitung.
+ *
+ * Uang masuk = pembayaran per tagihan dibatasi nilai tagihannya, sama dengan kolom
+ * Terbayar di Laporan, sehingga cicilan yang belum lunas pun ikut terhitung.
+ */
+async function muatRingkasanPeriode(
+  sid: string,
+  ta: PeriodeTahunAjaran | null,
+  bulan: number,
+  tahun: number,
+): Promise<RingkasanPeriode> {
+  const mulai    = ta ? new Date(ta.tanggal_mulai) : null
+  const selesai  = ta ? new Date(ta.tanggal_selesai) : null
+  const idxMulai = mulai ? periodeIndex(mulai.getMonth() + 1, mulai.getFullYear()) : -Infinity
+  const idxAkhir = Math.min(
+    selesai ? periodeIndex(selesai.getMonth() + 1, selesai.getFullYear()) : Infinity,
+    periodeIndex(bulan, tahun),
+  )
+
+  // Diambil bertahap — satu permintaan bisa diam-diam terpotong di batas baris PostgREST
+  const [tagihanRes, bayarRes] = await Promise.all([
+    ambilSemua<{ id: string; bulan: number; tahun: number; total_nominal: number }>((dari, sampai) => {
+      let q = supabase.from('tagihan').select('id, bulan, tahun, total_nominal').eq('sekolah_id', sid).lte('tahun', tahun)
+      if (mulai) q = q.gte('tahun', mulai.getFullYear())
+      return q.order('id').range(dari, sampai)
+    }),
+    ambilSemua<{ tagihan_id: string; jumlah: number }>((dari, sampai) =>
+      supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).order('id').range(dari, sampai)),
+  ])
+  if (tagihanRes.error) console.error('[Tagihan Aktif] gagal memuat tagihan periode:', tagihanRes.error)
+  if (bayarRes.error)   console.error('[Tagihan Aktif] gagal memuat pembayaran periode:', bayarRes.error)
+
+  const dibayar = new Map<string, number>()
+  for (const p of bayarRes.data) dibayar.set(p.tagihan_id, (dibayar.get(p.tagihan_id) ?? 0) + p.jumlah)
+
+  const ringkasan: RingkasanPeriode = { total: 0, masuk: 0, awal: null, akhir: null }
+  for (const t of tagihanRes.data) {
+    const idx = periodeIndex(t.bulan, t.tahun)
+    if (idx < idxMulai || idx > idxAkhir) continue
+    ringkasan.total += t.total_nominal
+    ringkasan.masuk += Math.min(dibayar.get(t.id) ?? 0, t.total_nominal)
+    if (!ringkasan.awal  || idx < periodeIndex(ringkasan.awal.bulan,  ringkasan.awal.tahun))  ringkasan.awal  = { bulan: t.bulan, tahun: t.tahun }
+    if (!ringkasan.akhir || idx > periodeIndex(ringkasan.akhir.bulan, ringkasan.akhir.tahun)) ringkasan.akhir = { bulan: t.bulan, tahun: t.tahun }
+  }
+  return ringkasan
+}
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface SiswaTagihanRow {
@@ -44,8 +121,10 @@ interface SiswaTagihanRow {
   /** Siswa sudah lulus — kelas_id-nya null, kelas terakhir diambil dari snapshot teks */
   is_alumni:     boolean
   total_nominal: number
-  /** Komponen belum lunas dari periode sebelumnya — hanya untuk kolom total tabel */
+  /** Jumlah tunggakan periode sebelumnya (lihat adalahTunggakanLama); > 0 berarti Menunggak */
   tunggakan:     number
+  /** Rincian tunggakan per bulan, terlama dulu — untuk pesan pengingat WhatsApp */
+  tunggakanDaftar: TunggakanBulan[]
   status:        'belum_bayar' | 'lunas' | 'cicilan'
   /** Snapshot dari paket kelas saat tagihan dibuat — tiap kelas bisa berbeda */
   jatuh_tempo:   string | null
@@ -70,6 +149,19 @@ type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_b
 type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
 type DetailKomponenRow = { nama_komponen: string; nominal: number; jenis: string }
 type TunggakanRow      = { nama_komponen: string; nominal: number; jenis: string; bulan: number; tahun: number }
+type TunggakanBulan    = { bulan: number; tahun: number; sisa: number }
+type BulanTahun        = { bulan: number; tahun: number }
+
+/** Isi card "Total tagihan periode ini" — seluruh periode, bukan hanya bulan berjalan */
+interface RingkasanPeriode {
+  /** Nilai seluruh tagihan periode yang sudah terbit */
+  total: number
+  /** Uang yang sudah masuk untuk tagihan itu — pembayaran per tagihan, dibatasi nilainya */
+  masuk: number
+  /** Bulan tagihan paling awal dan paling akhir yang ikut dihitung, untuk keterangan card */
+  awal:  BulanTahun | null
+  akhir: BulanTahun | null
+}
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -320,6 +412,7 @@ function TagihanAktifContent() {
   const [filterStatus,      setFilterStatus]      = useState(() => readParam(searchParams, 'status', STATUS_CONFIG))
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
+  const [ringkasanPeriode,  setRingkasanPeriode]  = useState<RingkasanPeriode>({ total: 0, masuk: 0, awal: null, akhir: null })
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
 
   // Modal state
@@ -377,15 +470,19 @@ function TagihanAktifContent() {
         .limit(5000),
       supabase
         .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
-      // Tunggakan periode sebelumnya per siswa, untuk kolom total di tabel.
+      // Tunggakan periode sebelumnya per siswa — hanya tagihan sebelum bulan ini.
       // status = belum_bayar: tagihan yang sudah dicicil sebagian tidak terhitung
       // di sini — sisanya terlacak lewat halaman Laporan Tunggakan.
-      supabase
+      // Diambil bertahap: status Menunggak bergantung pada daftar ini, dan satu
+      // permintaan bisa diam-diam terpotong di batas baris PostgREST.
+      ambilSemua((dari, sampai) => supabase
         .from('tagihan')
-        .select('siswa_id, bulan, tahun, tagihan_item(nominal)')
+        .select('id, siswa_id, status, bulan, tahun, jatuh_tempo, total_nominal, siswa:siswa_id(status)')
         .eq('sekolah_id', sid)
         .eq('status', 'belum_bayar')
-        .limit(2000),
+        .or(`tahun.lt.${tahun},and(tahun.eq.${tahun},bulan.lt.${bulan})`)
+        .order('id')
+        .range(dari, sampai)),
     ])
 
     const riwayat = bangunRiwayatTagih(
@@ -393,23 +490,29 @@ function TagihanAktifContent() {
     )
     const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
 
-    // siswa_id → nominal tunggakan dari periode sebelum bulan ini.
-    // Definisinya sengaja sama persis dengan blok tunggakan di modal detail agar
+    // siswa_id → tunggakan periode sebelum bulan ini, per bulan, terlama dulu.
+    // Aturannya adalahTunggakanLama — sama dengan blok tunggakan di modal detail agar
     // angka di tabel dan di modal tidak berselisih.
     //
-    // Semua jenis komponen ikut dihitung, termasuk rutin bulanan. Sebelumnya SPP
-    // yang menunggak disaring keluar, dan karena halaman ini terkunci ke bulan
-    // berjalan, tunggakan SPP jadi tidak terlihat di mana pun selain Laporan.
+    // Nominalnya total_nominal, bukan jumlah tagihan_item: rincian dicatat sebelum
+    // potongan beasiswa, jadi menjumlahkannya membesarkan tunggakan penerima beasiswa
+    // dan memunculkan tunggakan palsu untuk tagihan Rp 0 (beasiswa penuh).
     type TunggakanRaw = {
-      siswa_id: string; bulan: number; tahun: number
-      tagihan_item: { nominal: number }[]
+      siswa_id: string; status: string; bulan: number; tahun: number
+      jatuh_tempo: string | null; total_nominal: number
+      siswa: { status: string | null } | null
     }
     const periodeIni = periodeIndex(bulan, tahun)
-    const tunggakanPerSiswa = new Map<string, number>()
+    const sekarang   = new Date()
+    const tunggakanPerSiswa = new Map<string, TunggakanBulan[]>()
     for (const t of ((tunggakanData ?? []) as unknown as TunggakanRaw[])) {
-      if (periodeIndex(t.bulan, t.tahun) >= periodeIni) continue
-      const nom = (t.tagihan_item ?? []).reduce((s, i) => s + i.nominal, 0)
-      if (nom > 0) tunggakanPerSiswa.set(t.siswa_id, (tunggakanPerSiswa.get(t.siswa_id) ?? 0) + nom)
+      if (!adalahTunggakanLama(t, periodeIni, sekarang, t.siswa?.status === 'alumni')) continue
+      const daftar = tunggakanPerSiswa.get(t.siswa_id) ?? []
+      daftar.push({ bulan: t.bulan, tahun: t.tahun, sisa: t.total_nominal })
+      tunggakanPerSiswa.set(t.siswa_id, daftar)
+    }
+    for (const daftar of tunggakanPerSiswa.values()) {
+      daftar.sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
     }
 
     const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
@@ -513,9 +616,14 @@ function TagihanAktifContent() {
       await Promise.all(toUpdate.map(({ id, total }) => supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)))
     }
 
+    // Dimuat sesudah koreksi total di atas tertulis, supaya nilai bulan ini di
+    // ringkasan periode sama dengan yang tampil di tabel
+    const ringkasanPromise = muatRingkasanPeriode(sid, ta, bulan, tahun)
+
     const result: SiswaTagihanRow[] = rows.map(r => {
-      const siswaId = r.siswa?.id ?? ''
-      const kelas   = r.siswa?.kelas
+      const siswaId         = r.siswa?.id ?? ''
+      const kelas           = r.siswa?.kelas
+      const tunggakanDaftar = tunggakanPerSiswa.get(siswaId) ?? []
       return {
         tagihan_id:    r.id,
         siswa_id:      siswaId,
@@ -528,7 +636,8 @@ function TagihanAktifContent() {
         kelas_warna:   kelas?.warna ?? '#1A2C4E',
         is_alumni:     r.siswa?.status === 'alumni',
         total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
-        tunggakan:     tunggakanPerSiswa.get(siswaId) ?? 0,
+        tunggakan:     tunggakanDaftar.reduce((s, d) => s + d.sisa, 0),
+        tunggakanDaftar,
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
         jatuh_tempo:   r.jatuh_tempo,
         no_wa:         r.siswa?.no_wa ?? '',
@@ -538,6 +647,7 @@ function TagihanAktifContent() {
     })
 
     setTagihanList(result)
+    setRingkasanPeriode(await ringkasanPromise)
     return result
   }, [])
 
@@ -653,16 +763,35 @@ function TagihanAktifContent() {
     const paymentUrl = t.payment_token
       ? `${window.location.origin}/bayar/${t.payment_token}`
       : undefined
-    const content = buildPesanTagihanText({
-      namaWali:     t.nama_wali,
-      namaSiswa:    t.nama,
-      kelasNama:    t.kelas_nama,
-      totalNominal: t.total_nominal,
-      bulan:        bulanIni,
-      tahun:        tahunIni,
-      namaSekolah,
-      paymentUrl,
-    })
+
+    // Siswa yang punya tunggakan bulan lalu diingatkan dengan rincian tunggakannya
+    // (template yang sama dengan pengingat di Laporan). Tagihan bulan ini ikut
+    // dicantumkan kalau sudah lewat jatuh tempo juga; halaman bayar lewat tautan
+    // yang sama menagih bulan ini beserta seluruh tunggakan.
+    const bulanIniLewatTempo = statusEfektif(
+      t.status, lewatJatuhTempo({ jatuh_tempo: t.jatuh_tempo, bulan: bulanIni, tahun: tahunIni }, now), t.is_alumni, t.total_nominal,
+    ) === 'menunggak'
+    const content = t.tunggakanDaftar.length > 0
+      ? buildPesanTunggakanText({
+          namaWali:  t.nama_wali,
+          namaSiswa: t.nama,
+          kelasNama: t.kelas_nama,
+          daftar:    bulanIniLewatTempo
+            ? [...t.tunggakanDaftar, { bulan: bulanIni, tahun: tahunIni, sisa: t.total_nominal }]
+            : t.tunggakanDaftar,
+          namaSekolah,
+          paymentUrl,
+        })
+      : buildPesanTagihanText({
+          namaWali:     t.nama_wali,
+          namaSiswa:    t.nama,
+          kelasNama:    t.kelas_nama,
+          totalNominal: t.total_nominal,
+          bulan:        bulanIni,
+          tahun:        tahunIni,
+          namaSekolah,
+          paymentUrl,
+        })
 
     window.open(buildWaMeLink(t.no_wa, content), '_blank', 'noopener,noreferrer')
     setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
@@ -675,8 +804,15 @@ function TagihanAktifContent() {
   // punya tanggalnya sendiri, jadi satu bulan bisa berisi beberapa batas waktu.
   const waktuTagihan = (t: SiswaTagihanRow) => ({ jatuh_tempo: t.jatuh_tempo, bulan: bulanIni, tahun: tahunIni })
 
+  // Tunggakan periode sebelumnya mengalahkan status bulan ini: siswa yang masih
+  // berutang dari bulan lalu berstatus Menunggak walaupun tagihan bulan ini Lunas,
+  // Cicilan, atau belum jatuh tempo. Dengan begitu filter Menunggak berisi siswa
+  // yang sama dengan yang dihitung kartu tunggakan di dashboard (tautan
+  // "Ingatkan sekarang" menuju ke sini).
   const getEffStatus = (t: SiswaTagihanRow): EffectiveStatus =>
-    statusEfektif(t.status, lewatJatuhTempo(waktuTagihan(t), now), t.is_alumni, t.total_nominal)
+    t.tunggakan > 0
+      ? 'menunggak'
+      : statusEfektif(t.status, lewatJatuhTempo(waktuTagihan(t), now), t.is_alumni, t.total_nominal)
 
   // Preset dari URL ikut dimasukkan supaya select tidak tampil kosong saat jenjang
   // tersebut belum punya tagihan di bulan ini. Alumni ditaruh di dropdown tingkat,
@@ -710,9 +846,10 @@ function TagihanAktifContent() {
   const countCicilan   = effCounts.cicilan
   const countBelum     = effCounts.belum_bayar
   const countMenunggak = effCounts.menunggak
-  const totalNominal   = tagihanList.reduce((s, t) => s + t.total_nominal, 0)
-  const sudahMasuk     = tagihanList.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
-  const belumMasuk     = totalNominal - sudahMasuk
+  // Card "Total tagihan periode ini" — seluruh tahun ajaran aktif, bukan hanya bulan ini
+  const belumMasukPeriode = Math.max(0, ringkasanPeriode.total - ringkasanPeriode.masuk)
+  const keteranganPeriode = [tahunAjaran && `TA ${tahunAjaran}`, labelRentang(ringkasanPeriode.awal, ringkasanPeriode.akhir)]
+    .filter(Boolean).join(' · ')
 
   const anyModalOpen = showCatatModal || showDetailModal
 
@@ -827,7 +964,7 @@ function TagihanAktifContent() {
       // Tagihan bulan lain yang belum dibayar sama sekali — sumber komponen tunggakan
       supabase
         .from('tagihan')
-        .select('id, bulan, tahun, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis))')
+        .select('id, status, bulan, tahun, jatuh_tempo, total_nominal, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis))')
         .eq('sekolah_id', sekolahId)
         .eq('siswa_id', t.siswa_id)
         .eq('status', 'belum_bayar')
@@ -854,18 +991,31 @@ function TagihanAktifContent() {
       ...extraItems,
     ])
 
-    // Komponen dari tagihan periode sebelumnya yang masih belum lunas — semua jenis,
-    // sama dengan perhitungan kolom total di tabel.
+    // Komponen dari tagihan periode sebelumnya yang menunggak — aturannya
+    // adalahTunggakanLama, sama dengan kolom total di tabel.
     // Hanya ditampilkan sebagai informasi — tidak ikut dijumlahkan ke total bulan ini.
-    type TunggakanRaw = { bulan: number; tahun: number; tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string } | null }[] }
+    type TunggakanRaw = {
+      status: string; bulan: number; tahun: number; jatuh_tempo: string | null; total_nominal: number
+      tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string } | null }[]
+    }
     const periodeIni = periodeIndex(bulanIni, tahunIni)
+    const sekarang   = new Date()
     setDetailTunggakan(
       ((tunggakanData ?? []) as unknown as TunggakanRaw[])
-        .filter(tg => periodeIndex(tg.bulan, tg.tahun) < periodeIni)
-        .flatMap(tg => (tg.tagihan_item ?? [])
+        .filter(tg => adalahTunggakanLama(tg, periodeIni, sekarang, t.is_alumni))
+        .flatMap(tg => {
           // jenis boleh kosong: komponen yang sudah dihapus menyisakan snapshot
           // nama dan nominalnya di tagihan_item, dan itu tetap uang yang terutang
-          .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '', bulan: tg.bulan, tahun: tg.tahun })))
+          const rincian = (tg.tagihan_item ?? []).map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '', bulan: tg.bulan, tahun: tg.tahun }))
+          // tagihan_item dicatat sebelum potongan beasiswa (dan tanpa komponen individu
+          // yang ditambah belakangan). Selisihnya dengan total_nominal jadi baris
+          // tersendiri, supaya jumlah blok ini sama dengan kolom total di tabel.
+          const selisih = tg.total_nominal - rincian.reduce((s, i) => s + i.nominal, 0)
+          return selisih === 0 ? rincian : [...rincian, {
+            nama_komponen: selisih < 0 ? 'Potongan beasiswa' : 'Komponen tambahan',
+            nominal: selisih, jenis: '', bulan: tg.bulan, tahun: tg.tahun,
+          }]
+        })
         .sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
     )
 
@@ -1018,7 +1168,7 @@ function TagihanAktifContent() {
               {/* Inner card 1 — Donut */}
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
+                  <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
                   <Image src="/icons/IconDollar.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8rem' }}>
@@ -1049,11 +1199,16 @@ function TagihanAktifContent() {
               {/* Inner card 2 — Total nominal */}
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
+                  <div>
+                    <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
+                    {keteranganPeriode && (
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', marginTop: 2 }}>{keteranganPeriode}</div>
+                    )}
+                  </div>
                   <Image src="/icons/IconKomponen.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E', letterSpacing: '-0.02em', paddingBottom: '0.75rem', borderBottom: '3px solid #DADBDE', marginBottom: '0.875rem' }}>
-                  {formatRp(totalNominal)}
+                  {formatRp(ringkasanPeriode.total)}
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                   <div style={{ flex: 1 }}>
@@ -1063,7 +1218,7 @@ function TagihanAktifContent() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(sudahMasuk)}</span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(ringkasanPeriode.masuk)}</span>
                     </div>
                   </div>
                   <div style={{ flex: 1 }}>
@@ -1073,7 +1228,7 @@ function TagihanAktifContent() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(belumMasuk)}</span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E' }}>{formatRp(belumMasukPeriode)}</span>
                     </div>
                   </div>
                 </div>
@@ -1148,7 +1303,7 @@ function TagihanAktifContent() {
                             </div>
                             <div>
                               <div style={{ fontWeight: 600, color: '#1A2C4E', fontSize: '0.875rem' }}>{t.nama}</div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.kelas_nama} • NIS {t.nis}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>NIS {t.nis}</div>
                             </div>
                           </div>
                         </td>
@@ -1531,6 +1686,10 @@ function TagihanAktifContent() {
             {/* Tunggakan komponen dari periode sebelumnya (informasi, tidak masuk total di atas) */}
             {!detailLoading && detailTunggakan.length > 0 && (() => {
               const totalTunggakan = detailTunggakan.reduce((s, k) => s + k.nominal, 0)
+              // Yang belum lunas dari bulan ini = sisanya, bukan nilai tagihannya: siswa
+              // yang bulan ini sudah Lunas/Cicilan tetap bisa punya tunggakan lama.
+              // detailPembayaran dimuat untuk tagihan berstatus cicilan dan lunas.
+              const sisaBulanIni = Math.max(0, detailSiswa.total_nominal - detailPembayaran.reduce((s, p) => s + p.jumlah, 0))
               return (
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.5rem' }}>
@@ -1545,7 +1704,9 @@ function TagihanAktifContent() {
                         <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#92400E', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           {BULAN_NAMES[k.bulan]} {k.tahun}
                         </span>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400E' }}>{formatRp(k.nominal)}</span>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400E' }}>
+                          {k.nominal < 0 ? `−${formatRp(-k.nominal)}` : formatRp(k.nominal)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1557,7 +1718,7 @@ function TagihanAktifContent() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
                     <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#92400E' }}>Total keseluruhan belum lunas</span>
                     <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#92400E' }}>
-                      {formatRp(detailSiswa.total_nominal + totalTunggakan)}
+                      {formatRp(sisaBulanIni + totalTunggakan)}
                     </span>
                   </div>
                 </div>

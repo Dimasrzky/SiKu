@@ -1,3 +1,9 @@
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Pembayaran Berhasil',
+}
+
 export default function SuksesPage() {
   return (
     <main style={{

@@ -10,6 +10,16 @@ import type { TitikTren } from '@/lib/metrikLaporan'
 const WARNA_TERBAYAR = '#1A2C4E'
 const WARNA_SISA     = '#7FB0EE'
 
+/** Jumlah bulan di tampilan ringkas untuk sekolah yang baru mulai memakai SiKu */
+const BULAN_RINGKAS = 5
+
+/** Satu pita di sumbu grafik. `titik` null = bulan yang belum berjalan: tanpa batang dan tooltip. */
+interface SlotGrafik {
+  bulan: number
+  tahun: number
+  titik: TitikTren | null
+}
+
 /** Batas atas sumbu yang rapi (1/2/5 × 10ⁿ), supaya garis tengahnya juga angka bulat */
 function batasSumbu(maks: number): number {
   if (maks <= 0) return 1
@@ -32,7 +42,16 @@ function pathKolom(x: number, yAtas: number, w: number, h: number, bulatAtas: bo
  * tunggakan bulan itu — satu sumbu, tanpa dua skala. Ketepatan waktu per bulan
  * (satuan berbeda) tidak digambar di sumbu yang sama; ia ada di tooltip dan tabel.
  */
-export function TrenTagihanChart({ data }: { data: TitikTren[] }) {
+export function TrenTagihanChart({ data, ringkasAwalPakai = false }: {
+  data: TitikTren[]
+  /**
+   * Untuk sekolah yang baru mulai; hanya dinyalakan di halaman Laporan utama.
+   * - Tabel: dimulai dari bulan pertama bertagihan (bulan awal pakai), berapa pun rentangnya.
+   * - Grafik: kalau rentang dari bulan awal pakai sampai bulan terakhir paling lama 5 bulan,
+   *   hanya memuat 5 bulan mulai dari bulan awal pakai.
+   */
+  ringkasAwalPakai?: boolean
+}) {
   const [aktif,     setAktif]     = useState<number | null>(null)
   const [modeTabel, setModeTabel] = useState(false)
 
@@ -51,16 +70,45 @@ export function TrenTagihanChart({ data }: { data: TitikTren[] }) {
   const adaData = data.some(d => d.tagihan > 0)
   const maks    = batasSumbu(Math.max(0, ...data.map(d => d.tagihan)))
 
+  // Tampilan ringkas: batang pertama sekolah baru tidak terhimpit di antara bulan-bulan
+  // kosong sebelum mereka memakai SiKu. Syaratnya rentang, bukan jumlah batang, supaya
+  // semua batang pasti masuk ke 5 slot.
+  const iAwal    = data.findIndex(d => d.tagihan > 0)
+  const rentang  = iAwal < 0 ? 0 : data.length - iAwal
+  const ringkas  = ringkasAwalPakai && rentang > 0 && rentang <= BULAN_RINGKAS
+  const terakhir = data[data.length - 1]
+  const keSlot   = (titik: TitikTren): SlotGrafik => ({ bulan: titik.bulan, tahun: titik.tahun, titik })
+  const slotGrafik: SlotGrafik[] = !ringkas
+    ? data.map(keSlot)
+    : terakhir?.berjalan
+      // Mulai dari bulan awal pakai; sisa slot = bulan-bulan berikutnya yang belum berjalan
+      ? [
+          ...data.slice(iAwal).map(keSlot),
+          ...Array.from({ length: BULAN_RINGKAS - rentang }, (_, k): SlotGrafik => {
+            const d = new Date(Date.UTC(terakhir.tahun, terakhir.bulan + k, 1))
+            return { bulan: d.getUTCMonth() + 1, tahun: d.getUTCFullYear(), titik: null }
+          }),
+        ]
+      // Arsip tahun ajaran: bulan sesudah akhir tahun ajaran bukan "bulan depan",
+      // jadi kelima slot diambil mundur dari bulan terakhir data
+      : data.slice(-BULAN_RINGKAS).map(keSlot)
+
+  // Tabel tidak dibatasi 5 bulan: cukup buang bulan-bulan kosong sebelum awal pakai,
+  // sisanya tetap sampai bulan terakhir seperti biasa
+  const barisTabel = ringkasAwalPakai && iAwal > 0 ? data.slice(iAwal) : data
+
   const W = 640; const H = 214; const KIRI = 42; const KANAN = 6; const ATAS = 10; const BAWAH = 38
   const lebarPlot  = W - KIRI - KANAN
   const tinggiPlot = H - ATAS - BAWAH
-  const pita       = lebarPlot / data.length
-  const lebarBtg   = Math.min(24, pita * 0.6)
+  const pita       = lebarPlot / slotGrafik.length
+  // Batang dibatasi 24 supaya tidak memenuhi pita. Tampilan ringkas sengaja 2× lebih
+  // tebal (keputusan produk): di 5 pita, batang 24 terlalu kurus di tengah ruang kosong.
+  const lebarBtg   = Math.min(ringkas ? 48 : 24, pita * 0.6)
   const dasar      = ATAS + tinggiPlot
   const CELAH      = 2
   const tinggi     = (v: number) => (tinggiPlot * v) / maks
 
-  const titikAktif = aktif === null ? null : data[aktif]
+  const titikAktif = aktif === null ? null : slotGrafik[aktif]?.titik ?? null
   const pelunasan  = (d: TitikTren) => (d.tagihan > 0 ? `${Math.round((d.terbayar / d.tagihan) * 100)}%` : '—')
 
   const legenda = (
@@ -110,7 +158,7 @@ export function TrenTagihanChart({ data }: { data: TitikTren[] }) {
             </tr>
           </thead>
           <tbody>
-            {data.map((d, i) => (
+            {barisTabel.map((d, i) => (
               <tr key={`${d.tahun}-${d.bulan}`} className="tren-baris"
                 style={{ borderTop: '1px solid #F1F5F9', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#0F172A', animationDelay: `${i * 25}ms` }}>
                 <td style={{ textAlign: 'left', padding: '0.35rem 0' }}>
@@ -127,7 +175,7 @@ export function TrenTagihanChart({ data }: { data: TitikTren[] }) {
       ) : (
         <div style={{ position: 'relative' }} onMouseLeave={() => setAktif(null)}>
           <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}
-            role="img" aria-label="Tagihan dan realisasi per bulan jatuh tempo, 12 bulan">
+            role="img" aria-label={`Tagihan dan realisasi per bulan jatuh tempo, ${slotGrafik.length} bulan`}>
             {aktif !== null && (
               <rect x={KIRI + aktif * pita} y={ATAS} width={pita} height={tinggiPlot} fill="#F1F5F9" />
             )}
@@ -144,52 +192,60 @@ export function TrenTagihanChart({ data }: { data: TitikTren[] }) {
               )
             })}
 
-            {data.map((d, i) => {
+            {slotGrafik.map((s, i) => {
+              const d      = s.titik
               const x      = KIRI + i * pita + (pita - lebarBtg) / 2
-              const hTotal = tinggi(d.tagihan)
-              const hBayar = tinggi(d.terbayar)
+              const hTotal = d ? tinggi(d.tagihan) : 0
+              const hBayar = d ? tinggi(d.terbayar) : 0
               const hSisa  = hTotal - hBayar
               const adaSisa = hSisa > CELAH
               return (
-                <g key={`${d.tahun}-${d.bulan}`}>
+                <g key={`${s.tahun}-${s.bulan}`}>
                   {/* Kedua segmen tumbuh bersama dari garis dasar, supaya tumpukannya tetap utuh selama animasi */}
-                  <g className="tren-kolom" style={{ transformOrigin: `${x + lebarBtg / 2}px ${dasar}px`, animationDelay: `${i * 30}ms` }}>
-                    {/* Terbayar dari garis dasar; ujungnya membulat hanya kalau tidak ada sisa di atasnya */}
-                    <path d={pathKolom(x, dasar - (adaSisa ? hBayar : hTotal), lebarBtg, adaSisa ? hBayar : hTotal, !adaSisa)} fill={WARNA_TERBAYAR} />
-                    {adaSisa && (
-                      <path
-                        d={pathKolom(x, dasar - hTotal, lebarBtg, hBayar > 0 ? hSisa - CELAH : hSisa, true)}
-                        fill={WARNA_SISA} />
-                    )}
-                  </g>
+                  {d && (
+                    <g className="tren-kolom" style={{ transformOrigin: `${x + lebarBtg / 2}px ${dasar}px`, animationDelay: `${i * 30}ms` }}>
+                      {/* Terbayar dari garis dasar; ujungnya membulat hanya kalau tidak ada sisa di atasnya */}
+                      <path d={pathKolom(x, dasar - (adaSisa ? hBayar : hTotal), lebarBtg, adaSisa ? hBayar : hTotal, !adaSisa)} fill={WARNA_TERBAYAR} />
+                      {adaSisa && (
+                        <path
+                          d={pathKolom(x, dasar - hTotal, lebarBtg, hBayar > 0 ? hSisa - CELAH : hSisa, true)}
+                          fill={WARNA_SISA} />
+                      )}
+                    </g>
+                  )}
+                  {/* Bulan yang belum berjalan diredupkan */}
                   <text x={x + lebarBtg / 2} y={dasar + 15} textAnchor="middle" fontSize={11}
-                    fill={d.berjalan ? '#0F172A' : '#64748B'} fontWeight={d.berjalan ? 700 : 400}>
-                    {BULAN_PENDEK[d.bulan]}
+                    fill={d?.berjalan ? '#0F172A' : d ? '#64748B' : '#94A3B8'} fontWeight={d?.berjalan ? 700 : 400}>
+                    {BULAN_PENDEK[s.bulan]}
                   </text>
-                  {(i === 0 || d.bulan === 1) && (
+                  {(i === 0 || s.bulan === 1) && (
                     <text x={x + lebarBtg / 2} y={dasar + 29} textAnchor="middle" fontSize={9.5} fill="#94A3B8">
-                      {d.tahun}
+                      {s.tahun}
                     </text>
                   )}
                 </g>
               )
             })}
 
-            {/* Area sorot selebar pita bulan — lebih besar dari batangnya sendiri */}
-            {data.map((d, i) => (
-              <rect key={`hit-${d.tahun}-${d.bulan}`}
-                x={KIRI + i * pita} y={ATAS} width={pita} height={tinggiPlot + BAWAH}
-                fill="transparent" tabIndex={0} style={{ outline: 'none', cursor: 'default' }}
-                aria-label={`${BULAN_PANJANG[d.bulan]} ${d.tahun}: tagihan ${fmt(d.tagihan)}, terbayar ${fmt(d.terbayar)}, pelunasan ${pelunasan(d)}, tepat waktu ${formatPersen(d.ketepatanWaktu)}`}
-                onMouseEnter={() => setAktif(i)} onFocus={() => setAktif(i)} onBlur={() => setAktif(null)} />
-            ))}
+            {/* Area sorot selebar pita bulan — lebih besar dari batangnya sendiri.
+                Bulan yang belum berjalan tidak punya data, jadi tidak diberi tooltip. */}
+            {slotGrafik.map((s, i) => {
+              const d = s.titik
+              return d && (
+                <rect key={`hit-${s.tahun}-${s.bulan}`}
+                  x={KIRI + i * pita} y={ATAS} width={pita} height={tinggiPlot + BAWAH}
+                  fill="transparent" tabIndex={0} style={{ outline: 'none', cursor: 'default' }}
+                  aria-label={`${BULAN_PANJANG[d.bulan]} ${d.tahun}: tagihan ${fmt(d.tagihan)}, terbayar ${fmt(d.terbayar)}, pelunasan ${pelunasan(d)}, tepat waktu ${formatPersen(d.ketepatanWaktu)}`}
+                  onMouseEnter={() => setAktif(i)} onFocus={() => setAktif(i)} onBlur={() => setAktif(null)} />
+              )
+            })}
           </svg>
 
           {titikAktif && aktif !== null && (
             <div style={{
               position: 'absolute', top: 0, pointerEvents: 'none',
               left: `${((KIRI + (aktif + 0.5) * pita) / W) * 100}%`,
-              transform: aktif < 2 ? 'translateX(-12%)' : aktif > data.length - 3 ? 'translateX(-88%)' : 'translateX(-50%)',
+              transform: aktif < 2 ? 'translateX(-12%)' : aktif > slotGrafik.length - 3 ? 'translateX(-88%)' : 'translateX(-50%)',
               background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, boxShadow: '0 6px 18px rgba(15,23,42,0.12)',
               padding: '0.55rem 0.7rem', minWidth: 190, fontSize: '0.75rem', zIndex: 5,
             }}>

@@ -20,19 +20,20 @@ const dmSans = DM_Sans({
   display: 'swap',
 })
 
+// Metadata di sini berlaku untuk SEMUA route, jadi isinya harus netral.
+// Metadata khusus halaman login ada di app/page.tsx; route lain mengisi title
+// sendiri lewat page.tsx (server) atau layout.tsx di foldernya (page client).
 export const metadata: Metadata = {
   metadataBase: new URL('https://app.pakaisiku.id'),
-  title: 'Login | SiKu',
-  description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari Siku.',
-  keywords: 'login siku, masuk akun pakaisiku, sistem keuangan sekolah, aplikasi SPP',
-  alternates: {
-    canonical: 'https://app.pakaisiku.id',
+  title: {
+    default: 'SiKu',
+    template: '%s | SiKu',
   },
+  description: 'Kelola SPP, tagihan, dan laporan keuangan sekolah dengan SiKu.',
+  // Tanpa title/description di sini, og:title dan og:description otomatis
+  // mengikuti title/description tiap halaman (dipakai pratinjau link WhatsApp)
   openGraph: {
-    title: 'Login | SiKu',
-    description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari Siku.',
     siteName: 'PakaiSiku',
-    url: 'https://app.pakaisiku.id',
     locale: 'id_ID',
   },
   verification: {

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase-service'
 import BayarWizard from './BayarWizard'
@@ -6,6 +7,13 @@ import BayarFooter from './BayarFooter'
 import BuktiSedangDiprosesView from './BuktiSedangDiprosesView'
 import PembayaranLunasView from './PembayaranLunasView'
 import { formatKelasNama } from './format'
+
+// Link halaman ini dikirim ke wali murid lewat WhatsApp; title dan description
+// ini juga menjadi og:title dan og:description di kartu pratinjau link
+export const metadata: Metadata = {
+  title: 'Pembayaran Tagihan',
+  description: 'Lihat rincian tagihan sekolah dan lakukan pembayaran.',
+}
 
 type TagihanItemRaw = { nama_komponen: string; nominal: number; komponen: { kelas_warna: string | null } | null }
 type SiswaJoin      = { nama: string; nis: string | null; nama_wali: string | null; kelas: { nama: string } | null }
