@@ -1,3 +1,4 @@
+import { periodeIndex } from './komponenTagihan'
 import { batasJatuhTempo, lewatJatuhTempo, tanpaKewajiban, type WaktuTagihan } from './statusTagihan'
 
 // Rumus metrik laporan — satu-satunya sumber. Level sekolah memakainya sekarang;
@@ -185,7 +186,15 @@ export function hitungPemasukan(rows: KolomPembayaran[]): { total: number; trans
 
 export interface KelompokUmur {
   label:         string
+  /**
+   * Tunggakan seumur rentang ini digabung dengan semua yang lebih tua (`lebihLama`).
+   * Tunggakan lama ikut di setiap rentang yang lebih muda, jadi nilai antarrentang
+   * tidak boleh dijumlahkan — rentang termuda sudah memuat seluruh tunggakan.
+   */
   nominal:       number
+  /** Bagian `nominal` yang umurnya sudah melewati rentang ini */
+  lebihLama:     number
+  /** Tagihan dan siswa yang menunggak seumur rentang ini atau lebih tua */
   jumlahTagihan: number
   jumlahSiswa:   number
 }
@@ -197,7 +206,13 @@ const BATAS_UMUR = [
   { label: '> 90 hari',  sampai: Infinity },
 ]
 
-/** Umur = hari ini − tanggal jatuh tempo, dikelompokkan; nilainya sisa tunggakan. */
+/**
+ * Umur = hari ini − tanggal jatuh tempo, dikelompokkan; nilainya sisa tunggakan.
+ *
+ * Tiap rentang digabung dengan semua tunggakan yang lebih tua — pola yang sama
+ * dengan trenTagihanRealisasi, yang menggabungkan tunggakan bulan sebelumnya ke
+ * tagihan tiap bulan. "1–30 hari" jadi berarti: sudah menunggak paling tidak 1 hari.
+ */
 export function umurTunggakan(rows: TagihanMetrik[], sekarang: Date): KelompokUmur[] {
   const kelompok = BATAS_UMUR.map(b => ({ label: b.label, nominal: 0, jumlahTagihan: 0, siswa: new Set<string>() }))
   for (const t of rows) {
@@ -209,7 +224,27 @@ export function umurTunggakan(rows: TagihanMetrik[], sekarang: Date): KelompokUm
     k.jumlahTagihan += 1
     k.siswa.add(t.siswa_id)
   }
-  return kelompok.map(({ siswa, ...k }) => ({ ...k, jumlahSiswa: siswa.size }))
+
+  // Dari rentang tertua ke termuda, supaya tiap rentang ikut memuat yang lebih tua.
+  // Siswa digabung sebagai himpunan: yang menunggak di dua rentang tetap satu siswa.
+  const hasil: KelompokUmur[] = []
+  let lebihLama = 0
+  let tagihanLebihLama = 0
+  const siswaSejauhIni = new Set<string>()
+  for (let i = kelompok.length - 1; i >= 0; i--) {
+    const k = kelompok[i]
+    for (const id of k.siswa) siswaSejauhIni.add(id)
+    hasil[i] = {
+      label:         k.label,
+      nominal:       k.nominal + lebihLama,
+      lebihLama,
+      jumlahTagihan: k.jumlahTagihan + tagihanLebihLama,
+      jumlahSiswa:   siswaSejauhIni.size,
+    }
+    lebihLama        += k.nominal
+    tagihanLebihLama += k.jumlahTagihan
+  }
+  return hasil
 }
 
 // ── Tren tagihan vs realisasi ────────────────────────────────────────────────
@@ -217,9 +252,18 @@ export function umurTunggakan(rows: TagihanMetrik[], sekarang: Date): KelompokUm
 export interface TitikTren {
   bulan:    number
   tahun:    number
-  /** Nilai tagihan yang jatuh tempo di bulan ini */
+  /**
+   * Yang perlu ditagih di bulan ini: tagihan yang jatuh tempo di bulan ini ditambah
+   * `tunggakanLama`. Tunggakan yang sama ikut di setiap bulan sesudahnya, jadi nilai
+   * ini tidak boleh dijumlahkan antarbulan.
+   */
   tagihan:  number
-  /** Terbayar untuk tagihan itu — kapan pun uangnya masuk, dibatasi nilai tagihan */
+  /**
+   * Bagian `tagihan` yang berasal dari bulan-bulan sebelumnya: sisa tunggakan yang
+   * sampai sekarang belum dibayar, termasuk yang jatuh tempo sebelum rentang grafik.
+   */
+  tunggakanLama: number
+  /** Terbayar untuk tagihan yang jatuh tempo di bulan ini — kapan pun uangnya masuk, dibatasi nilai tagihan */
   terbayar: number
   /** Ketepatan waktu tagihan bulan ini (0–100); null kalau belum ada yang lewat jatuh tempo */
   ketepatanWaktu: number | null
@@ -230,6 +274,11 @@ export interface TitikTren {
 /**
  * Dikelompokkan menurut bulan jatuh tempo, bukan tanggal uang diterima. Karena itu
  * batang bulan lalu masih bisa naik ketika tunggakannya dilunasi belakangan.
+ *
+ * Tagihan tiap bulan digabung dengan tunggakan bulan-bulan sebelumnya yang masih
+ * belum dibayar (adalahTunggakan — sisa cicilan ikut), sehingga bulan terakhir
+ * menunjukkan seluruh kewajiban yang masih terbuka. Tunggakannya dibaca per saat ini:
+ * begitu dilunasi, angka bulan-bulan sesudahnya ikut turun.
  *
  * Berakhir di bulan `akhir` — akhir tahun ajaran arsip yang sedang dilihat — tapi
  * tidak pernah melewati bulan ini, jadi tahun ajaran aktif tetap 12 bulan terakhir.
@@ -247,14 +296,21 @@ export function trenTagihanRealisasi<T extends TagihanMetrik>(
     const d     = new Date(Date.UTC(tahunAkhir, bulanAkhir - 1 - mundur, 1))
     const bulan = d.getUTCMonth() + 1
     const tahun = d.getUTCFullYear()
-    titik.push({ bulan, tahun, tagihan: 0, terbayar: 0, ketepatanWaktu: null, berjalan: tahun === tahunIni && bulan === bulanIni })
+    titik.push({ bulan, tahun, tagihan: 0, tunggakanLama: 0, terbayar: 0, ketepatanWaktu: null, berjalan: tahun === tahunIni && bulan === bulanIni })
   }
 
   const indeks   = new Map(titik.map((p, i) => [`${p.tahun}-${p.bulan}`, i]))
   const perBulan = titik.map((): T[] => [])
+  // Sisa tunggakan per bulan jatuh tempo — dari semua baris, termasuk yang jatuh
+  // tempo sebelum rentang grafik: utang lama tidak hilang karena keluar dari grafik
+  const tunggakanPerPeriode = new Map<number, number>()
   for (const t of rows) {
     if (tanpaKewajiban(t.total_nominal)) continue
     const [tahun, bulan] = tanggalWIB(batasJatuhTempo(t)).split('-').map(Number)
+    if (adalahTunggakan(t, sekarang)) {
+      const periode = periodeIndex(bulan, tahun)
+      tunggakanPerPeriode.set(periode, (tunggakanPerPeriode.get(periode) ?? 0) + sisaTagihan(t))
+    }
     const i = indeks.get(`${tahun}-${bulan}`)
     if (i === undefined) continue
     titik[i].tagihan  += t.total_nominal
@@ -263,6 +319,16 @@ export function trenTagihanRealisasi<T extends TagihanMetrik>(
   }
   // Ketepatan per bulan memakai hitungRingkasan yang sama dengan kartu — satu rumus
   perBulan.forEach((daftar, i) => { titik[i].ketepatanWaktu = hitungRingkasan(daftar, sekarang).ketepatanWaktu })
+
+  // Terakhir, setelah nilai tagihan tiap bulan lengkap: gabungkan tunggakan dari
+  // bulan-bulan sebelumnya
+  for (const p of titik) {
+    const periode = periodeIndex(p.bulan, p.tahun)
+    for (const [periodeTunggakan, sisa] of tunggakanPerPeriode) {
+      if (periodeTunggakan < periode) p.tunggakanLama += sisa
+    }
+    p.tagihan += p.tunggakanLama
+  }
   return titik
 }
 

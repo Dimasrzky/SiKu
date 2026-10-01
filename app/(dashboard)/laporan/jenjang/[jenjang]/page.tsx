@@ -222,8 +222,8 @@ function LaporanJenjangContent() {
             <div style={sJudulPanel}>Tagihan vs realisasi {judul.toLowerCase()}</div>
             <div style={{ ...sSubjudulPanel, marginBottom: '0.75rem' }}>
               {taArsipTerpilih
-                ? `Per bulan jatuh tempo, 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
-                : 'Per bulan jatuh tempo, 12 bulan terakhir · tidak mengikuti filter periode'}
+                ? `Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
+                : 'Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir · tidak mengikuti filter periode'}
             </div>
             <TrenTagihanChart data={tren} />
           </div>

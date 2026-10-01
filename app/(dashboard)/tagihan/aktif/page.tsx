@@ -6,6 +6,7 @@ import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'luc
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { ambilSemua } from '@/lib/ambilSemua'
+import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type BulanTahun, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
 import { buildPesanTagihanText, buildPesanTunggakanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
@@ -57,56 +58,6 @@ function labelRentang(awal: BulanTahun | null, akhir: BulanTahun | null): string
     : `${BULAN_NAMES[awal.bulan]} ${awal.tahun}–${ujung}`
 }
 
-/**
- * Ringkasan nilai tagihan satu periode: tahun ajaran aktif sampai bulan berjalan —
- * rentang yang sama dengan kartu "Total Tunggakan Aktif" di dashboard. Tanpa tahun
- * ajaran aktif, seluruh tagihan yang sudah terbit ikut dihitung.
- *
- * Uang masuk = pembayaran per tagihan dibatasi nilai tagihannya, sama dengan kolom
- * Terbayar di Laporan, sehingga cicilan yang belum lunas pun ikut terhitung.
- */
-async function muatRingkasanPeriode(
-  sid: string,
-  ta: PeriodeTahunAjaran | null,
-  bulan: number,
-  tahun: number,
-): Promise<RingkasanPeriode> {
-  const mulai    = ta ? new Date(ta.tanggal_mulai) : null
-  const selesai  = ta ? new Date(ta.tanggal_selesai) : null
-  const idxMulai = mulai ? periodeIndex(mulai.getMonth() + 1, mulai.getFullYear()) : -Infinity
-  const idxAkhir = Math.min(
-    selesai ? periodeIndex(selesai.getMonth() + 1, selesai.getFullYear()) : Infinity,
-    periodeIndex(bulan, tahun),
-  )
-
-  // Diambil bertahap — satu permintaan bisa diam-diam terpotong di batas baris PostgREST
-  const [tagihanRes, bayarRes] = await Promise.all([
-    ambilSemua<{ id: string; bulan: number; tahun: number; total_nominal: number }>((dari, sampai) => {
-      let q = supabase.from('tagihan').select('id, bulan, tahun, total_nominal').eq('sekolah_id', sid).lte('tahun', tahun)
-      if (mulai) q = q.gte('tahun', mulai.getFullYear())
-      return q.order('id').range(dari, sampai)
-    }),
-    ambilSemua<{ tagihan_id: string; jumlah: number }>((dari, sampai) =>
-      supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).order('id').range(dari, sampai)),
-  ])
-  if (tagihanRes.error) console.error('[Tagihan Aktif] gagal memuat tagihan periode:', tagihanRes.error)
-  if (bayarRes.error)   console.error('[Tagihan Aktif] gagal memuat pembayaran periode:', bayarRes.error)
-
-  const dibayar = new Map<string, number>()
-  for (const p of bayarRes.data) dibayar.set(p.tagihan_id, (dibayar.get(p.tagihan_id) ?? 0) + p.jumlah)
-
-  const ringkasan: RingkasanPeriode = { total: 0, masuk: 0, awal: null, akhir: null }
-  for (const t of tagihanRes.data) {
-    const idx = periodeIndex(t.bulan, t.tahun)
-    if (idx < idxMulai || idx > idxAkhir) continue
-    ringkasan.total += t.total_nominal
-    ringkasan.masuk += Math.min(dibayar.get(t.id) ?? 0, t.total_nominal)
-    if (!ringkasan.awal  || idx < periodeIndex(ringkasan.awal.bulan,  ringkasan.awal.tahun))  ringkasan.awal  = { bulan: t.bulan, tahun: t.tahun }
-    if (!ringkasan.akhir || idx > periodeIndex(ringkasan.akhir.bulan, ringkasan.akhir.tahun)) ringkasan.akhir = { bulan: t.bulan, tahun: t.tahun }
-  }
-  return ringkasan
-}
-
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface SiswaTagihanRow {
@@ -150,18 +101,6 @@ type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; p
 type DetailKomponenRow = { nama_komponen: string; nominal: number; jenis: string }
 type TunggakanRow      = { nama_komponen: string; nominal: number; jenis: string; bulan: number; tahun: number }
 type TunggakanBulan    = { bulan: number; tahun: number; sisa: number }
-type BulanTahun        = { bulan: number; tahun: number }
-
-/** Isi card "Total tagihan periode ini" — seluruh periode, bukan hanya bulan berjalan */
-interface RingkasanPeriode {
-  /** Nilai seluruh tagihan periode yang sudah terbit */
-  total: number
-  /** Uang yang sudah masuk untuk tagihan itu — pembayaran per tagihan, dibatasi nilainya */
-  masuk: number
-  /** Bulan tagihan paling awal dan paling akhir yang ikut dihitung, untuk keterangan card */
-  awal:  BulanTahun | null
-  akhir: BulanTahun | null
-}
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -412,7 +351,8 @@ function TagihanAktifContent() {
   const [filterStatus,      setFilterStatus]      = useState(() => readParam(searchParams, 'status', STATUS_CONFIG))
   const [searchQuery,       setSearchQuery]       = useState('')
   const [tagihanList,       setTagihanList]       = useState<SiswaTagihanRow[]>([])
-  const [ringkasanPeriode,  setRingkasanPeriode]  = useState<RingkasanPeriode>({ total: 0, masuk: 0, awal: null, akhir: null })
+  // Isi card "Total tagihan periode ini" — seluruh periode, bukan hanya bulan berjalan
+  const [ringkasanPeriode,  setRingkasanPeriode]  = useState<RingkasanPeriode>(RINGKASAN_PERIODE_KOSONG)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
 
   // Modal state

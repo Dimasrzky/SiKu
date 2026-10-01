@@ -315,6 +315,7 @@ function UmurTunggakanList({ data }: { data: KelompokUmur[] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {data.map((k, i) => (
         <div key={k.label}>
+          {/* Nominal tiap rentang sudah digabung dengan tunggakan yang lebih tua (lihat umurTunggakan) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.375rem' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{k.label}</span>
             <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>
@@ -1048,10 +1049,13 @@ function LaporanContent() {
       y += 4
       autoTable(doc, {
         startY: y,
-        head: [['Bulan', 'Tagihan', 'Terbayar', 'Pelunasan']],
+        // Tagihan tiap bulan sudah digabung dengan tunggakan bulan sebelumnya; kolom
+        // "Termasuk Tunggakan" memperlihatkan porsinya supaya tidak dijumlahkan antarbulan
+        head: [['Bulan', 'Tagihan', 'Termasuk Tunggakan', 'Terbayar', 'Pelunasan']],
         body: tren.map(t => [
           `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}${t.berjalan ? ' (berjalan)' : ''}`,
           fmt(t.tagihan),
+          t.tunggakanLama > 0 ? fmt(t.tunggakanLama) : '-',
           fmt(t.terbayar),
           t.tagihan > 0 ? `${Math.round((t.terbayar / t.tagihan) * 100)}%` : '-',
         ]),
@@ -1065,8 +1069,13 @@ function LaporanContent() {
       y += 4
       autoTable(doc, {
         startY: y,
-        head: [['Umur', 'Nominal', 'Jumlah Siswa', 'Jumlah Tagihan']],
-        body: umur.map(k => [teksPdf(k.label), fmt(k.nominal), String(k.jumlahSiswa), String(k.jumlahTagihan)]),
+        // Tiap rentang sudah digabung dengan tunggakan yang lebih lama; kolom "Termasuk
+        // Lebih Lama" memperlihatkan porsinya supaya nominal tidak dijumlahkan antarbaris
+        head: [['Umur', 'Nominal', 'Termasuk Lebih Lama', 'Jumlah Siswa', 'Jumlah Tagihan']],
+        body: umur.map(k => [
+          teksPdf(k.label), fmt(k.nominal), k.lebihLama > 0 ? fmt(k.lebihLama) : '-',
+          String(k.jumlahSiswa), String(k.jumlahTagihan),
+        ]),
         theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
       y = getFinalY(doc) + 10
@@ -1190,8 +1199,8 @@ function LaporanContent() {
                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Tagihan vs realisasi</div>
                 <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '0.75rem' }}>
                   {taArsipTerpilih
-                    ? `Per bulan jatuh tempo, 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
-                    : 'Per bulan jatuh tempo, 12 bulan terakhir · tidak mengikuti filter periode'}
+                    ? `Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
+                    : 'Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir · tidak mengikuti filter periode'}
                 </div>
                 <TrenTagihanChart data={tren} ringkasAwalPakai />
               </div>

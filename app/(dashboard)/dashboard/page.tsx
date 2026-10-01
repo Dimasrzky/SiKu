@@ -10,6 +10,7 @@ import {
 import Image from 'next/image'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { ambilSemua } from '@/lib/ambilSemua'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
@@ -86,7 +87,15 @@ interface BeasiswaProgRaw {
   jenis_potongan: 'persen' | 'nominal'
   persen:         number | null
   nominal:        number | null
+  /** Komponen tagihan yang dicakup program — potongan hanya berlaku atas komponen ini */
+  beasiswa_komponen: { komponen_id: string }[]
   beasiswa_siswa: { siswa_id: string; berlaku_sampai: string | null }[]
+}
+
+/** Rincian tagihan bulan berjalan per siswa — dasar hitungan potongan beasiswa */
+interface RincianTagihanRaw {
+  siswa_id:     string
+  tagihan_item: { komponen_id: string | null; nominal: number }[]
 }
 
 interface PaketKomposisiRaw {
@@ -307,6 +316,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     { data: taData },
     { data: verifikasiRaw },
     { data: pembayaranRaw },
+    { data: rincianBulanIni },
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
@@ -316,7 +326,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .limit(2000),
     supabase
       .from('beasiswa')
-      .select('jenis_potongan, persen, nominal, beasiswa_siswa(siswa_id, berlaku_sampai)')
+      .select('jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id), beasiswa_siswa(siswa_id, berlaku_sampai)')
       .eq('sekolah_id', sid)
       .eq('jenis', 'beasiswa'),
     supabase
@@ -328,6 +338,13 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     // Cicilan yang sudah masuk harus dikurangkan dari tunggakan — tanpa ini tagihan
     // yang sudah dibayar sebagian tetap terhitung penuh dan angkanya menggelembung
     supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).limit(5000),
+    // Rincian tagihan bulan ini, untuk menghitung potongan beasiswa yang benar-benar
+    // diberikan. Diambil bertahap supaya tidak terpotong di batas baris PostgREST.
+    ambilSemua<RincianTagihanRaw>((dari, sampai) => supabase
+      .from('tagihan')
+      .select('id, siswa_id, tagihan_item(komponen_id, nominal)')
+      .eq('sekolah_id', sid).eq('bulan', bulanIni).eq('tahun', tahunIni)
+      .order('id').range(dari, sampai)),
   ])
 
   // Tagihan Rp 0 (beasiswa penuh) dibaca lunas oleh semua hitungan di bawah —
@@ -417,24 +434,64 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     bs.beasiswa_siswa.filter(bss => !bss.berlaku_sampai || bss.berlaku_sampai >= today)
   )
   const penerimaBeasiswa = activeBsSiswa.length
-  const totalBeasiswaNom = bsProgs.reduce((s, bs) => {
-    if (bs.jenis_potongan !== 'nominal' || !bs.nominal) return s
-    const aktif = bs.beasiswa_siswa.filter(bss => !bss.berlaku_sampai || bss.berlaku_sampai >= today).length
-    return s + bs.nominal * aktif
-  }, 0)
+
+  // Total beasiswa = potongan yang benar-benar diberikan pada tagihan bulan ini.
+  // Aturannya sama dengan penerbitan tagihan (/api/recalculate-tagihan): potongan
+  // berlaku per komponen yang dicakup program DAN memang ditagihkan bulan ini —
+  // karena itu dibaca dari snapshot tagihan_item, bukan dari paket.
+  // Sebelumnya hanya program bernominal tetap yang dihitung, sehingga program
+  // persentase selalu tampil Rp 0.
+  const rincianPerSiswa = new Map<string, Map<string, number>>()
+  const brutoPerSiswa   = new Map<string, number>()
+  for (const t of rincianBulanIni) {
+    const komponen = rincianPerSiswa.get(t.siswa_id) ?? new Map<string, number>()
+    for (const i of t.tagihan_item ?? []) {
+      if (i.komponen_id) komponen.set(i.komponen_id, i.nominal)
+      brutoPerSiswa.set(t.siswa_id, (brutoPerSiswa.get(t.siswa_id) ?? 0) + i.nominal)
+    }
+    rincianPerSiswa.set(t.siswa_id, komponen)
+  }
+  const potonganPerSiswa = new Map<string, number>()
+  for (const bs of bsProgs) {
+    for (const bss of bs.beasiswa_siswa) {
+      if (bss.berlaku_sampai && bss.berlaku_sampai < today) continue
+      const komponen = rincianPerSiswa.get(bss.siswa_id)
+      if (!komponen) continue
+      const potongan = (bs.beasiswa_komponen ?? []).reduce((s, { komponen_id }) => {
+        const nominal = komponen.get(komponen_id)
+        if (nominal === undefined) return s
+        return s + (bs.jenis_potongan === 'persen' ? Math.round(nominal * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0))
+      }, 0)
+      potonganPerSiswa.set(bss.siswa_id, (potonganPerSiswa.get(bss.siswa_id) ?? 0) + potongan)
+    }
+  }
+  // Tagihan tidak bisa turun di bawah nol, jadi potongan dibatasi nilai rinciannya
+  const totalBeasiswaNom = [...potonganPerSiswa].reduce(
+    (s, [siswaId, potongan]) => s + Math.min(potongan, brutoPerSiswa.get(siswaId) ?? 0),
+    0,
+  )
 
   // ── Tren 6 bulan ──────────────────────────────────────────────────────────
+  // Tunggakan tiap bulan = tagihan bulan itu yang belum lunas + tunggakan bulan-bulan
+  // sebelumnya yang sampai sekarang belum dibayar. Bagian "sebelumnya" diambil dari
+  // tunggakanRows — aturan yang sama dengan kartu "Total Tunggakan Aktif" — sehingga
+  // batang bulan berjalan sama dengan angka di kartu itu. Polanya sama dengan
+  // "Tagihan vs realisasi" di Laporan.
   const trenData: TrenItem[] = last6.map(({ short, bulan, tahun }, idx) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
     const b = d.getMonth() + 1
     const y = d.getFullYear()
     const mRows = allTagihan.filter(t => t.bulan === b && t.tahun === y)
+    const periode = periodeIndex(b, y)
+    const tunggakanSebelumnya = tunggakanRows
+      .filter(t => periodeIndex(t.bulan, t.tahun) < periode)
+      .reduce((s, t) => s + t.sisa, 0)
     return {
       short,
       bulanTahun: `${bulan} ${tahun}`,
       berjalan:   idx === last6.length - 1,
       terkumpul: mRows.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0),
-      tunggakan: mRows.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0),
+      tunggakan: mRows.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0) + tunggakanSebelumnya,
     }
   })
 
@@ -1483,7 +1540,7 @@ export default function DashboardPage() {
           }}>
             Laporan →
           </Link>
-          <ChartCard title="Tren Pemasukan Bulanan" subtitle="6 bulan terakhir" style={{ flex: 1 }}>
+          <ChartCard title="Tren Tagihan Bulanan" subtitle="6 bulan terakhir" style={{ flex: 1 }}>
             <div style={{ marginTop: 'auto' }}>
               {d?.trenData.length ? <BarChart data={d.trenData} /> : (
                 <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1rem' }}>Belum ada data</div>

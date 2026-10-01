@@ -6,6 +6,8 @@ import {
   CheckCircle2, Wallet, Building2, QrCode, TrendingUp,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
+import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -142,6 +144,8 @@ export default function PembayaranPage() {
   const [pembayaran,     setPembayaran]     = useState<PembayaranRecord[]>([])
   const [verifMenunggu,  setVerifMenunggu]  = useState<VerifikasiMenungguRow[]>([])
   const [lastMonthTotal, setLastMonthTotal] = useState(0)
+  // Seluruh periode (tunggakan sebelumnya + bulan ini) — dasar kartu Tingkat Pelunasan
+  const [ringkasanPeriode, setRingkasanPeriode] = useState<RingkasanPeriode>(RINGKASAN_PERIODE_KOSONG)
   const [loading,        setLoading]        = useState(true)
   const [search,         setSearch]         = useState('')
   const [filterKelas,    setFilterKelas]    = useState('semua')
@@ -181,6 +185,13 @@ export default function PembayaranPage() {
 
     const load = async () => {
       setLoading(true)
+
+      // Ringkasan periode berjalan bersamaan dengan pemuatan data bulan ini
+      const ringkasanPromise = (async () => {
+        const { data: ta } = await supabase
+          .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sekolahId).eq('is_aktif', true).maybeSingle()
+        return muatRingkasanPeriode(sekolahId, (ta ?? null) as PeriodeTahunAjaran | null, bulan, tahun)
+      })()
 
       const { data: tagihanData } = await supabase
         .from('tagihan')
@@ -238,11 +249,14 @@ export default function PembayaranPage() {
         prevTotal = ((lastPemb ?? []) as { jumlah: number }[]).reduce((s, p) => s + p.jumlah, 0)
       }
 
+      const ringkasan = await ringkasanPromise
+
       if (cancelled) return
       setTagihan(tagihanList)
       setPembayaran(pembayaranList)
       setVerifMenunggu(verifList)
       setLastMonthTotal(prevTotal)
+      setRingkasanPeriode(ringkasan)
       setLoading(false)
     }
 
@@ -339,21 +353,22 @@ export default function PembayaranPage() {
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
-    const totalTagihan  = tagihan.length
-    const jumlahLunas   = tagihan.filter(t => t.status === 'lunas').length
-    const pctLunas      = totalTagihan > 0 ? Math.round(jumlahLunas / totalTagihan * 100) : 0
+    // Tingkat pelunasan dan sisanya memakai seluruh periode — tunggakan bulan-bulan
+    // sebelumnya digabung dengan tagihan bulan ini — hitungan yang sama dengan card
+    // "Total tagihan periode ini" di Tagihan Aktif. Persen = uang masuk ÷ nilai tagihan.
+    const pctLunas      = ringkasanPeriode.total > 0 ? Math.round(ringkasanPeriode.masuk / ringkasanPeriode.total * 100) : 0
+    const sisBelumMasuk = Math.max(0, ringkasanPeriode.total - ringkasanPeriode.masuk)
     const gatewayTotal  = pembayaran.filter(p => ['qris','va','transfer'].includes(p.metode)).reduce((s,p) => s + p.jumlah, 0)
     const manualTotal   = pembayaran.filter(p => p.metode === 'tunai').reduce((s,p) => s + p.jumlah, 0)
     const totalPemasukan = gatewayTotal + manualTotal
-    const sisBelumMasuk = tagihan.filter(t => t.status !== 'lunas').reduce((s,t) => s + t.total_nominal, 0)
     const trendPct = lastMonthTotal > 0
       ? Math.round(((totalPemasukan - lastMonthTotal) / lastMonthTotal) * 100)
       : totalPemasukan > 0 ? 100 : 0
     const trendUp = trendPct >= 0
     const lastBulan = bulan === 1 ? 12 : bulan - 1
     const lastTahun = bulan === 1 ? tahun - 1 : tahun
-    return { totalTagihan, jumlahLunas, pctLunas, gatewayTotal, manualTotal, totalPemasukan, sisBelumMasuk, trendPct, trendUp, lastBulan, lastTahun }
-  }, [tagihan, pembayaran, lastMonthTotal, bulan, tahun])
+    return { pctLunas, gatewayTotal, manualTotal, totalPemasukan, sisBelumMasuk, trendPct, trendUp, lastBulan, lastTahun }
+  }, [pembayaran, lastMonthTotal, ringkasanPeriode, bulan, tahun])
 
   // ── Filter ────────────────────────────────────────────────────────────────
 
@@ -415,6 +430,9 @@ export default function PembayaranPage() {
       ...((refreshed ?? []) as PembayaranRecord[]),
     ])
     setTagihan(prev => prev.map(t => t.id === modal.tagihan_id ? { ...t, status: newStatus } : t))
+    // Pembayaran ini untuk tagihan bulan berjalan dan tidak melebihi sisanya, jadi
+    // uang masuk periode cukup ditambah tanpa memuat ulang
+    setRingkasanPeriode(prev => ({ ...prev, masuk: prev.masuk + jumlah }))
 
     setSaving(false)
     setSavedOk(true)

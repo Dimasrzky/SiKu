@@ -37,10 +37,11 @@ function pathKolom(x: number, yAtas: number, w: number, h: number, bulatAtas: bo
 }
 
 /**
- * Satu kolom per bulan jatuh tempo: tinggi kolom = nilai tagihan, bagian gelap =
- * yang sudah terbayar, bagian terang = sisanya. Celahnya langsung terbaca sebagai
- * tunggakan bulan itu — satu sumbu, tanpa dua skala. Ketepatan waktu per bulan
- * (satuan berbeda) tidak digambar di sumbu yang sama; ia ada di tooltip dan tabel.
+ * Satu kolom per bulan jatuh tempo: tinggi kolom = tagihan bulan itu ditambah
+ * tunggakan bulan-bulan sebelumnya yang masih belum dibayar, bagian gelap = yang
+ * sudah terbayar, bagian terang = sisanya — yang masih harus ditagih sampai bulan
+ * itu. Satu sumbu, tanpa dua skala. Ketepatan waktu per bulan (satuan berbeda)
+ * tidak digambar di sumbu yang sama; ia ada di tooltip dan tabel.
  */
 export function TrenTagihanChart({ data, ringkasAwalPakai = false }: {
   data: TitikTren[]
@@ -164,7 +165,14 @@ export function TrenTagihanChart({ data, ringkasAwalPakai = false }: {
                 <td style={{ textAlign: 'left', padding: '0.35rem 0' }}>
                   {BULAN_PANJANG[d.bulan]} {d.tahun}{d.berjalan ? ' (berjalan)' : ''}
                 </td>
-                <td style={{ padding: '0.35rem 0' }}>{fmt(d.tagihan)}</td>
+                <td style={{ padding: '0.35rem 0' }}>
+                  {fmt(d.tagihan)}
+                  {d.tunggakanLama > 0 && (
+                    <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309' }}>
+                      termasuk tunggakan {fmt(d.tunggakanLama)}
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '0.35rem 0' }}>{fmt(d.terbayar)}</td>
                 <td style={{ padding: '0.35rem 0', fontWeight: 700 }}>{pelunasan(d)}</td>
                 <td style={{ padding: '0.35rem 0', fontWeight: 700 }}>{formatPersen(d.ketepatanWaktu)}</td>
@@ -235,7 +243,7 @@ export function TrenTagihanChart({ data, ringkasAwalPakai = false }: {
                 <rect key={`hit-${s.tahun}-${s.bulan}`}
                   x={KIRI + i * pita} y={ATAS} width={pita} height={tinggiPlot + BAWAH}
                   fill="transparent" tabIndex={0} style={{ outline: 'none', cursor: 'default' }}
-                  aria-label={`${BULAN_PANJANG[d.bulan]} ${d.tahun}: tagihan ${fmt(d.tagihan)}, terbayar ${fmt(d.terbayar)}, pelunasan ${pelunasan(d)}, tepat waktu ${formatPersen(d.ketepatanWaktu)}`}
+                  aria-label={`${BULAN_PANJANG[d.bulan]} ${d.tahun}: tagihan ${fmt(d.tagihan)}${d.tunggakanLama > 0 ? ` termasuk tunggakan ${fmt(d.tunggakanLama)}` : ''}, terbayar ${fmt(d.terbayar)}, pelunasan ${pelunasan(d)}, tepat waktu ${formatPersen(d.ketepatanWaktu)}`}
                   onMouseEnter={() => setAktif(i)} onFocus={() => setAktif(i)} onBlur={() => setAktif(null)} />
               )
             })}
@@ -262,6 +270,12 @@ export function TrenTagihanChart({ data, ringkasAwalPakai = false }: {
                   <span style={{ color: '#64748B' }}>{r.label}</span>
                 </div>
               ))}
+              {/* Sejajar dengan nilai di baris "tagihan" tepat di atasnya (lebar kunci 12 + jarak 6) */}
+              {titikAktif.tunggakanLama > 0 && (
+                <div style={{ marginLeft: 18, marginBottom: 3, fontSize: '0.68rem', fontWeight: 600, color: '#B45309' }}>
+                  termasuk tunggakan {fmt(titikAktif.tunggakanLama)}
+                </div>
+              )}
               <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px solid #F1F5F9', color: '#64748B', display: 'flex', gap: '0.75rem' }}>
                 <span>Pelunasan <strong style={{ color: '#0F172A' }}>{pelunasan(titikAktif)}</strong></span>
                 <span>Tepat waktu <strong style={{ color: '#0F172A' }}>{formatPersen(titikAktif.ketepatanWaktu)}</strong></span>
