@@ -916,6 +916,44 @@
 
 
 /* ═══════════════════════════════════════════
+   MODAL INGATKAN ORANG TUA (dashboard)
+═══════════════════════════════════════════ */
+.pengingat-latar { animation: fadeIn 0.2s ease; }
+.pengingat-kartu { animation: slideUp 0.25s ease; }
+/* Huruf di desain lebih rapat dari bawaan DM Sans. Dipasang per elemen (bukan di
+   kartu) karena letter-spacing diwariskan sebagai px, bukan em. */
+.pengingat-kartu * { letter-spacing: -0.025em; }
+
+.pengingat-kartu button { cursor: pointer; }
+.pengingat-kartu button:disabled { cursor: not-allowed; opacity: 0.55; }
+.pengingat-kartu button:focus-visible { outline: 2px solid #3C75B7; outline-offset: 2px; }
+/* Di atas bar jenjang yang gelap, garis fokus biru tua tidak terlihat */
+.pengingat-jenjang button:focus-visible { outline-color: #A3CDFE; outline-offset: -3px; }
+
+/* Buka-tutup dropdown jenjang: tinggi panel dianimasikan lewat baris grid 0fr ↔ 1fr,
+   jadi tidak perlu tahu tinggi isinya */
+.pengingat-grup { transition: box-shadow 0.25s ease; }
+.pengingat-jenjang { transition: background 0.25s ease; }
+.pengingat-chevron { transition: transform 0.25s ease; }
+.pengingat-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s ease; }
+.pengingat-panel[data-buka="true"] { grid-template-rows: 1fr; }
+.pengingat-panel-isi { min-height: 0; overflow: hidden; }
+
+.pengingat-baris { background: transparent; transition: background 0.12s; }
+.pengingat-baris:hover { background: #F8FAFC; }
+
+.pengingat-tombol-garis { background: #fff; transition: background 0.15s; }
+.pengingat-tombol-garis:hover:not(:disabled) { background: #F1F5F9; }
+.pengingat-tombol-isi { background: #1A2C4E; transition: background 0.15s; }
+.pengingat-tombol-isi:hover:not(:disabled) { background: #24396A; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pengingat-latar, .pengingat-kartu { animation: none; }
+  .pengingat-grup, .pengingat-jenjang, .pengingat-chevron, .pengingat-panel { transition: none; }
+}
+
+
+/* ═══════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════ */
 @media (max-width: 900px) {

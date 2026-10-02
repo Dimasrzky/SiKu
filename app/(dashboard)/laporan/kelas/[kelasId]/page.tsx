@@ -13,6 +13,8 @@ import { formatRupiah as fmt, formatPersen } from '@/lib/formatLaporan'
 import { tautanPengingatTunggakan, tunggakanSiswa } from '@/lib/pengingatTunggakan'
 import { useDataLaporan, type TagihanLaporan } from '@/lib/useDataLaporan'
 import { useFilterLaporan } from '@/lib/useFilterLaporan'
+import { usePengingat } from '@/lib/usePengingat'
+import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { HeaderLaporan } from '@/components/laporan/HeaderLaporan'
 import { FilterLaporan } from '@/components/laporan/FilterLaporan'
 import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
@@ -154,6 +156,16 @@ function LaporanKelasContent() {
     nis:      s.nis,
     perBulan: new Map(s.tagihan.map(t => [`${t.tahun}-${t.bulan}`, t])),
   })), [siswaTampil])
+
+  // Pengingat WhatsApp untuk siswa yang punya tunggakan dan nomor WA. Sekolah yang memakai
+  // antrean: klik hanya memasukkan pengingat ke antrean; selain itu tombol membuka wa.me.
+  const idPengingat = useMemo(
+    () => siswaTampil
+      .filter(s => s.noWa && tunggakanSiswa(tagihanSemuaPerSiswa.get(s.siswaId) ?? [], sekarang).length > 0)
+      .map(s => s.siswaId),
+    [siswaTampil, tagihanSemuaPerSiswa, sekarang],
+  )
+  const pengingat = usePengingat(idPengingat)
 
   const gantiUrut = (kolom: KolomUrut) =>
     setUrut(u => (u.kolom === kolom ? { kolom, naik: !u.naik } : { kolom, naik: kolom === 'nama' || kolom === 'status' }))
@@ -327,10 +339,16 @@ function LaporanKelasContent() {
                             <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>—</span>
                           ) : !s.noWa ? (
                             <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>Tidak ada no. WA</span>
+                          ) : pengingat.aktif ? (
+                            <TombolIngatkan varian="ringkas" tampilan={pengingat.tampilan(s.siswaId)}
+                              onKlik={() => pengingat.ingatkan([s.siswaId])} />
                           ) : (
+                            // Selama belum diketahui sekolah ini memakai antrean atau wa.me,
+                            // tombolnya tampil tetapi belum bisa diklik
                             <button onClick={() => kirimPengingat(s)}
+                              disabled={pengingat.aktif === null}
                               title={`Total tunggakan ${fmt(semuaTunggakan.reduce((sum, t) => sum + sisa(t), 0))} · ${semuaTunggakan.length} bulan`}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: sudahKirim ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: sudahKirim ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: pengingat.aktif === null ? 'progress' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                               <Image src="/icons/IconWA.png" width={16} height={16} alt="" />
                               {sudahKirim ? 'Dibuka' : 'Ingatkan'}
                             </button>

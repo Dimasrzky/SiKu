@@ -14,10 +14,14 @@ import { ambilSemua } from '@/lib/ambilSemua'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
+import { pesanPenahanTerbit, statusPenerbitan } from '@/lib/statusPenerbitan'
+import { usePengingat } from '@/lib/usePengingat'
+import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
 import { ChartCard } from '@/components/ChartCard'
+import { ModalIngatkanOrangTua } from '@/components/ModalIngatkanOrangTua'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -317,6 +321,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     { data: verifikasiRaw },
     { data: pembayaranRaw },
     { data: rincianBulanIni },
+    terbitRes,
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
@@ -345,6 +350,8 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .select('id, siswa_id, tagihan_item(komponen_id, nominal)')
       .eq('sekolah_id', sid).eq('bulan', bulanIni).eq('tahun', tahunIni)
       .order('id').range(dari, sampai)),
+    // Apakah ada yang menahan penerbitan tagihan bulan ini (kelas tanpa paket, dsb.)
+    statusPenerbitan(supabase, sid, bulanIni, tahunIni),
   ])
 
   // Tagihan Rp 0 (beasiswa penuh) dibaca lunas oleh semua hitungan di bawah —
@@ -537,6 +544,21 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const insights: Insight[] = []
   const pctIni    = totalSiswaRef > 0 ? (lunasRef / totalSiswaRef) * 100 : 0
   const bulanNama = BULAN_NAMES[now.getMonth()]
+
+  // Tagihan bulan ini tertahan untuk sebagian atau semua siswa. Ditaruh paling atas:
+  // selama penyebabnya belum dibereskan, tidak ada tagihan yang terbit untuk kelas mana
+  // pun, dan angka-angka lain di halaman ini tidak memuat siswa tersebut.
+  const terbit = terbitRes.data
+  if (terbit?.penahan && terbit.belumDitagih > 0) {
+    const penahan = pesanPenahanTerbit(terbit.penahan)
+    insights.push({
+      id: 'tagihan-belum-terbit', level: 'merah',
+      judul: `Tagihan ${bulanNama} belum terbit`,
+      desc: `${terbit.belumDitagih} siswa aktif belum punya tagihan ${bulanNama} ${tahunIni}.`,
+      sub: `Penerbitan tertahan: ${penahan.alasan}`,
+      actionLabel: penahan.aksiLabel, actionHref: penahan.aksiHref,
+    })
+  }
 
   const kelasRendah = perKelas.filter(k => k.total > 0 && k.lunas / k.total < 0.5)
   if (kelasRendah.length > 0) insights.push({
@@ -931,6 +953,8 @@ export default function DashboardPage() {
   const [halamanTabel,      setHalamanTabel]      = useState(1)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
   const [ingatkanHover,     setIngatkanHover]     = useState(false)
+  // sekolah_id selama modal "Ingatkan orang tua" terbuka, null saat tertutup
+  const [ingatkanUntuk,     setIngatkanUntuk]     = useState<string | null>(null)
 
   const sekolahIdRef = useRef<string | null>(null)
   const totalRef      = useRef(0)
@@ -1084,6 +1108,35 @@ export default function DashboardPage() {
     load()
   }, [])
 
+  // ── Tabel siswa: filter + pagination ────────────────────────────────────────
+  // Di atas return bersyarat: daftar baris yang tampil dipakai hook pengingat di bawah
+  const siswaBayarList   = data?.siswaBayarList ?? []
+  const filteredSiswa    = siswaBayarList.filter(s => {
+    const isTunggakan = s.lewat_tempo && s.status === 'belum_bayar'
+    const eff = s.has_verifikasi_menunggu ? 'menunggu_verifikasi' : isTunggakan ? 'tunggakan' : s.status
+    if (tabAktif !== 'semua') {
+      if (tabAktif === 'tunggakan' && !isTunggakan) return false
+      if (tabAktif === 'menunggu_verifikasi' && !s.has_verifikasi_menunggu) return false
+      if (tabAktif !== 'tunggakan' && tabAktif !== 'menunggu_verifikasi' && eff !== tabAktif) return false
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      return s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q) || (s.kelas?.nama.toLowerCase().includes(q) ?? false)
+    }
+    return true
+  })
+  const TABEL_PAGE_SIZE = 10
+  const totalHalaman    = Math.max(1, Math.ceil(filteredSiswa.length / TABEL_PAGE_SIZE))
+  const paginatedSiswa  = filteredSiswa.slice((halamanTabel - 1) * TABEL_PAGE_SIZE, halamanTabel * TABEL_PAGE_SIZE)
+
+  // Pengingat WhatsApp untuk baris yang sedang tampil dan memang punya tombol Ingatkan.
+  // Sekolah yang memakai antrean: tampilan tombol datang dari server; selain itu wa.me.
+  const pengingat = usePengingat(
+    paginatedSiswa
+      .filter(s => s.no_wa && s.status !== 'lunas' && !s.has_verifikasi_menunggu)
+      .map(s => s.id),
+  )
+
   if (hasSiswa === null) {
     return (
       <div className="dashboard-content">
@@ -1127,26 +1180,6 @@ export default function DashboardPage() {
 
   // ── Skeleton value helper ───────────────────────────────────────────────────
   const sk = (val: string) => loading ? '—' : val
-
-  // ── Tabel siswa: filter + pagination ────────────────────────────────────────
-  const siswaBayarList   = d?.siswaBayarList ?? []
-  const filteredSiswa    = siswaBayarList.filter(s => {
-    const isTunggakan = s.lewat_tempo && s.status === 'belum_bayar'
-    const eff = s.has_verifikasi_menunggu ? 'menunggu_verifikasi' : isTunggakan ? 'tunggakan' : s.status
-    if (tabAktif !== 'semua') {
-      if (tabAktif === 'tunggakan' && !isTunggakan) return false
-      if (tabAktif === 'menunggu_verifikasi' && !s.has_verifikasi_menunggu) return false
-      if (tabAktif !== 'tunggakan' && tabAktif !== 'menunggu_verifikasi' && eff !== tabAktif) return false
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      return s.nama.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q) || (s.kelas?.nama.toLowerCase().includes(q) ?? false)
-    }
-    return true
-  })
-  const TABEL_PAGE_SIZE = 10
-  const totalHalaman    = Math.max(1, Math.ceil(filteredSiswa.length / TABEL_PAGE_SIZE))
-  const paginatedSiswa  = filteredSiswa.slice((halamanTabel - 1) * TABEL_PAGE_SIZE, halamanTabel * TABEL_PAGE_SIZE)
 
   const fmtTgl = (iso: string) =>
     new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -1313,17 +1346,16 @@ export default function DashboardPage() {
           </button>
 
           <button
-            disabled
-            title="Fitur pengingat massal belum tersedia — gunakan tombol Ingatkan per siswa di tabel bawah"
+            onClick={() => setIngatkanUntuk(sekolahIdRef.current)}
             onMouseEnter={() => setIngatkanHover(true)}
             onMouseLeave={() => setIngatkanHover(false)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              background: ingatkanHover ? '#94A3B8' : '#22C55E', color: '#fff',
+              background: ingatkanHover ? '#16A34A' : '#22C55E', color: '#fff',
               border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
-              fontSize: '0.8rem', fontWeight: 700, cursor: 'not-allowed',
-              fontFamily: 'inherit', opacity: ingatkanHover ? 0.75 : 1,
-              transition: 'background 0.15s, opacity 0.15s',
+              fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit',
+              transition: 'background 0.15s',
             }}>
             <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
             Ingatkan
@@ -1745,18 +1777,26 @@ export default function DashboardPage() {
                           <Clock size={16} /> Diproses
                         </span>
                       ) : siswa.no_wa ? (
-                        <button
-                          onClick={() => kirimWA(siswa)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            background: waSentSuccess.has(siswa.id) ? '#16A34A' : '#22C55E', color: '#fff',
-                            border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
-                            fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}>
-                          <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
-                          {waSentSuccess.has(siswa.id) ? 'Terkirim!' : 'Ingatkan'}
-                        </button>
+                        pengingat.aktif ? (
+                          <TombolIngatkan varian="penuh" tampilan={pengingat.tampilan(siswa.id)}
+                            onKlik={() => pengingat.ingatkan([siswa.id])} />
+                        ) : (
+                          // Selama belum diketahui sekolah ini memakai antrean atau wa.me,
+                          // tombolnya tampil tetapi belum bisa diklik
+                          <button
+                            onClick={() => kirimWA(siswa)}
+                            disabled={pengingat.aktif === null}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              background: waSentSuccess.has(siswa.id) ? '#16A34A' : '#22C55E', color: '#fff',
+                              border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
+                              fontSize: '0.8rem', fontWeight: 700, cursor: pengingat.aktif === null ? 'progress' : 'pointer',
+                              fontFamily: 'inherit',
+                            }}>
+                            <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
+                            {waSentSuccess.has(siswa.id) ? 'Terkirim!' : 'Ingatkan'}
+                          </button>
+                        )
                       ) : (
                         <span style={{ color: '#CBD5E1', fontSize: '0.8rem' }}>No. WA belum diisi</span>
                       )}
@@ -1814,6 +1854,10 @@ export default function DashboardPage() {
 
     {showSetupBerhasil && (
       <SetupBerhasilPopup onClose={() => setShowSetupBerhasil(false)} />
+    )}
+
+    {ingatkanUntuk && (
+      <ModalIngatkanOrangTua sekolahId={ingatkanUntuk} onTutup={() => setIngatkanUntuk(null)} />
     )}
     </>
   )

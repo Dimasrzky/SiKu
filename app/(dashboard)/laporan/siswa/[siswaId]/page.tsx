@@ -17,6 +17,8 @@ import {
 } from '@/lib/catatanTindakLanjut'
 import { useDataLaporan, type TagihanLaporan } from '@/lib/useDataLaporan'
 import { useFilterLaporan } from '@/lib/useFilterLaporan'
+import { usePengingat } from '@/lib/usePengingat'
+import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { HeaderLaporan, type JejakLaporan } from '@/components/laporan/HeaderLaporan'
 import { FilterLaporan } from '@/components/laporan/FilterLaporan'
 import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
@@ -195,6 +197,10 @@ function LaporanSiswaContent() {
   const namaSiswa = siswa?.nama ?? rows[0]?.siswa?.nama ?? '—'
   const noWa      = siswa?.no_wa ?? null
 
+  // Sekolah yang memakai antrean pengingat: klik hanya memasukkan pengingat ke antrean,
+  // dan tampilan tombolnya datang dari server. Selain itu tombol membuka wa.me.
+  const pengingat = usePengingat(semuaTunggakan.length > 0 && noWa ? [siswaId] : [])
+
   const kirimPengingat = () => {
     const tautan = tautanPengingatTunggakan({
       tagihan:   rows,
@@ -301,11 +307,19 @@ function LaporanSiswaContent() {
                 </span>
               )}
               {semuaTunggakan.length > 0 && (noWa ? (
-                <button onClick={kirimPengingat}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: pengingatDibuka ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <Image src="/icons/IconWA.png" width={16} height={16} alt="" />
-                  {pengingatDibuka ? 'WhatsApp dibuka' : 'Ingatkan via WhatsApp'}
-                </button>
+                pengingat.aktif ? (
+                  <TombolIngatkan varian="profil" tampilan={pengingat.tampilan(siswaId)}
+                    onKlik={() => pengingat.ingatkan([siswaId])} />
+                ) : (
+                  // Selama belum diketahui sekolah ini memakai antrean atau wa.me, tombolnya
+                  // tampil tetapi belum bisa diklik
+                  <button onClick={kirimPengingat}
+                    disabled={pengingat.aktif === null}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: pengingatDibuka ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, border: 'none', cursor: pengingat.aktif === null ? 'progress' : 'pointer', fontFamily: 'inherit' }}>
+                    <Image src="/icons/IconWA.png" width={16} height={16} alt="" />
+                    {pengingatDibuka ? 'WhatsApp dibuka' : 'Ingatkan via WhatsApp'}
+                  </button>
+                )
               ) : (
                 <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Tidak ada no. WA orang tua</span>
               ))}

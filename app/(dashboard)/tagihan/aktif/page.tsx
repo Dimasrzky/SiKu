@@ -5,14 +5,19 @@ import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from 'next/n
 import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { ambilSemua } from '@/lib/ambilSemua'
+import { ambilPerPotong, ambilSemua } from '@/lib/ambilSemua'
+import { runGenerate } from '@/lib/generateTagihan'
+import { bolehDihitungUlang, hitungUlangTagihan, type PotonganBeasiswa } from '@/lib/hitungUlangTagihan'
 import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type BulanTahun, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
+import { pesanPenahanTerbit, statusPenerbitan, type PesanPenahan } from '@/lib/statusPenerbitan'
 import { buildPesanTagihanText, buildPesanTunggakanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
-  JENIS_LABEL, JENIS_WARNA, komponenDitagihkan, periodeIndex,
+  JENIS_LABEL, JENIS_WARNA, periodeIndex,
   bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran,
 } from '@/lib/komponenTagihan'
+import { usePengingat } from '@/lib/usePengingat'
+import { TombolIngatkan } from '@/components/TombolIngatkan'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +28,9 @@ const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
 /** Nilai khusus dropdown tingkat untuk menyaring siswa yang sudah lulus */
 const FILTER_ALUMNI = 'Alumni'
+
+/** Jeda paling pendek antara dua permintaan hitung ulang total ke server */
+const JEDA_HITUNG_ULANG_MS = 10_000
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -88,11 +96,7 @@ type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: str
 type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; status: string | null; kelas_terakhir: string | null; kelas: KelasNestedRaw | null }
 type TagihanItemRaw    = { komponen_id: string | null; nominal: number }
 type TagihanRawRow     = { id: string; total_nominal: number; status: string; jatuh_tempo: string | null; payment_token: string | null; tagihan_item: TagihanItemRaw[]; siswa: SiswaNestedRaw | null }
-type PaketKomponenRaw  = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
-type PaketKelasRaw     = { kelas_id: string }
-type PaketForGenerate  = { id: string; paket_kelas: PaketKelasRaw[]; paket_komponen: PaketKomponenRaw[] }
-type SiswaForGenerate  = { id: string; nama: string; kelas_id: string }
-type ExistingTagRow    = { siswa_id: string }
+type RiwayatRow        = { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }
 type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; beasiswa_komponen: { komponen_id: string }[] } | null }
 type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type CatatSiswaResult  = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: { id: string; nama: string; warna: string } | null }
@@ -156,156 +160,6 @@ function DonutChart({ segments, total, label }: { segments: DonutSegment[]; tota
   )
 }
 
-// ── Generate logic (standalone) ───────────────────────────────────────────────
-
-async function runGenerate(
-  sid: string, tahunAjaran: string, bulan: number, tahun: number,
-): Promise<{ success: boolean; error?: string }> {
-  const { data: paketData, error: e1 } = await supabase
-    .from('paket')
-    .select('id, paket_kelas(kelas_id), paket_komponen(komponen_id, nominal, komponen:komponen_id(nama, jenis))')
-    .eq('sekolah_id', sid)
-    .eq('tahun_ajaran', tahunAjaran)
-  if (e1 || !paketData) return { success: false, error: 'Gagal memuat data paket.' }
-
-  const kelasToKomponen = new Map<string, { komponen_id: string; nominal: number; nama: string; jenis: string }[]>()
-  for (const p of (paketData as unknown as PaketForGenerate[])) {
-    const komps = p.paket_komponen.map(pk => ({
-      komponen_id: pk.komponen_id, nominal: pk.nominal,
-      nama: pk.komponen?.nama ?? '', jenis: pk.komponen?.jenis ?? '',
-    }))
-    for (const pk of p.paket_kelas) kelasToKomponen.set(pk.kelas_id, komps)
-  }
-
-  const { data: allKelasData } = await supabase.from('kelas').select('id').eq('sekolah_id', sid)
-  const missingKelas = (allKelasData ?? []).filter((k: { id: string }) => !kelasToKomponen.has(k.id))
-  if (missingKelas.length > 0)
-    return { success: false, error: 'Beberapa kelas belum memiliki paket. Konfigurasi paket per kelas terlebih dahulu.' }
-
-  const { data: siswaData, error: e2 } = await supabase
-    .from('siswa').select('id, nama, kelas_id').eq('sekolah_id', sid).eq('status', 'aktif').limit(1000)
-  if (e2 || !siswaData) return { success: false, error: 'Gagal memuat data siswa.' }
-
-  const siswaPorKelas = new Set((siswaData as SiswaForGenerate[]).map(s => s.kelas_id))
-  const kelasKosong   = [...kelasToKomponen.keys()].filter(kid => !siswaPorKelas.has(kid))
-  if (kelasKosong.length > 0)
-    return { success: false, error: 'Beberapa kelas yang sudah dipaketkan belum memiliki siswa.' }
-
-  const siswaIds = (siswaData as SiswaForGenerate[]).map(s => s.id)
-  const today    = new Date().toISOString().split('T')[0]
-  const [{ data: bsData }, { data: individuData }] = await Promise.all([
-    supabase
-      .from('beasiswa_siswa')
-      .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
-      .in('siswa_id', siswaIds)
-      .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
-    supabase
-      .from('siswa_komponen_individu')
-      .select('siswa_id, komponen_id, nominal, komponen:komponen_id(nama, jenis)')
-      .in('siswa_id', siswaIds),
-  ])
-
-  const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
-  for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
-    if (!row.beasiswa) continue
-    const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
-    list.push({ jenis_potongan: row.beasiswa.jenis_potongan, persen: row.beasiswa.persen, nominal: row.beasiswa.nominal, komponen_ids: new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)) })
-    siswaBeasiswaMap.set(row.siswa_id, list)
-  }
-
-  const siswaIndividuMap = new Map<string, { komponen_id: string; nama: string; jenis: string; nominal: number }[]>()
-  for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
-    if (!row.komponen) continue
-    const list = siswaIndividuMap.get(row.siswa_id) ?? []
-    list.push({ komponen_id: row.komponen_id, nama: row.komponen.nama, jenis: row.komponen.jenis, nominal: row.nominal })
-    siswaIndividuMap.set(row.siswa_id, list)
-  }
-
-  const { data: existingData } = await supabase
-    .from('tagihan').select('siswa_id').eq('sekolah_id', sid).eq('bulan', bulan).eq('tahun', tahun)
-  const existingIds = new Set(((existingData ?? []) as ExistingTagRow[]).map(t => t.siswa_id))
-
-  // Riwayat penagihan per siswa per komponen — dasar aturan "sekali per semester"
-  // dan "sekali per tahun ajaran". Diambil dari tagihan_item, bukan sekadar
-  // "siswa punya tagihan di bulan lain".
-  const [{ data: riwayatRows }, { data: taPeriode }] = await Promise.all([
-    supabase
-      .from('tagihan')
-      .select('siswa_id, bulan, tahun, tagihan_item(komponen_id)')
-      .eq('sekolah_id', sid)
-      .limit(5000),
-    supabase
-      .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
-  ])
-
-  const riwayat = bangunRiwayatTagih(
-    (riwayatRows ?? []) as unknown as { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }[]
-  )
-  const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
-
-  const toInsert: { sekolah_id: string; siswa_id: string; bulan: number; tahun: number; total_nominal: number; status: string }[] = []
-  const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; siswa_id: string }[] = []
-
-  for (const siswa of (siswaData as SiswaForGenerate[])) {
-    if (existingIds.has(siswa.id)) continue
-    const komps = kelasToKomponen.get(siswa.kelas_id)
-    if (!komps || komps.length === 0) continue
-
-    const bolehTagih = (k: { jenis: string; komponen_id: string }) =>
-      komponenDitagihkan(k.jenis, bulan, tahun, ta, siswa.id, k.komponen_id, riwayat)
-
-    const filtered = komps.filter(bolehTagih)
-    const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(bolehTagih)
-
-    const allKomps = [...filtered, ...individu]
-    if (allKomps.length === 0) continue
-
-    const tagihanKompIds = new Set(allKomps.map(k => k.komponen_id))
-    let totalPotongan = 0
-    for (const bs of (siswaBeasiswaMap.get(siswa.id) ?? [])) {
-      for (const kid of bs.komponen_ids) {
-        if (!tagihanKompIds.has(kid)) continue
-        const komp = allKomps.find(k => k.komponen_id === kid)
-        if (!komp) continue
-        totalPotongan += bs.jenis_potongan === 'persen'
-          ? Math.round(komp.nominal * (bs.persen ?? 0) / 100)
-          : bs.nominal ?? 0
-      }
-    }
-
-    const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
-    // kelas_id, tahun_ajaran_id, dan jatuh_tempo sengaja tidak dikirim — trigger
-    // database tagihan_isi_snapshot mengisinya dari siswa, rentang tahun ajaran,
-    // dan tanggal jatuh tempo paket kelasnya
-    toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
-    for (const k of allKomps) itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
-  }
-
-  if (toInsert.length === 0) return { success: true }
-
-  const { data: inserted, error: e3 } = await supabase.from('tagihan').insert(toInsert).select('id, siswa_id')
-  if (e3) {
-    // 23505 = unique violation: tagihan sudah ada dari concurrent call sebelumnya, anggap sukses
-    if (e3.code === '23505') return { success: true }
-    return { success: false, error: 'Gagal menyimpan tagihan.' }
-  }
-  if (!inserted) return { success: false, error: 'Gagal menyimpan tagihan.' }
-
-  const siswaToTagihanId = new Map(((inserted) as { id: string; siswa_id: string }[]).map(t => [t.siswa_id, t.id]))
-  const tagItems = itemsByTempId
-    .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal }))
-    .filter(i => i.tagihan_id)
-  if (tagItems.length > 0) {
-    const { error: e4 } = await supabase.from('tagihan_item').insert(tagItems)
-    // Tagihan tanpa rincian dibaca nol oleh seluruh hilir (total tabel, modal
-    // detail, halaman bayar, laporan). Lebih baik kegagalannya terlihat
-    // daripada diam-diam menerbitkan tagihan Rp 0.
-    if (e4) return { success: false, error: 'Tagihan tersimpan, tetapi rincian komponennya gagal dibuat.' }
-  }
-
-  return { success: true }
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 // useSearchParams wajib berada di bawah batas Suspense, kalau tidak build gagal
@@ -354,10 +208,14 @@ function TagihanAktifContent() {
   // Isi card "Total tagihan periode ini" — seluruh periode, bukan hanya bulan berjalan
   const [ringkasanPeriode,  setRingkasanPeriode]  = useState<RingkasanPeriode>(RINGKASAN_PERIODE_KOSONG)
   const [waSentSuccess,     setWaSentSuccess]     = useState<Set<string>>(new Set())
+  // Terisi kalau ada siswa aktif yang tagihan bulan ini tertahan (mis. ada kelas tanpa paket)
+  const [penahanTerbit,     setPenahanTerbit]     = useState<{ belumDitagih: number; pesan: PesanPenahan } | null>(null)
 
   // Modal state
   const [showCatatModal,  setShowCatatModal]  = useState(false)
   const [showDetailModal, setShowDetailModal] = useState(false)
+  // Konfirmasi "Ingatkan semua" — hanya untuk sekolah yang memakai antrean pengingat
+  const [showIngatkanSemua, setShowIngatkanSemua] = useState(false)
   const [detailSiswa,     setDetailSiswa]     = useState<SiswaTagihanRow | null>(null)
 
   // Modal 1 — Catat Pembayaran
@@ -385,6 +243,11 @@ function TagihanAktifContent() {
   // memanggil loadTagihan berulang kali dan tanpa pagar ini repair akan
   // dipicu terus-menerus
   const perbaikanRincianRef = useRef(false)
+  // Keadaan terakhir yang sudah dimintakan hitung ulang ke server, dan kapan. Keadaan yang
+  // sama tidak diminta dua kali (server yang gagal memperbaikinya tidak dipanggil
+  // terus-menerus), dan permintaan berikutnya ditahan beberapa detik: selama server masih
+  // menulis, tiap perubahan memicu muat ulang yang melihat keadaan setengah jadi.
+  const permintaanHitungUlangRef = useRef({ tanda: '', waktu: 0 })
 
   // ── loadTagihan ─────────────────────────────────────────────────────────────
 
@@ -392,7 +255,7 @@ function TagihanAktifContent() {
   // diturunkan ulang dari paket. Paket yang diedit belakangan tidak boleh mengubah
   // nominal tagihan yang kuitansinya sudah dipegang orang tua.
   const loadTagihan = useCallback(async function load(sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> {
-    const [{ data: tagihanData }, { data: riwayatRows }, { data: taPeriode }, { data: tunggakanData }] = await Promise.all([
+    const [{ data: tagihanData }, riwayatRes, { data: taPeriode, error: eTa }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('tagihan')
         // kelas_terakhir: alias kolom teks `siswa.kelas` — snapshot kelas terakhir alumni.
@@ -403,11 +266,14 @@ function TagihanAktifContent() {
         .eq('tahun', tahun)
         .order('created_at', { ascending: false })
         .limit(500),
-      supabase
+      // Riwayat penagihan seluruh periode, diambil bertahap sampai habis: satu permintaan
+      // terpotong diam-diam di batas baris PostgREST
+      ambilSemua<RiwayatRow>((dari, sampai) => supabase
         .from('tagihan')
         .select('siswa_id, bulan, tahun, tagihan_item(komponen_id)')
         .eq('sekolah_id', sid)
-        .limit(5000),
+        .order('id')
+        .range(dari, sampai)),
       supabase
         .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
       // Tunggakan periode sebelumnya per siswa — hanya tagihan sebelum bulan ini.
@@ -425,9 +291,7 @@ function TagihanAktifContent() {
         .range(dari, sampai)),
     ])
 
-    const riwayat = bangunRiwayatTagih(
-      (riwayatRows ?? []) as unknown as { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }[]
-    )
+    const riwayat = bangunRiwayatTagih(riwayatRes.data)
     const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
 
     // siswa_id → tunggakan periode sebelum bulan ini, per bulan, terlama dulu.
@@ -470,25 +334,33 @@ function TagihanAktifContent() {
       if (res?.ok) return load(sid, bulan, tahun)
     }
 
-    const siswaIds = rows.map(r => r.siswa?.id).filter(Boolean) as string[]
+    // ── Total yang seharusnya ─────────────────────────────────────────────────
+    // Aturannya di lib/hitungUlangTagihan, sama dengan /api/recalculate-tagihan: hanya
+    // tagihan bulan berjalan yang belum lunas yang dihitung ulang. Tagihan lunas tampil
+    // apa adanya.
+    const sasaran  = rows.filter(r => bolehDihitungUlang({ bulan, tahun, status: r.status }, bulan, tahun))
+    const siswaIds = sasaran.map(r => r.siswa?.id).filter(Boolean) as string[]
     const today    = new Date().toISOString().split('T')[0]
 
-    const [{ data: bsData }, { data: individuData }] = siswaIds.length > 0
-      ? await Promise.all([
-          supabase
-            .from('beasiswa_siswa')
-            .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
-            .in('siswa_id', siswaIds)
-            .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
-          supabase
-            .from('siswa_komponen_individu')
-            .select('siswa_id, komponen_id, nominal, komponen:komponen_id(jenis)')
-            .in('siswa_id', siswaIds),
-        ])
-      : [{ data: [] }, { data: [] }]
+    // Daftar siswa dipecah per potongan: ratusan id dalam satu URL ditolak server
+    const [bsRes, individuRes] = await Promise.all([
+      ambilPerPotong<BeasiswaSiswaRaw>(siswaIds, (ids, dari, sampai) => supabase
+        .from('beasiswa_siswa')
+        .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
+        .in('siswa_id', ids)
+        .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`)
+        .order('id')
+        .range(dari, sampai)),
+      ambilPerPotong<IndividuSiswaRaw>(siswaIds, (ids, dari, sampai) => supabase
+        .from('siswa_komponen_individu')
+        .select('siswa_id, komponen_id, nominal, komponen:komponen_id(jenis)')
+        .in('siswa_id', ids)
+        .order('id')
+        .range(dari, sampai)),
+    ])
 
-    const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
-    for (const row of ((bsData ?? []) as unknown as BeasiswaSiswaRaw[])) {
+    const siswaBeasiswaMap = new Map<string, PotonganBeasiswa[]>()
+    for (const row of bsRes.data) {
       if (!row.beasiswa) continue
       const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
       list.push({ jenis_potongan: row.beasiswa.jenis_potongan, persen: row.beasiswa.persen, nominal: row.beasiswa.nominal, komponen_ids: new Set(row.beasiswa.beasiswa_komponen.map(bk => bk.komponen_id)) })
@@ -497,63 +369,55 @@ function TagihanAktifContent() {
 
     type IndividuEntry = { komponen_id: string; jenis: string; nominal: number }
     const siswaIndividuMap = new Map<string, IndividuEntry[]>()
-    for (const row of ((individuData ?? []) as unknown as IndividuSiswaRaw[])) {
+    for (const row of individuRes.data) {
       if (!row.komponen) continue
       const list = siswaIndividuMap.get(row.siswa_id) ?? []
       list.push({ komponen_id: row.komponen_id, jenis: row.komponen.jenis, nominal: row.nominal })
       siswaIndividuMap.set(row.siswa_id, list)
     }
 
-    const siswaCorrectTotal = new Map<string, number>()
-    for (const r of rows) {
-      const siswaId = r.siswa?.id ?? ''
+    // Kalau ada pembacaan yang gagal, total yang tersimpan ditampilkan apa adanya.
+    // Menghitung dari data separuh berarti menampilkan tagihan tanpa potongan beasiswa
+    // — dan meminta server menuliskannya.
+    const dataLengkap = !riwayatRes.error && !eTa && !bsRes.error && !individuRes.error
 
-      // Dasar total = snapshot komponen yang benar-benar diterbitkan pada tagihan ini
-      const snapshot   = r.tagihan_item ?? []
-      const paketBase  = snapshot.reduce((s, i) => s + i.nominal, 0)
-      const kompNomMap = new Map(
-        snapshot.filter(i => i.komponen_id).map(i => [i.komponen_id as string, i.nominal])
-      )
-
-      // Komponen individu yang ditambahkan setelah tagihan terbit ikut dihitung,
-      // selama jenisnya memang boleh ditagih pada bulan ini
-      const individuTotal = (siswaIndividuMap.get(siswaId) ?? [])
-        .filter(k => !kompNomMap.has(k.komponen_id))
-        .filter(k => komponenDitagihkan(k.jenis, bulan, tahun, ta, siswaId, k.komponen_id, riwayat))
-        .reduce((s, k) => s + k.nominal, 0)
-
-      // Potongan beasiswa hanya berlaku atas komponen yang ditagihkan bulan ini
-      let deduction = 0
-      for (const bs of (siswaBeasiswaMap.get(siswaId) ?? [])) {
-        for (const kid of bs.komponen_ids) {
-          const kNom = kompNomMap.get(kid)
-          if (kNom === undefined) continue
-          deduction += bs.jenis_potongan === 'persen' ? Math.round(kNom * (bs.persen ?? 0) / 100) : (bs.nominal ?? 0)
+    // tagihan id → total yang seharusnya
+    const totalSeharusnya = new Map<string, number>()
+    const belumSesuai: string[] = []
+    if (dataLengkap) {
+      for (const r of sasaran) {
+        const siswaId = r.siswa?.id ?? ''
+        const hasil = hitungUlangTagihan({
+          siswaId, bulan, tahun, totalTersimpan: r.total_nominal,
+          rincian:  r.tagihan_item ?? [],
+          individu: siswaIndividuMap.get(siswaId) ?? [],
+          beasiswa: siswaBeasiswaMap.get(siswaId) ?? [],
+          ta, riwayat,
+        })
+        if (hasil.total === null) continue
+        totalSeharusnya.set(r.id, hasil.total)
+        if (hasil.total !== r.total_nominal || hasil.susulan.length > 0) {
+          belumSesuai.push(`${r.id}:${hasil.total}:${hasil.susulan.length}`)
         }
       }
-      const correct = Math.max(0, paketBase + individuTotal - deduction)
-
-      // Snapshot kosong bukan bukti tagihannya memang nol — bisa jadi rinciannya
-      // yang belum sempat dibuat. Baris seperti ini dipulihkan oleh backfill di
-      // /api/recalculate-tagihan, bukan dinolkan di sini: sekali total_nominal
-      // ditimpa nol, angka aslinya tidak bisa diturunkan ulang dari mana pun.
-      if (snapshot.length === 0 && correct === 0 && r.total_nominal > 0) continue
-
-      siswaCorrectTotal.set(siswaId, correct)
     }
 
-    // Number.isFinite menyaring NaN: satu nominal yang hilang cukup untuk membuat
-    // seluruh perhitungan NaN, dan menulisnya ke database akan mengosongkan
-    // total_nominal (JSON.stringify(NaN) → null) sehingga nilai aslinya hilang.
-    const toUpdate = rows.flatMap(r => {
-      const siswaId = r.siswa?.id ?? ''
-      const correct = siswaCorrectTotal.get(siswaId)
-      return correct !== undefined && Number.isFinite(correct) && correct !== r.total_nominal
-        ? [{ id: r.id, total: correct }]
-        : []
-    })
-    if (toUpdate.length > 0) {
-      await Promise.all(toUpdate.map(({ id, total }) => supabase.from('tagihan').update({ total_nominal: total }).eq('id', id)))
+    // Halaman ini tidak menulis total sendiri. Komponen individu susulan harus ikut
+    // dicatat ke tagihan_item, dan itu tertahan RLS dari sini — total yang berubah tanpa
+    // rinciannya membuat komponen itu ditagihkan lagi bulan depan. Jadi server yang
+    // diminta menghitung ulang, lalu data dimuat ulang. Diminta sekali per keadaan:
+    // kalau server tidak bisa memperbaikinya, keadaan yang sama tidak diminta lagi dan
+    // tabel menampilkan hasil hitungan di atas.
+    const tanda    = belumSesuai.sort().join(',')
+    const terakhir = permintaanHitungUlangRef.current
+    if (tanda && tanda !== terakhir.tanda && Date.now() - terakhir.waktu > JEDA_HITUNG_ULANG_MS) {
+      permintaanHitungUlangRef.current = { tanda, waktu: Date.now() }
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/recalculate-tagihan', {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+      }).catch(() => null)
+      if (res?.ok) return load(sid, bulan, tahun)
     }
 
     // Dimuat sesudah koreksi total di atas tertulis, supaya nilai bulan ini di
@@ -575,7 +439,7 @@ function TagihanAktifContent() {
         kelas_jenjang: kelas?.jenjang ?? '',
         kelas_warna:   kelas?.warna ?? '#1A2C4E',
         is_alumni:     r.siswa?.status === 'alumni',
-        total_nominal: siswaCorrectTotal.get(siswaId) ?? r.total_nominal,
+        total_nominal: totalSeharusnya.get(r.id) ?? r.total_nominal,
         tunggakan:     tunggakanDaftar.reduce((s, d) => s + d.sisa, 0),
         tunggakanDaftar,
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
@@ -621,7 +485,7 @@ function TagihanAktifContent() {
         const rows = await loadTagihan(sid, bulanIni, tahunIni)
         if (!cancelled && rows.length === 0) {
           setAutoGenerating(true)
-          const res = await runGenerate(sid, tahun, bulanIni, tahunIni)
+          const res = await runGenerate(supabase, sid, tahun, bulanIni, tahunIni)
           if (cancelled) return
           if (!res.success) {
             setAutoGenError(res.error ?? 'Terjadi kesalahan saat membuat tagihan.')
@@ -648,7 +512,7 @@ function TagihanAktifContent() {
         { event: '*', schema: 'public', table: 'tagihan', filter: `sekolah_id=eq.${sekolahId}` },
         () => {
           setSyncing(true)
-          runGenerate(sekolahId, tahunAjaran, bulanIni, tahunIni)
+          runGenerate(supabase, sekolahId, tahunAjaran, bulanIni, tahunIni)
             .then(() => loadTagihan(sekolahId, bulanIni, tahunIni))
             .finally(() => setSyncing(false))
         }
@@ -668,12 +532,29 @@ function TagihanAktifContent() {
 
     let alive = true
     // Lewat rantai promise, bukan setState langsung di badan effect
-    runGenerate(sekolahId, tahunAjaran, bulanIni, tahunIni)
+    runGenerate(supabase, sekolahId, tahunAjaran, bulanIni, tahunIni)
       .then(() => { if (alive) return loadTagihan(sekolahId, bulanIni, tahunIni) })
       .catch(() => { /* pertahankan data lama; realtime sync akan menyusul */ })
 
     return () => { alive = false }
   }, [bulanIni, tahunIni, sekolahId, tahunAjaran, loadTagihan])
+
+  // ── Tagihan bulan ini yang tertahan ───────────────────────────────────────────
+  // Dimuat ulang tiap jumlah baris berubah: penyebabnya hilang begitu tagihan terbit
+  const jumlahTagihan = tagihanList.length
+  useEffect(() => {
+    if (!sekolahId) return
+    let batal = false
+    statusPenerbitan(supabase, sekolahId, bulanIni, tahunIni)
+      .then(({ data }) => {
+        if (batal) return
+        setPenahanTerbit(data?.penahan && data.belumDitagih > 0
+          ? { belumDitagih: data.belumDitagih, pesan: pesanPenahanTerbit(data.penahan) }
+          : null)
+      })
+      .catch(() => { /* pemberitahuan ini pelengkap; tabel tetap tampil tanpa dia */ })
+    return () => { batal = true }
+  }, [sekolahId, bulanIni, tahunIni, jumlahTagihan])
 
   // ── Search catat siswa ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -776,6 +657,17 @@ function TagihanAktifContent() {
     return matchJenjang && matchStatus && matchSearch
   })
 
+  // ── Pengingat WhatsApp ────────────────────────────────────────────────────────
+  // Sekolah yang memakai antrean: tombol hanya memasukkan pengingat ke antrean, dan
+  // tampilannya (Ingatkan / Mengirim… / Terkirim) datang dari server. Sekolah lain:
+  // tombol membuka wa.me seperti biasa.
+  const adaTombolIngatkan = (t: SiswaTagihanRow) => !!t.no_wa && getEffStatus(t) !== 'lunas'
+  const pengingat = usePengingat(tagihanList.filter(adaTombolIngatkan).map(t => t.siswa_id))
+  // "Ingatkan semua" mengikuti baris yang sedang tampil — filter dan pencarian ikut berlaku
+  const siapDiingatkan = pengingat.aktif
+    ? filtered.filter(t => adaTombolIngatkan(t) && pengingat.tampilan(t.siswa_id) === 'ingatkan').map(t => t.siswa_id)
+    : []
+
   // Diturunkan dari getEffStatus, bukan aturan tersendiri — kartu ringkasan dan
   // badge di tabel harus mustahil berselisih.
   const effCounts = tagihanList.reduce(
@@ -791,7 +683,22 @@ function TagihanAktifContent() {
   const keteranganPeriode = [tahunAjaran && `TA ${tahunAjaran}`, labelRentang(ringkasanPeriode.awal, ringkasanPeriode.akhir)]
     .filter(Boolean).join(' · ')
 
-  const anyModalOpen = showCatatModal || showDetailModal
+  const anyModalOpen = showCatatModal || showDetailModal || showIngatkanSemua
+
+  // Satu tombol untuk dua cara: antrean (TombolIngatkan) atau wa.me. Selama belum
+  // diketahui sekolah ini memakai yang mana, tombolnya tampil tetapi belum bisa diklik.
+  const tombolIngatkan = (t: SiswaTagihanRow) => pengingat.aktif ? (
+    <TombolIngatkan varian="ringkas" tampilan={pengingat.tampilan(t.siswa_id)} nonaktif={anyModalOpen}
+      onKlik={() => pengingat.ingatkan([t.siswa_id])} />
+  ) : (
+    <button
+      onClick={() => { if (!anyModalOpen) kirimWA(t) }}
+      disabled={anyModalOpen || pengingat.aktif === null}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : pengingat.aktif === null ? 'progress' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+      <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
+      {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+    </button>
+  )
 
   // ── Hitung mundur ke jatuh tempo tagihan ──────────────────────────────────────
 
@@ -914,22 +821,13 @@ function TagihanAktifContent() {
     type BsRaw = { beasiswa: DetailBeasiswaRow | null }
     setDetailBeasiswa(((bsData ?? []) as unknown as BsRaw[]).map(r => r.beasiswa).filter((b): b is DetailBeasiswaRow => b !== null))
 
-    // Merge tagihan_item snapshot + komponen individu yang ditambah belakangan
+    // Rincian = snapshot tagihan_item apa adanya. Komponen individu yang ditambahkan
+    // setelah tagihan terbit dicatat ke snapshot oleh /api/recalculate-tagihan (hanya
+    // untuk tagihan yang belum lunas), jadi tidak digabung lagi di sini — menggabungnya
+    // menampilkan komponen yang tidak ikut ditagihkan pada tagihan ini.
     type ItemRaw = { komponen_id: string | null; nama_komponen: string; nominal: number; komponen: { jenis: string } | null }
-    const snapshotItems = (itemData ?? []) as ItemRaw[]
-    const snapshotKompIds = new Set(snapshotItems.map(i => i.komponen_id).filter(Boolean) as string[])
-    const { data: individuData } = await supabase
-      .from('siswa_komponen_individu')
-      .select('komponen_id, nominal, komponen:komponen_id(nama, jenis)')
-      .eq('siswa_id', t.siswa_id)
-    type IndivRaw = { komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
-    const extraItems: DetailKomponenRow[] = ((individuData ?? []) as unknown as IndivRaw[])
-      .filter(i => i.komponen && !snapshotKompIds.has(i.komponen_id))
-      .map(i => ({ nama_komponen: i.komponen!.nama, nominal: i.nominal, jenis: i.komponen!.jenis }))
-    setDetailKomponen([
-      ...snapshotItems.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '' })),
-      ...extraItems,
-    ])
+    setDetailKomponen(((itemData ?? []) as ItemRaw[])
+      .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '' })))
 
     // Komponen dari tagihan periode sebelumnya yang menunggak — aturannya
     // adalahTunggakanLama, sama dengan kolom total di tabel.
@@ -1044,6 +942,17 @@ function TagihanAktifContent() {
             <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
               Tagihan akan muncul otomatis setelah paket per kelas dan data siswa sudah diatur
             </div>
+            {penahanTerbit && (
+              <>
+                <div style={{ fontSize: '0.84rem', color: '#374151', maxWidth: 420, margin: '1rem auto 1.25rem' }}>
+                  {penahanTerbit.pesan.alasan}
+                </div>
+                <button onClick={() => router.push(penahanTerbit.pesan.aksiHref)}
+                  style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {penahanTerbit.pesan.aksiLabel}
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : autoGenerating ? (
@@ -1059,12 +968,13 @@ function TagihanAktifContent() {
               <AlertTriangle size={24} color="#DC2626" />
             </div>
             <div style={{ fontWeight: 700, fontSize: '1rem', color: '#DC2626', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
+            {/* Penyebab yang menyebut kelasnya, kalau sudah diketahui; selain itu pesan umum dari penerbitan */}
             <div style={{ fontSize: '0.84rem', color: '#374151', marginBottom: '1.25rem', maxWidth: 380, margin: '0 auto 1.25rem' }}>
-              {autoGenError}
+              {penahanTerbit?.pesan.alasan ?? autoGenError}
             </div>
-            <button onClick={() => router.push('/tagihan/paket-kelas')}
+            <button onClick={() => router.push(penahanTerbit?.pesan.aksiHref ?? '/tagihan/paket-kelas')}
               style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
-              Konfigurasi Paket Per Kelas
+              {penahanTerbit?.pesan.aksiLabel ?? 'Konfigurasi Paket Per Kelas'}
             </button>
           </div>
         </div>
@@ -1082,6 +992,27 @@ function TagihanAktifContent() {
         </div>
       ) : (
         <>
+          {/* ── Tagihan bulan ini tertahan untuk sebagian siswa ────────────────── */}
+          {penahanTerbit && (
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', flexWrap: 'wrap', background: '#FFF5F5', border: '1.5px solid #FCA5A5', borderRadius: 14, padding: '0.875rem 1.25rem', marginBottom: '1.25rem' }}>
+              <div style={{ width: 38, height: 38, background: '#FEE2E2', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={19} color="#DC2626" />
+              </div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#DC2626' }}>
+                  Tagihan {BULAN_NAMES[bulanIni]} belum terbit untuk {penahanTerbit.belumDitagih} siswa
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#374151', marginTop: 2 }}>
+                  Penerbitan tertahan: {penahanTerbit.pesan.alasan}
+                </div>
+              </div>
+              <button onClick={() => router.push(penahanTerbit.pesan.aksiHref)}
+                style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.55rem 1.1rem', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                {penahanTerbit.pesan.aksiLabel}
+              </button>
+            </div>
+          )}
+
           {/* ── Stat Card Gabungan ─────────────────────────────────────────────── */}
           <div style={{ ...sCard, marginBottom: '1.25rem', padding: 0, overflow: 'hidden', borderLeft: '28px solid #1A2C4E' }}>
 
@@ -1194,14 +1125,34 @@ function TagihanAktifContent() {
                   <option value="menunggak">Menunggak</option>
                 </select>
               </div>
-              <div style={{ position: 'relative' }}>
-                <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                <input
-                  placeholder="Cari nama siswa"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  style={{ ...sInput, paddingLeft: '2.25rem', width: 220 }}
-                />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Hanya untuk sekolah yang memakai antrean pengingat; berlaku untuk baris yang sedang tampil */}
+                {pengingat.aktif && (
+                  <button
+                    onClick={() => { if (!anyModalOpen) setShowIngatkanSemua(true) }}
+                    disabled={anyModalOpen || siapDiingatkan.length === 0}
+                    title={siapDiingatkan.length === 0 ? 'Tidak ada siswa pada daftar ini yang bisa diingatkan sekarang' : undefined}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 8,
+                      padding: '0.5rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      background: siapDiingatkan.length === 0 ? '#F1F5F9' : '#DCFCE7',
+                      color:      siapDiingatkan.length === 0 ? '#94A3B8' : '#15803D',
+                      cursor:     anyModalOpen || siapDiingatkan.length === 0 ? 'not-allowed' : 'pointer',
+                    }}>
+                    <Image src='/icons/IconWA.png' width={16} height={16} alt=''
+                      style={siapDiingatkan.length === 0 ? { opacity: 0.45, filter: 'grayscale(1)' } : undefined} />
+                    Ingatkan semua{siapDiingatkan.length > 0 ? ` (${siapDiingatkan.length})` : ''}
+                  </button>
+                )}
+                <div style={{ position: 'relative' }}>
+                  <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input
+                    placeholder="Cari nama siswa"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    style={{ ...sInput, paddingLeft: '2.25rem', width: 220 }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -1295,26 +1246,10 @@ function TagihanAktifContent() {
                                 <span style={{ background: '#FEF3C7', color: '#D97706', border: '1.5px solid #FCD34D', borderRadius: 20, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
                                   H-{sisaHari(t)}
                                 </span>
-                                {hasWa && (
-                                  <button
-                                    onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                    disabled={anyModalOpen}
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
-                                    <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                    {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
-                                  </button>
-                                )}
+                                {hasWa && tombolIngatkan(t)}
                               </>
                             ) : eff === 'lunas' ? null : (
-                              hasWa ? (
-                                <button
-                                  onClick={() => { if (!anyModalOpen) kirimWA(t) }}
-                                  disabled={anyModalOpen}
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
-                                  <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-                                  {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
-                                </button>
-                              ) : (
+                              hasWa ? tombolIngatkan(t) : (
                                 <span style={{ color: '#CBD5E1', fontSize: '0.85rem', minWidth: 24 }}>—</span>
                               )
                             )}
@@ -1340,6 +1275,32 @@ function TagihanAktifContent() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Konfirmasi: Ingatkan semua ────────────────────────────────────── */}
+      {showIngatkanSemua && (
+        <div style={sBackdrop} onClick={() => setShowIngatkanSemua(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="judul-ingatkan-semua"
+            style={{ ...sModalCard, maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <span id="judul-ingatkan-semua" style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E' }}>Ingatkan semua?</span>
+              <button onClick={() => setShowIngatkanSemua(false)} style={sBtnClose} aria-label="Tutup"><X size={17} /></button>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#374151', lineHeight: 1.55, marginBottom: '1.25rem' }}>
+              Pengingat WhatsApp akan dikirim ke wali <strong>{siapDiingatkan.length} siswa</strong> yang menunggak pada daftar ini.
+              Pesan dikirim bertahap pada jam kerja, jadi tidak semuanya langsung terkirim.
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowIngatkanSemua(false)} style={sBtnSecondary}>Batal</button>
+              <button
+                onClick={() => { setShowIngatkanSemua(false); pengingat.ingatkan(siapDiingatkan) }}
+                disabled={siapDiingatkan.length === 0}
+                style={{ ...sBtnPrimary, opacity: siapDiingatkan.length === 0 ? 0.5 : 1, cursor: siapDiingatkan.length === 0 ? 'not-allowed' : 'pointer' }}>
+                Ya, ingatkan
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Modal 1: Catat Pembayaran Manual ──────────────────────────────── */}

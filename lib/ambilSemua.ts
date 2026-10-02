@@ -31,3 +31,23 @@ export async function ambilSemua<T>(
   }
   return { data: semua, error: null }
 }
+
+// Filter .in() mengirim daftar nilainya lewat URL. Ratusan UUID sekaligus melampaui
+// panjang URL yang diterima server (postgrest-js sendiri memperingatkan di atas 8000
+// karakter), dan permintaan yang ditolak mudah terbaca sebagai "datanya kosong".
+const UKURAN_POTONGAN = 150
+
+/**
+ * Seperti `ambilSemua`, untuk query ber-filter `.in()`: daftar nilainya dipecah per
+ * potongan, tiap potongan diambil sampai habis. `halaman` menerima potongan nilai untuk
+ * `.in()` beserta rentang barisnya, dan harus mengurutkan dengan kunci unik.
+ */
+export async function ambilPerPotong<T>(
+  nilai: string[],
+  halaman: (potong: string[], dari: number, sampai: number) => PromiseLike<{ data: unknown; error: PostgrestError | null }>,
+): Promise<{ data: T[]; error: PostgrestError | null }> {
+  const potongan: string[][] = []
+  for (let i = 0; i < nilai.length; i += UKURAN_POTONGAN) potongan.push(nilai.slice(i, i + UKURAN_POTONGAN))
+  const hasil = await Promise.all(potongan.map(p => ambilSemua<T>((dari, sampai) => halaman(p, dari, sampai))))
+  return { data: hasil.flatMap(h => h.data), error: hasil.find(h => h.error)?.error ?? null }
+}
