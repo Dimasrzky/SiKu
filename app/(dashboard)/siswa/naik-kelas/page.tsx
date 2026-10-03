@@ -502,7 +502,7 @@ export default function NaikKelasPage() {
       {/* ── Header ───────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
-          <ChevronsUp size={30} color="#ffffff" />
+          <Image src="/icons/NaikKelas.png" width={33} height={30} alt="" />
         </div>
         <div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>
@@ -648,15 +648,15 @@ export default function NaikKelasPage() {
 
             {/* Warning tunggakan */}
             {menunggak > 0 && !executeDone && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '0.875rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <AlertTriangle size={20} color="#DC2626" />
+              <div style={{ background: '#FFFFFF', borderRadius: 12, padding: '0.875rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div style={{ width: 50, height: 50, borderRadius: 10, background: '#DE6666', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertTriangle size={32} color="#ffffff" />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991B1B' }}>{menunggak} siswa masih memiliki tunggakan</div>
-                  <div style={{ fontSize: '0.8rem', color: '#B91C1C', marginTop: 2 }}>Sebaiknya selesaikan tunggakan sebelum menjalankan proses kenaikan kelas.</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1A2C4E' }}>{menunggak} siswa masih memiliki tunggakan</div>
+                  <div style={{ fontSize: '0.8rem', color: '#6F788A', marginTop: 2 }}>Sebaiknya selesaikan tunggakan sebelum menjalankan proses kenaikan kelas.</div>
                 </div>
-                <a href={`/tagihan/aktif?status=menunggak${maxJenjang ? `&jenjang=${encodeURIComponent(maxJenjang)}` : ''}`} style={{ background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>Lihat Daftar</a>
+                <a href={`/tagihan/aktif?status=menunggak${maxJenjang ? `&jenjang=${encodeURIComponent(maxJenjang)}` : ''}`} style={{ background: '#F7DD7D', color: '#1A2C4E', border: 'none', borderRadius: 8, padding: '0.45rem 0.9rem', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' }}>Lihat Daftar</a>
               </div>
             )}
 
@@ -664,7 +664,7 @@ export default function NaikKelasPage() {
             <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', padding: '1.25rem 1.5rem', marginBottom: '1.25rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', marginBottom: '1.25rem' }}>
                 <div style={{ width: 48, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <GraduationCap size={22} color="#fff" />
+                  <Image src="/icons/Lulus.png" width={25} height={24} alt="" />
                 </div>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0F172A', lineHeight: 1.2 }}>Kondisi siswa saat ini</div>
@@ -672,30 +672,30 @@ export default function NaikKelasPage() {
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.875rem' }}>
-                <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #F1F5F9' }}>
+                <div style={{ background: '#ffffff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #3244736e' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>Total siswa aktif</span>
-                    <Users size={18} color="#94A3B8" />
+                    <Users size={26} color="#1A2C4E" />
                   </div>
                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#0F172A', lineHeight: 1 }}>{totalAktif}</div>
-                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, marginTop: 4 }}>Akan diproses</div>
+                  <div style={{ fontSize: '0.72rem', color: '#6F788A', fontWeight: 600, marginTop: 4 }}>Akan diproses</div>
                 </div>
-                <div style={{ background: '#FEF2F2', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #FECACA' }}>
+                <div style={{ background: '#ffffff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #3244736e' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#B91C1C' }}>Menunggak</span>
-                    <AlertTriangle size={18} color="#DC2626" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#6F788A' }}>Menunggak</span>
+                    <AlertTriangle size={26} color="#1A2C4E" />
                   </div>
                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#DC2626', lineHeight: 1 }}>{menunggak}</div>
-                  <div style={{ fontSize: '0.72rem', color: '#B91C1C', fontWeight: 600, marginTop: 4 }}>Siswa perlu diselesaikan</div>
+                  <div style={{ fontSize: '0.72rem', color: '#6F788A', fontWeight: 600, marginTop: 4 }}>Siswa perlu diselesaikan</div>
                 </div>
-                <div style={{ background: '#F0FDF4', borderRadius: 12, padding: '1rem 1.1rem', border: '1px solid #BBF7D0' }}>
+                <div style={{ background: '#ffffff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #3244736e' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#065F46' }}>Akan jadi alumni</span>
-                    <GraduationCap size={18} color="#16A34A" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#6F788A' }}>Akan jadi alumni</span>
+                    <GraduationCap size={26} color="#1A2C4E" />
                   </div>
                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16A34A', lineHeight: 1 }}>{akanAlumni}</div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginTop: 4 }}>
-                    <span style={{ fontSize: '0.72rem', color: '#065F46', fontWeight: 600 }}>Siswa kelas tertinggi akan lulus</span>
+                    <span style={{ fontSize: '0.72rem', color: '#6F788A', fontWeight: 600 }}>Siswa kelas tertinggi akan lulus</span>
                     {maxJenjang && akanAlumni > 0 && (
                       <a href={`/siswa/daftar-siswa?jenjang=${encodeURIComponent(maxJenjang)}`}
                         style={{ background: '#16A34A', color: '#fff', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.72rem', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -727,41 +727,41 @@ export default function NaikKelasPage() {
                 {pemetaan.map((grp, gi) => (
                   <div key={gi} style={{ borderBottom: gi < pemetaan.length - 1 ? '2px solid #F1F5F9' : undefined }}>
                     {/* Group header */}
-                    <div style={{ background: '#EEF4FF', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                      <Image src="/icons/IconLayer.png" width={14} height={14} alt="" />
-                      <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#1A2C4E', flex: 1 }}>
+                    <div style={{ background: '#EEF4FF', padding: '0.7rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                      <Image src="/icons/IconLayer.png" width={18} height={18} alt="" />
+                      <span style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E', flex: 1 }}>
                         {grp.toJenjang === null ? `Kelas ${grp.fromJenjang} → Alumni` : `Kelas ${grp.fromJenjang} → Kelas ${grp.toJenjang}`}
                       </span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748B' }}>{grp.kelas.length} kelas · {grp.totalSiswa} siswa</span>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#475569' }}>{grp.kelas.length} kelas · {grp.totalSiswa} siswa</span>
                     </div>
                     {/* Per-kelas rows with per-siswa detail */}
                     {grp.kelas.map((m, mi) => (
-                      <div key={mi} style={{ borderBottom: mi < grp.kelas.length - 1 ? '1px solid #F8FAFC' : undefined }}>
+                      <div key={mi} style={{ borderBottom: mi < grp.kelas.length - 1 ? '1px solid #F1F5F9' : undefined }}>
                         {/* Kelas summary row */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem 0.35rem', background: '#FAFBFF' }}>
-                          <span style={{ background: m.dari.warna + '22', color: m.dari.warna, borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.dari.nama}</span>
-                          <ArrowRight size={13} color="#94A3B8" style={{ flexShrink: 0 }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.8rem 1.1rem 0.5rem', background: '#FAFBFF' }}>
+                          <span style={{ background: m.dari.warna + '22', color: m.dari.warna, borderRadius: 6, padding: '0.25rem 0.65rem', fontSize: '0.92rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.dari.nama}</span>
+                          <ArrowRight size={16} color="#64748B" style={{ flexShrink: 0 }} />
                           {m.ke ? (
-                            <span style={{ background: m.ke.warna + '22', color: m.ke.warna, borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.ke.nama}</span>
+                            <span style={{ background: m.ke.warna + '22', color: m.ke.warna, borderRadius: 6, padding: '0.25rem 0.65rem', fontSize: '0.92rem', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.ke.nama}</span>
                           ) : (
-                            <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 6, padding: '0.18rem 0.5rem', fontSize: '0.76rem', fontWeight: 700 }}>Alumni</span>
+                            <span style={{ background: '#D1FAE5', color: '#065F46', borderRadius: 6, padding: '0.25rem 0.65rem', fontSize: '0.92rem', fontWeight: 700 }}>Alumni</span>
                           )}
-                          <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600, marginLeft: 'auto' }}>{m.jumlahSiswa} siswa</span>
+                          <span style={{ fontSize: '0.88rem', color: '#64748B', fontWeight: 600, marginLeft: 'auto' }}>{m.jumlahSiswa} siswa</span>
                         </div>
                         {/* Per-siswa list */}
-                        <div style={{ padding: '0 1rem 0.6rem 1.5rem', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <div style={{ padding: '0 1.1rem 0.8rem 1.6rem', display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {m.siswa.map(s => (
-                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderRadius: 6, background: '#F8FAFC' }}>
-                              <div style={{ width: 22, height: 22, borderRadius: '50%', background: m.dari.warna, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.4rem 0.65rem', borderRadius: 8, background: '#F8FAFC' }}>
+                              <div style={{ width: 28, height: 28, borderRadius: '50%', background: m.dari.warna, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>
                                 {getInitials(s.nama)}
                               </div>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0F172A', flex: 1 }}>{s.nama}</span>
-                              {s.nis && <span style={{ fontSize: '0.68rem', color: '#94A3B8', fontFamily: 'monospace', fontWeight: 500 }}>{s.nis}</span>}
-                              <ArrowRight size={10} color="#CBD5E1" style={{ flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.92rem', fontWeight: 600, color: '#0F172A', flex: 1 }}>{s.nama}</span>
+                              {s.nis && <span style={{ fontSize: '0.82rem', color: '#64748B', fontFamily: 'monospace', fontWeight: 500 }}>{s.nis}</span>}
+                              <ArrowRight size={13} color="#94A3B8" style={{ flexShrink: 0 }} />
                               {m.ke ? (
-                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: m.ke.warna }}>{m.ke.nama}</span>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: m.ke.warna }}>{m.ke.nama}</span>
                               ) : (
-                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>Alumni</span>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#059669' }}>Alumni</span>
                               )}
                             </div>
                           ))}
@@ -781,7 +781,7 @@ export default function NaikKelasPage() {
                 <button
                   onClick={() => setShowConfirmPopup(true)}
                   disabled={executing}
-                  style={{ background: executing ? '#94A3B8' : '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0.8rem 1.75rem', fontSize: '0.95rem', fontWeight: 800, cursor: executing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: executing ? 'none' : '0 4px 16px rgba(245,158,11,0.35)' }}
+                  style={{ background: executing ? '#94A3B8' : '#F7DD7D', color: '#1A2C4E', border: 'none', borderRadius: 10, padding: '0.8rem 1.75rem', fontSize: '0.95rem', fontWeight: 800, cursor: executing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: executing ? 'none' : '0 4px 16px rgba(245,158,11,0.35)' }}
                   onMouseEnter={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#D97706' }}
                   onMouseLeave={e => { if (!executing) (e.currentTarget as HTMLButtonElement).style.background = '#F59E0B' }}
                 >

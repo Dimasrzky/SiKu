@@ -36,7 +36,7 @@ export function FinanceCard({
           gap: '0.5rem',
           marginBottom: '1rem',
         }}>
-          <span style={{ fontSize: '1rem', fontWeight: 600, color: '#1A2C4E', letterSpacing: '0.05em' }}>
+          <span style={{ fontSize: '1rem', fontWeight: 600, color: '#1A2C4E', letterSpacing: '0.05em', bottom: 6, position: 'relative' }}>
             {title}
           </span>
           {info}
@@ -61,12 +61,12 @@ export function FinanceCard({
           position: 'relative',
           top: 8,
           width: 100,
-          height: 16,
+          height: 25,
           flexShrink: 0,
         }} />
 
         {/* Kolom kanan: persentase di atas, progress bar kecil di bawah */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+        <div style={{ flex: 1, minWidth: 0, marginLeft: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
             <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--navy-dark)' }}>
               {progressLabel}
@@ -77,12 +77,13 @@ export function FinanceCard({
               </span>
             )}
           </div>
-          <div style={{ background: '#E5E7EB', borderRadius: 4, height: 8, width: 200, overflow: 'hidden' }}>
+          {/* Lebar mengikuti ruang kartu (maks 280px) supaya tidak meluap di layar sempit */}
+          <div style={{ background: '#E5E7EB', borderRadius: 999, height: 10, width: '80%', maxWidth: 280, overflow: 'hidden', marginTop: 2 }}>
             <div style={{
               background: progressColor,
               height: '100%',
               width: `${Math.min(progress, 100)}%`,
-              borderRadius: 4,
+              borderRadius: 999,
               transition: 'width 0.6s ease',
             }} />
           </div>

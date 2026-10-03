@@ -1275,7 +1275,7 @@ export default function KomponenTagihanPage() {
       </div>
 
       {/* ── Main Card ── */}
-      <div style={{ background: '#fff', borderLeft: '25px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow: '0 0 20px rgba(26, 44, 78, 0.77)' }}>
+      <div style={{ background: '#fff', borderLeft: '25px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.07)' }}>
 
         {/* Card header */}
         <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem'}}>
@@ -1338,20 +1338,28 @@ export default function KomponenTagihanPage() {
 
         {/* Tabs + Search */}
         <div style={{ padding: '0 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.6rem' }}>
-          <div style={{ display: 'flex', marginLeft: '-0.75rem' }}>
-            {TABS.map(tab => (
-              <button key={tab.value} onClick={() => setFilterTipe(tab.value)}
-                style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', fontWeight: filterTipe === tab.value ? 700 : 500, color: '#1A2C4E', padding: '0.3rem 0.75rem', transition: 'all 0.15s' }}>
-                <span style={{ display: 'inline-block', borderBottom: filterTipe === tab.value ? '4px solid #1A2C4E' : '3px solid transparent', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
+          {/* Tab berbingkai — yang aktif bingkainya navy, sisanya abu seperti kotak pencarian */}
+          <div role="tablist" style={{ display: 'flex', gap: '0.6rem' }}>
+            {TABS.map(tab => {
+              const aktif = filterTipe === tab.value
+              return (
+                <button key={tab.value} role="tab" aria-selected={aktif} onClick={() => setFilterTipe(tab.value)}
+                  style={{
+                    background: aktif ? '#ffffff' : '#fff', cursor: 'pointer', fontFamily: 'inherit',
+                    fontSize: '0.9rem', fontWeight: aktif ? 700 : 500, color: '#1A2C4E',
+                    border: `2px solid ${aktif ? '#1A2C4E' : '#C1C6CF'}`, borderRadius: 8,
+                    padding: '0.3rem 0.9rem', whiteSpace: 'nowrap',
+                    transition: 'border-color 0.15s, background 0.15s',
+                  }}>
                   {tab.label}
-                </span>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
           <div style={{ position: 'relative' }}>
             <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             <input placeholder="Cari nama komponen" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 400, border: '3px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }} />
+              style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 400, border: '2px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }} />
           </div>
         </div>
 
@@ -1701,6 +1709,6 @@ const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.
 const sCard:         React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
 const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.3rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
-const sStatCard:     React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow: '0 0 20px rgba(31, 85, 167, 0.52)', flex: 1, minWidth: 0 }
+const sStatCard:     React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow:'0 2px 10px #3244736e', flex: 1, minWidth: 0 }
 const sStatLabel:    React.CSSProperties = { fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: 18 }
 const sStatValue:    React.CSSProperties = { fontSize: '1.75rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }

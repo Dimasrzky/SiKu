@@ -552,7 +552,7 @@ export default function IndividuPage() {
         <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderLeft: '28px solid #1A2C4E', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.08)', overflow: 'hidden' }}>
 
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9', boxShadow:'0 1px 3px rgba(0,0,0,0.07)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flex: 1 }}>
               <div style={{ width: 46, height: 46, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Users size={20} color="#fff" />
@@ -572,11 +572,11 @@ export default function IndividuPage() {
           {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
             {[
-              { label: 'Komponen aktif',         val: statData.komponen_aktif,         icon: <Puzzle size={22} color="#3B82F6" /> },
-              { label: 'Siswa terdampak',         val: statData.siswa_terdampak,         icon: <Users size={22} color="#8B5CF6" /> },
-              { label: 'Komponen belum dipakai',  val: statData.komponen_belum_dipakai,  icon: <AlertTriangle size={22} color="#F59E0B" /> },
+              { label: 'Komponen aktif',         val: statData.komponen_aktif,         icon: <Puzzle size={24} color="#1A2C4E" /> },
+              { label: 'Siswa terdampak',         val: statData.siswa_terdampak,         icon: <Users size={24} color="#1A2C4E" /> },
+              { label: 'Komponen belum dipakai',  val: statData.komponen_belum_dipakai,  icon: <AlertTriangle size={24} color="#1A2C4E" /> },
             ].map(s => (
-              <div key={s.label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div key={s.label} style={{ background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: 10, padding: '1rem 1.25rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow:'0 2px 10px #3244736e' }}>
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: 4 }}>{s.label}</div>
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1A2C4E' }}>{s.val}</div>
@@ -649,7 +649,7 @@ export default function IndividuPage() {
           return fK && fKl && fS
         })
         return (
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.08)', overflow: 'hidden', marginTop: '1.5rem' }}>
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow:'0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden', marginTop: '1.5rem' }}>
 
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', padding: '1.25rem 1.5rem' }}>
@@ -665,17 +665,17 @@ export default function IndividuPage() {
             {/* Filter toolbar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem 1.5rem', borderBottom: '1px solid #F1F5F9', flexWrap: 'wrap' }}>
               <select value={tabelFilter} onChange={e => setTabelFilter(e.target.value)}
-                style={{ border: '1.5px solid #CBD5E1', borderRadius: 8, padding: '0.4rem 0.75rem', fontSize: '0.85rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', background: '#fff' }}>
+                style={{ border: '2px solid #a5a9af', borderRadius: 8, padding: '0.4rem 0.75rem', fontSize: '0.85rem', fontWeight: 500, color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', background: '#fff' }}>
                 {uniqueKomps.map(k => <option key={k} value={k}>{k === 'Semua' ? 'Semua komponen' : k}</option>)}
               </select>
               <select value={tabelKelasFilter} onChange={e => setTabelKelasFilter(e.target.value)}
-                style={{ border: '1.5px solid #CBD5E1', borderRadius: 8, padding: '0.4rem 0.75rem', fontSize: '0.85rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', background: '#fff' }}>
+                style={{ border: '2px solid #a5a9af', borderRadius: 8, padding: '0.4rem 0.75rem', fontSize: '0.85rem', fontWeight: 500, color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', cursor: 'pointer', background: '#fff' }}>
                 {uniqueKelas.map(k => <option key={k} value={k}>{k === 'Semua' ? 'Semua kelas' : k}</option>)}
               </select>
-              <div style={{ flex: 1, minWidth: 200, position: 'relative', marginLeft: 'auto' }}>
+              <div style={{ minWidth: 500, position: 'relative', marginLeft: 'auto' }}>
                 <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
                 <input value={tabelSearch} onChange={e => setTabelSearch(e.target.value)} placeholder="Cari nama siswa"
-                  style={{ width: '100%', border: '1.5px solid #CBD5E1', borderRadius: 8, padding: '0.4rem 0.75rem 0.4rem 2.1rem', fontSize: '0.85rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', border: '2px solid #a5a9af', borderRadius: 8, padding: '0.4rem 0.75rem 0.4rem 2.1rem', fontSize: '0.85rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
               </div>
             </div>
 

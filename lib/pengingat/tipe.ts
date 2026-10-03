@@ -85,6 +85,8 @@ export interface HasilPengingat {
   aktif:  boolean
   /** siswa_id → tampilan tombol */
   status: Record<string, TampilanIngatkan>
+  /** siswa_id → sisa hari cooldown, hanya untuk yang `terkirim` (tombol menampilkan "H-2"/"H-1") */
+  sisaCooldown?: Record<string, number>
 }
 
 /** Nomor wali yang membalas STOP — berlaku untuk nomornya, bukan per sekolah */

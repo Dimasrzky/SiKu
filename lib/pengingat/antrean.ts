@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { KONFIG_PENGINGAT, type KonfigPengingat } from './konfig'
 import { lolosPembatas, muatPembatas, pilihSender, sisipkanJob } from './pembatas'
-import { muatPenilaian, sekolahAktif, tampilanSiswa, type PenilaianSiswa } from './penilaian'
+import { muatPenilaian, sekolahAktif, sisaCooldownHari, tampilanSiswa, type PenilaianSiswa } from './penilaian'
 import { muatKonteksPesan, susunIsiJob, type IsiJob } from './pesan'
 import type { HasilPengingat, TampilanIngatkan } from './tipe'
 
@@ -13,6 +13,19 @@ import type { HasilPengingat, TampilanIngatkan } from './tipe'
 // 'use client'.
 
 type Hasil = { data: HasilPengingat; error: null } | { data: null; error: string }
+
+/** Sisa hari cooldown untuk siswa yang tombolnya `terkirim` — bahan label "H-2"/"H-1" */
+function sisaCooldownTerkirim(
+  status: Record<string, TampilanIngatkan>, penilaian: Map<string, PenilaianSiswa>,
+  sekarang: Date, konfig: KonfigPengingat,
+): Record<string, number> {
+  const sisa: Record<string, number> = {}
+  for (const [id, t] of Object.entries(status)) {
+    const p = penilaian.get(id)
+    if (t === 'terkirim' && p) sisa[id] = sisaCooldownHari(p, sekarang, konfig)
+  }
+  return sisa
+}
 
 /** Kolom reminder_job yang diisi saat job manual dibuat; sisanya memakai bawaan tabel */
 interface JobManualBaru extends IsiJob {
@@ -46,7 +59,7 @@ export async function statusPengingat(db: SupabaseClient, opsi: OpsiStatusPengin
 
   const status: Record<string, TampilanIngatkan> = {}
   for (const id of siswaIds) status[id] = tampilanSiswa(penilaian.get(id), sekarang, konfig)
-  return { data: { aktif: true, status }, error: null }
+  return { data: { aktif: true, status, sisaCooldown: sisaCooldownTerkirim(status, penilaian, sekarang, konfig) }, error: null }
 }
 
 export interface OpsiAntrekanManual extends OpsiStatusPengingat {
@@ -74,12 +87,13 @@ export async function antrekanManual(db: SupabaseClient, opsi: OpsiAntrekanManua
 
   const status: Record<string, TampilanIngatkan> = {}
   for (const id of siswaIds) status[id] = tampilanSiswa(penilaian.get(id), sekarang, konfig)
+  const sisaCooldown = sisaCooldownTerkirim(status, penilaian, sekarang, konfig)
 
   const calon = siswaIds
     .filter(id => status[id] === 'ingatkan')
     .map(id => penilaian.get(id))
     .filter((p): p is PenilaianSiswa & { nomor: string } => !!p?.nomor)
-  if (calon.length === 0) return { data: { aktif: true, status }, error: null }
+  if (calon.length === 0) return { data: { aktif: true, status, sisaCooldown }, error: null }
 
   const nomor    = [...new Set(calon.map(p => p.nomor))]
   const kelasIds = [...new Set(calon.map(p => p.siswa.kelas_id).filter((id): id is string => !!id))]
@@ -113,5 +127,5 @@ export async function antrekanManual(db: SupabaseClient, opsi: OpsiAntrekanManua
   if (galatSisip) return { data: null, error: galatSisip }
   for (const b of baris) status[b.siswa_id] = 'mengirim'
 
-  return { data: { aktif: true, status }, error: null }
+  return { data: { aktif: true, status, sisaCooldown }, error: null }
 }

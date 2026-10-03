@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong } from '../ambilSemua'
-import { gabungPembayaran } from '../metrikLaporan'
+import { gabungPembayaran, selisihHari } from '../metrikLaporan'
 import type { KonfigPengingat } from './konfig'
 import { ringkasTunggakan, type RingkasanTunggakan, type TagihanPengingat } from './kelayakan'
 import { normalkanNomorWa } from './nomor'
@@ -138,6 +138,16 @@ export async function muatPenilaian(
 export const dalamCooldown = (p: PenilaianSiswa, sekarang: Date, konfig: KonfigPengingat): boolean => {
   const awal = awalCooldownWIB(sekarang, konfig.cooldownHari).getTime()
   return p.terkirim.some(t => t.getTime() >= awal)
+}
+
+/**
+ * Sisa hari kalender WIB sebelum siswa boleh diingatkan lagi, dihitung dari kiriman
+ * terakhir: dikirim tanggal 7 → 2 (tgl 7), 1 (tgl 8), 0 (tgl 9). Sejalan dengan dalamCooldown.
+ */
+export const sisaCooldownHari = (p: PenilaianSiswa, sekarang: Date, konfig: KonfigPengingat): number => {
+  if (p.terkirim.length === 0) return 0
+  const terakhir = new Date(Math.max(...p.terkirim.map(t => t.getTime())))
+  return Math.max(0, konfig.cooldownHari - selisihHari(terakhir, sekarang))
 }
 
 /**

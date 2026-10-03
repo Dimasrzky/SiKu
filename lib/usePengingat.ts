@@ -23,11 +23,16 @@ export interface Pengingat {
   tampilan: (siswaId: string) => TampilanTombol
   /** Masukkan pengingat ke antrean. Siswa yang tombolnya bukan "Ingatkan" dilewati. */
   ingatkan: (siswaIds: string[]) => Promise<void>
+  /** Sisa hari cooldown siswa yang `terkirim` (untuk label "H-2"/"H-1"); 0 kalau tidak diketahui */
+  sisaCooldown: (siswaId: string) => number
+  /** true selama 3 detik sesudah "Mengirim…" berganti "Terkirim" di halaman ini */
+  baruTerkirim: (siswaId: string) => boolean
 }
 
 // Spec: tampilan diperiksa ulang tiap 10–15 detik selama masih ada yang "Mengirim…"
 const SELANG_POLLING_MS   = 12_000
 const LAMA_TANDA_GAGAL_MS = 5_000
+const LAMA_TANDA_TERKIRIM_MS = 3_000
 
 const tokenSesi = async (): Promise<string | null> => {
   const { data: { session } } = await supabase.auth.getSession()
@@ -46,6 +51,8 @@ export function usePengingat(siswaIds: string[]): Pengingat {
   const [status,  setStatus]  = useState<StatusPengingat>({})
   const [diminta, setDiminta] = useState<ReadonlySet<string>>(() => new Set())
   const [gagal,   setGagal]   = useState<ReadonlySet<string>>(() => new Set())
+  const [sisa,    setSisa]    = useState<Record<string, number>>({})
+  const [baru,    setBaru]    = useState<ReadonlySet<string>>(() => new Set())
 
   // Salinan status untuk dibaca dari callback tanpa membuatnya ikut berganti tiap status berubah
   const statusRef = useRef<StatusPengingat>({})
@@ -55,10 +62,18 @@ export function usePengingat(siswaIds: string[]): Pengingat {
     return () => { hidupRef.current = false }
   }, [])
 
-  const catat = useCallback((baru: StatusPengingat) => {
+  const catat = useCallback((statusBaru: StatusPengingat, sisaBaru: Record<string, number> = {}) => {
     if (!hidupRef.current) return
-    statusRef.current = { ...statusRef.current, ...baru }
+    // "Mengirim…" yang berganti "Terkirim" selagi halaman terbuka: tanda terkirim sebentar
+    const barusan = Object.keys(statusBaru)
+      .filter(id => statusRef.current[id] === 'mengirim' && statusBaru[id] === 'terkirim')
+    statusRef.current = { ...statusRef.current, ...statusBaru }
     setStatus(statusRef.current)
+    setSisa(s => ({ ...s, ...sisaBaru }))
+    if (barusan.length > 0) {
+      setBaru(b => new Set([...b, ...barusan]))
+      setTimeout(() => { if (hidupRef.current) setBaru(b => tanpa(b, barusan)) }, LAMA_TANDA_TERKIRIM_MS)
+    }
   }, [])
 
   // Identitas array berganti tiap render, isinya jarang — efek di bawah mengikuti isinya
@@ -84,7 +99,7 @@ export function usePengingat(siswaIds: string[]): Pengingat {
         return
       }
       setAktif(hasil.data.aktif)
-      if (hasil.data.aktif) catat(hasil.data.status)
+      if (hasil.data.aktif) catat(hasil.data.status, hasil.data.sisaCooldown)
     }
     muat()
     return () => { batal = true }
@@ -103,7 +118,7 @@ export function usePengingat(siswaIds: string[]): Pengingat {
       const token = await tokenSesi()
       if (!token) return
       const hasil = await ambilStatusPengingat(ids, token)
-      if (hasil.error === null && hasil.data.aktif) catat(hasil.data.status)
+      if (hasil.error === null && hasil.data.aktif) catat(hasil.data.status, hasil.data.sisaCooldown)
     }, SELANG_POLLING_MS)
     return () => clearInterval(selang)
   }, [aktif, adaMengirim, kunci, catat])
@@ -126,7 +141,7 @@ export function usePengingat(siswaIds: string[]): Pengingat {
     }
     // Saklar sekolah dimatikan sesudah halaman dibuka: tombol kembali membuka wa.me
     if (!hasil.data.aktif) { setAktif(false); return }
-    catat(hasil.data.status)
+    catat(hasil.data.status, hasil.data.sisaCooldown)
   }, [catat])
 
   const tampilan = useCallback((siswaId: string): TampilanTombol => {
@@ -135,5 +150,8 @@ export function usePengingat(siswaIds: string[]): Pengingat {
     return status[siswaId] ?? 'memuat'
   }, [diminta, gagal, status])
 
-  return { aktif, tampilan, ingatkan }
+  const sisaCooldown = useCallback((siswaId: string) => sisa[siswaId] ?? 0, [sisa])
+  const baruTerkirim = useCallback((siswaId: string) => baru.has(siswaId), [baru])
+
+  return { aktif, tampilan, ingatkan, sisaCooldown, baruTerkirim }
 }

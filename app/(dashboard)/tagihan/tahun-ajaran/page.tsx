@@ -718,7 +718,7 @@ export default function TahunAjaranPage() {
 
         {/* ── Card Aktif ── */}
         {taData && ganjilProgress && genapProgress && (
-        <div style={{ background: '#fff', borderLeft: '30px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow: '0 0 20px rgba(26, 44, 78, 0.77)', marginBottom: '2rem' }}>
+        <div style={{ background: '#fff', borderLeft: '30px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', marginBottom: '2rem' }}>
 
           {/* Header card */}
           <div style={{ padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -846,12 +846,13 @@ export default function TahunAjaranPage() {
         )}
 
         {/* ── Card Arsip ── */}
-        <div style={{ marginTop: '1rem', marginBottom: '1.5rem', background: '#fff', borderLeft: '30px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow: '0 0 20px rgba(26, 44, 78, 0.77)'}}>
+        <div style={{ marginTop: '1rem', marginBottom: '1.5rem', background: '#fff', borderLeft: '30px solid #1A2C4E', borderRadius: 16, overflow: 'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.07)'}}>
           <div style={{ padding: '1rem 1.5rem' }}>
             <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--navy-dark)' }}>Riwayat tahun ajaran</span>
           </div>
           {arsipList.length === 0 ? (
-            <div style={{ padding: '2.5rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: 500 }}>
+            <div style={{ padding: '2.5rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: 500 }}>
+              <Image src="/icons/JamAbu.png" width={48} height={48} alt="" />
               Belum ada riwayat tahun ajaran
             </div>
           ) : (
@@ -1295,7 +1296,7 @@ export default function TahunAjaranPage() {
 const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 6 }
 const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '3px solid #BABFC7', borderRadius: 10, fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', outline: 'none', background: '#fff', boxShadow: '0 0 12px rgba(31, 86, 167, 0.437)' }
 const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
-const sBtnSecondary: React.CSSProperties = { background: '#F7DD7D', color: 'var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 2px rgba(31, 85, 167, 0.27)' }
-const sStatCard: React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow: '0 0 20px rgba(31, 85, 167, 0.52)', width: 320, flexShrink: 0, marginLeft:'1.5rem' }
+const sBtnSecondary: React.CSSProperties = { background: '#F7DD7D', color: 'var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow:'0 2px 10px #3244736e' }
+const sStatCard: React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow:'0 2px 10px #3244736e', width: 320, flexShrink: 0, marginLeft:'1.5rem' }
 const sStatLabel: React.CSSProperties = { fontSize: '1.1rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: 12, position: 'relative', bottom: 5 }
 const sStatValue: React.CSSProperties = { fontSize: '1.75rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1, position: 'relative', left: 12 }

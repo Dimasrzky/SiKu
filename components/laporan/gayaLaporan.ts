@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 // Gaya kartu laporan — dipakai bersama level Sekolah, Jenjang, dan Kelas supaya
 // ketiganya terlihat sebagai satu halaman yang sama saat berpindah level.
 
-export const sKartu:       CSSProperties = { background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow: '0 0 18px #5a88b8cf', minWidth: 0 }
+export const sKartu:       CSSProperties = { background: '#ffffff', borderRadius: 12, padding: '1.1rem', boxShadow:'0 2px 10px #3244736e', minWidth: 0 }
 export const sKepalaKartu: CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }
 export const sJudulKartu:  CSSProperties = { fontSize: '1rem', fontWeight: 600, color: '#101010' }
 export const sIkonKartu:   CSSProperties = { width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }

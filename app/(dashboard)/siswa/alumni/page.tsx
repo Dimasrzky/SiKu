@@ -324,7 +324,7 @@ export default function AlumniPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem' }}>
 
           {/* Total alumni + donut */}
-          <div style={{ background: '#fff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #b5b5b5' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #3244736e' }}>
             <div style={{ fontSize: '1rem', fontWeight: 500, color: '#64748B', marginBottom: '0.75rem' }}>Total alumni</div>
             {totalAlumni === 0 ? (
               <div style={{ padding: '1.5rem 0', textAlign: 'center', color: '#94A3B8', fontSize: '0.8rem' }}>Belum ada alumni</div>
@@ -356,7 +356,7 @@ export default function AlumniPage() {
           </div>
 
           {/* Angkatan terbaru */}
-          <div style={{ background: '#fff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #b5b5b5' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: '1rem 1.1rem', boxShadow:'0 2px 10px #3244736e' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <div style={{ fontSize: '1rem', fontWeight: 500, color: '#64748B' }}>Angkatan terbaru</div>
               <Users size={15} color="#94A3B8" />
@@ -441,7 +441,7 @@ export default function AlumniPage() {
               placeholder="Cari nama siswa..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ padding: '0.45rem 0.75rem 0.45rem 2rem', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: '0.82rem', color: '#0F172A', outline: 'none', fontFamily: 'inherit', width: 210, background: '#FAFBFF' }}
+              style={{ padding: '0.45rem 0.75rem 0.45rem 2rem', border: '2px solid #d0d0d0', borderRadius: 8, fontSize: '0.82rem', color: '#0F172A', outline: 'none', fontFamily: 'inherit', width: 400, background: '#ffffff' }}
             />
           </div>
         </div>

@@ -14,7 +14,6 @@ import {
   LogOut,
   RotateCcw,
   ChevronDown,
-  Bell,
   Calendar,
   FileCheck,
   Layers,
@@ -698,7 +697,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           )}
 
-          {/* ── Notifikasi ── */}
+          {/* ── Notifikasi ── 
           <div className="sidebar-notification-wrap">
             <button className="sidebar-notification">
               <span className="sidebar-notif-icon-wrap">
@@ -707,7 +706,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span>Notifikasi</span>
               <span className="sidebar-notif-dot" />
             </button>
-          </div>
+          </div>*/}
 
         </nav>
 

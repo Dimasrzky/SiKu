@@ -3,6 +3,7 @@
 import React from 'react'
 
 interface ChartCardProps {
+  /** Tidak tampil di layar — dipakai sebagai label aksesibilitas kartu */
   title: string
   subtitle?: string
   action?: React.ReactNode
@@ -12,42 +13,33 @@ interface ChartCardProps {
 
 export function ChartCard({ title, subtitle, action, children, style }: ChartCardProps) {
   return (
-    <div style={{
+    <section aria-label={title} style={{
       background: '#fff',
       borderRadius: 12,
-      overflow: 'hidden',
       boxShadow: '0 4px 8px rgba(92, 135, 184, 0.15)',
       marginBottom: '0.5rem',
+      padding: '1.25rem',
       display: 'flex',
       flexDirection: 'column',
+      fontFamily: 'var(--font-dm-sans), sans-serif',
       ...style,
     }}>
-      {/* Header — beradius via overflow:hidden parent */}
-      <div style={{
-        background: '#A3CDFE',
-        padding: '0.65rem 1rem',
-        borderRadius: '0 10px 10px 0',
-        maxWidth: '60%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        boxShadow: '0 3px 4px rgba(92, 135, 184, 0.67)',
-      }}>
-        <span style={{ fontSize: '1rem', fontWeight: 700, color: '#1A2C4E' }}>
-          {title}
-        </span>
-        {action}
-      </div>
-
-      {/* Body */}
-      <div style={{ padding: '0.5rem 1.25rem 1.1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {subtitle && (
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+      {/* Header — keterangan di kiri, aksi/periode di kanan */}
+      {(subtitle || action) && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          marginBottom: '0.75rem',
+        }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
             {subtitle}
-          </div>
-        )}
-        {children}
-      </div>
-    </div>
+          </span>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
   )
 }

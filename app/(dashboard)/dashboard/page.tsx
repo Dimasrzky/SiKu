@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Users, Calendar, Download,
-  Clock, AlertTriangle, CheckCircle2, ChevronRight,
-  Banknote, Gift, BookOpen, TrendingUp, TrendingDown,
+  Clock, AlertTriangle, ChevronRight, ArrowRight,
+  Gift, BookOpen, TrendingUp, TrendingDown,
   ClipboardCheck, Search,
 } from 'lucide-react'
 import Image from 'next/image'
@@ -12,12 +12,14 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { ambilSemua } from '@/lib/ambilSemua'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
-import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
+import { lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { pesanPenahanTerbit, statusPenerbitan } from '@/lib/statusPenerbitan'
 import { sisaTagihan, tunggakanSebelum } from '@/lib/tagihanTertagih'
 import { usePengingat } from '@/lib/usePengingat'
+import { usePengingatManual } from '@/lib/usePengingatManual'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
+import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
 import { SetupChecklist } from '@/components/SetupChecklist'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
@@ -31,7 +33,11 @@ const BULAN_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ]
 const BULAN_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
-const KOMPOSISI_COLORS = ['#1A2C4E', '#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EF4444', '#8B5CF6']
+const KOMPOSISI_COLORS = ['#7F7FE3', '#69C183', '#2E6B5C', '#1A2C4E', '#A3CDFE', '#BB8848']
+const WARNA_TERKUMPUL  = '#69C183'
+const WARNA_TUNGGAKAN  = '#DE6666'
+/** Warna bar kelas peringkat 1, 2, 3 di kartu "% siswa lunas bulan ini" */
+const WARNA_KELAS_TERATAS = ['#69C183', '#7F7FE3', '#BB8848']
 
 const JENJANG_MAP: Record<string, string[]> = {
   'TK/PAUD': ['A', 'B', 'C'],
@@ -185,13 +191,13 @@ function BarChart({ data }: { data: TrenItem[] }) {
   if (!data.length) return null
   const max    = Math.max(...data.map(d => Math.max(d.terkumpul, d.tunggakan)), 1)
   const bW     = 60
-  const bGap   = 6
-  const gGap   = 20
+  const bGap   = 10
+  const gGap   = 80
   const gW     = bW * 2 + bGap
-  const cH     = 600
+  const cH     = 320
   const padX   = 12
   const chartW = padX * 2 + data.length * gW + (data.length - 1) * gGap
-  const chartH = cH + 34
+  const chartH = cH + 74
   // Pita per bulan = kelompok dua batang + separuh celah di kiri-kanannya, jadi saat
   // kursor bergeser antarbulan tidak ada titik mati tanpa tooltip
   const pitaX  = (i: number) => padX + i * (gW + gGap) - gGap / 2
@@ -201,7 +207,12 @@ function BarChart({ data }: { data: TrenItem[] }) {
 
   return (
     <div style={{ position: 'relative' }} onMouseLeave={() => setAktif(null)}>
-      <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block', marginBottom: 16 }}>
+      <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', display: 'block', marginBottom: 24 }}>
+        <defs>
+          <filter id="bayangan-batang" x="-40%" y="-10%" width="180%" height="140%">
+            <feDropShadow dx="0" dy="10" stdDeviation="8" floodColor="#1A2C4E" floodOpacity="0.2" />
+          </filter>
+        </defs>
         {aktif !== null && (
           <rect x={pitaX(aktif)} y={0} width={pitaW} height={cH} fill="#F1F5F9" />
         )}
@@ -211,9 +222,9 @@ function BarChart({ data }: { data: TrenItem[] }) {
           const h2 = (d.tunggakan / max) * cH
           return (
             <g key={d.short}>
-              <rect x={x}             y={cH - h1} width={bW} height={Math.max(h1, 2)} rx={5} fill="#10B981" opacity={0.85} />
-              <rect x={x + bW + bGap} y={cH - h2} width={bW} height={Math.max(h2, 2)} rx={5} fill="#EF4444" opacity={0.75} />
-              <text x={x + bW}        y={cH + 28} textAnchor="middle" fontSize={20} fontWeight="semi-bold" fill="#3c3f45">{d.short}</text>
+              <rect x={x}             y={cH - h1} width={bW} height={Math.max(h1, 3)} rx={8} fill={WARNA_TERKUMPUL} filter="url(#bayangan-batang)" />
+              <rect x={x + bW + bGap} y={cH - h2} width={bW} height={Math.max(h2, 3)} rx={8} fill={WARNA_TUNGGAKAN} filter="url(#bayangan-batang)" />
+              <text x={x + bW + bGap / 2} y={cH + 60} textAnchor="middle" fontSize={38} fontWeight={500} fill="#3c3f45">{d.short}</text>
             </g>
           )
         })}
@@ -241,8 +252,8 @@ function BarChart({ data }: { data: TrenItem[] }) {
             {titikAktif.bulanTahun}{titikAktif.berjalan ? ' · bulan berjalan' : ''}
           </div>
           {[
-            { warna: '#10B981', nilai: titikAktif.terkumpul, label: 'terkumpul' },
-            { warna: '#EF4444', nilai: titikAktif.tunggakan, label: 'tunggakan' },
+            { warna: WARNA_TERKUMPUL, nilai: titikAktif.terkumpul, label: 'terkumpul' },
+            { warna: WARNA_TUNGGAKAN, nilai: titikAktif.tunggakan, label: 'tunggakan' },
           ].map(r => (
             <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
               <span style={{ width: 12, height: 2, borderRadius: 1, background: r.warna, flexShrink: 0 }} />
@@ -259,13 +270,16 @@ function BarChart({ data }: { data: TrenItem[] }) {
 // ── SVG: Donut Chart ──────────────────────────────────────────────────────────
 
 function DonutChart({ items, total }: { items: KomposisiItem[]; total: number }) {
-  const R  = 42
+  const R  = 48
   const CX = 58
   const CY = 58
   const C  = 2 * Math.PI * R
 
   const totalLabel =
     total >= 1_000_000 ? (total / 1_000_000).toFixed(2).replace('.', ',') : total.toLocaleString('id-ID')
+  const totalUnit  = total >= 1_000_000 ? 'juta' : 'rupiah'
+  // Celah putih antarsegmen; satu segmen saja dibiarkan utuh melingkar
+  const celah      = items.length > 1 ? 2 : 0
 
   type Seg = { i: number; dash: number; offset: number }
 
@@ -280,23 +294,26 @@ function DonutChart({ items, total }: { items: KomposisiItem[]; total: number })
   ).list
 
   return (
-    <svg viewBox="0 0 116 116" style={{ width: 116, height: 116, flexShrink: 0 }}>
-      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={17} />
-      {segments.map(({ i, dash, offset }) => (
-        <circle
-          key={i}
-          cx={CX} cy={CY} r={R}
-          fill="none"
-          stroke={KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length]}
-          strokeWidth={17}
-          strokeDasharray={`${dash} ${C - dash}`}
-          strokeDashoffset={offset}
-        />
-      ))}
-      <text x={CX} y={CY - 3} textAnchor="middle" fontSize={11} fontWeight="800" fill="#0F172A">
+    <svg viewBox="0 0 116 116" style={{ width: '40%', maxWidth: 190, height: 'auto', flexShrink: 0 }}>
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={16} />
+      {segments.map(({ i, dash, offset }) => {
+        const garis = Math.max(dash - celah, 0)
+        return (
+          <circle
+            key={i}
+            cx={CX} cy={CY} r={R}
+            fill="none"
+            stroke={KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length]}
+            strokeWidth={16}
+            strokeDasharray={`${garis} ${C - garis}`}
+            strokeDashoffset={offset}
+          />
+        )
+      })}
+      <text x={CX} y={CY - 1} textAnchor="middle" fontSize={16} fontWeight={700} fill="#1A2C4E">
         {totalLabel}
       </text>
-      <text x={CX} y={CY + 11} textAnchor="middle" fontSize={8} fill="#6B7280">juta</text>
+      <text x={CX} y={CY + 15} textAnchor="middle" fontSize={14} fontWeight={700} fill="#1A2C4E">{totalUnit}</text>
     </svg>
   )
 }
@@ -537,11 +554,15 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     if (t.status === 'lunas') e.lunas++
     kelasAggMap.set(kelas.id, e)
   }
+  // Peringkat menurut % siswa lunas; persentase sama → kelas dengan lebih banyak siswa lunas di atas
   const perKelas: KelasItem[] = Array.from(kelasAggMap.values())
-    .sort((a, b) => (b.total > 0 ? b.lunas / b.total : 0) - (a.total > 0 ? a.lunas / a.total : 0))
+    .sort((a, b) =>
+      ((b.total > 0 ? b.lunas / b.total : 0) - (a.total > 0 ? a.lunas / a.total : 0)) || b.lunas - a.lunas)
     .slice(0, 5)
 
   // ── Insights ───────────────────────────────────────────────────────────────
+  // Dashboard hanya menampilkan insight PERTAMA tiap level (merah/amber/hijau), jadi
+  // urutan push di bawah sekaligus urutan prioritasnya.
   const insights: Insight[] = []
   const pctIni    = totalSiswaRef > 0 ? (lunasRef / totalSiswaRef) * 100 : 0
   const bulanNama = BULAN_NAMES[now.getMonth()]
@@ -561,13 +582,14 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     })
   }
 
-  const kelasRendah = perKelas.filter(k => k.total > 0 && k.lunas / k.total < 0.5)
-  if (kelasRendah.length > 0) insights.push({
-    id: 'kelas-rendah', level: 'merah',
-    judul: 'Kelas bayar rendah',
-    desc: `${kelasRendah.length} kelas memiliki tingkat pembayaran di bawah 50%.`,
-    sub: kelasRendah.map(k => k.nama).join(' • '),
-    actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
+  // Tujuan "Kirim Pengingat" sama dengan tautan "Ingatkan sekarang" di kartu tunggakan:
+  // daftar Tagihan Aktif yang sudah tersaring, tempat tombol Ingatkan per siswa berada
+  if (siswaMenunggak > 0) insights.push({
+    id: 'tunggakan-lama', level: 'merah',
+    judul: 'Tunggakan kritis',
+    desc: `${tunggakanRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
+    sub: `${siswaMenunggak} siswa berstatus menunggak.`,
+    actionLabel: 'Kirim Pengingat', actionHref: '/tagihan/aktif?status=menunggak',
   })
 
   const sisa = daysLeftInMonth()
@@ -576,15 +598,16 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     judul: 'Akhir bulan kritis',
     desc: `Sisa ${sisa} hari, tingkat pembayaran baru ${Math.round(pctIni)}%.`,
     sub: 'Kirim pengingat massal ke siswa yang belum membayar.',
-    actionLabel: 'Kirim Pengingat',
+    actionLabel: 'Kirim Pengingat', actionHref: '/tagihan/aktif?status=belum_bayar',
   })
 
-  if (siswaMenunggak > 0) insights.push({
-    id: 'tunggakan-lama', level: 'merah',
-    judul: 'Tunggakan kritis',
-    desc: `${tunggakanRows.length} tagihan sudah lewat jatuh tempo dan belum lunas.`,
-    sub: `${siswaMenunggak} siswa berstatus menunggak.`,
-    actionLabel: 'Kirim Pengingat',
+  const kelasRendah = perKelas.filter(k => k.total > 0 && k.lunas / k.total < 0.5)
+  if (kelasRendah.length > 0) insights.push({
+    id: 'kelas-rendah', level: 'merah',
+    judul: 'Kelas bayar rendah',
+    desc: `${kelasRendah.length} kelas memiliki tingkat pembayaran di bawah 50%.`,
+    sub: kelasRendah.map(k => k.nama).join(' • '),
+    actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
   })
 
   if (penerimaBeasiswa > 0) insights.push({
@@ -690,90 +713,113 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
 
 // ── Insight Card ──────────────────────────────────────────────────────────────
 
-const INSIGHT_STYLE: Record<string, { border: string; bg: string; iconColor: string; badgeBg: string; badgeColor: string; label: string }> = {
-  merah: { border: '#FCA5A5', bg: '#FFF5F5', iconColor: '#DC2626', badgeBg: '#FEE2E2', badgeColor: '#DC2626', label: 'Perlu Diperhatian' },
-  amber: { border: '#FCD34D', bg: '#FFFBEB', iconColor: '#D97706', badgeBg: '#FEF3C7', badgeColor: '#D97706', label: 'Pengingat' },
-  hijau: { border: '#6EE7B7', bg: '#F0FDF4', iconColor: '#059669', badgeBg: '#D1FAE5', badgeColor: '#059669', label: 'Kabar Baik' },
+// Label & warna tiap kategori — tanda di sisi kiri, label, dan tombolnya memakai warna yang sama
+const INSIGHT_KATEGORI: Record<Insight['level'], { label: string; warna: string }> = {
+  merah: { label: 'Perlu Diperhatikan', warna: '#DE6666' },
+  amber: { label: 'Pengingat',          warna: '#BB8848' },
+  hijau: { label: 'Kabar Baik',         warna: '#69C183' },
 }
 
-function InsightCard({ insight }: { insight: Insight }) {
-  const st = INSIGHT_STYLE[insight.level]
-  const Icon = insight.level === 'merah' ? AlertTriangle : insight.level === 'amber' ? Clock : CheckCircle2
+/** Satu baris di kartu Insight. `pemisah` = garis di atas baris (semua kecuali baris pertama). */
+function InsightBaris({ insight, pemisah }: { insight: Insight; pemisah: boolean }) {
+  const { label, warna } = INSIGHT_KATEGORI[insight.level]
   return (
-    <div style={{
-      background: st.bg,
-      border: `1px solid ${st.border}`,
-      borderRadius: 12,
-      padding: '1rem 1.25rem',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1rem',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
+    <article aria-label={`${label}: ${insight.judul}`} style={{ display: 'flex' }}>
+      {/* Tanda kategori — sudutnya ikut melengkung lewat overflow:hidden kartu */}
+      <div style={{ width: 12, flexShrink: 0, background: warna }} />
+
       <div style={{
-        width: 36, height: 36, borderRadius: '50%',
-        background: st.badgeBg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
+        flex: 1, minWidth: 0,
+        display: 'flex', alignItems: 'center', gap: '1rem',
+        padding: '0.45rem 1.4rem 0.6rem 0.65rem',
+        borderTop: pemisah ? '2px solid #E7E9EC' : undefined,
       }}>
-        <Icon size={18} color={st.iconColor} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: st.iconColor, marginBottom: 2 }}>{insight.judul}</div>
-        <div style={{ fontSize: '0.82rem', color: '#374151', lineHeight: 1.4 }}>{insight.desc}</div>
-        {insight.sub && (
-          <div style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: 2 }}>{insight.sub}</div>
-        )}
-      </div>
-      {insight.actionLabel && (
-        insight.actionHref ? (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '1rem', fontWeight: 600, color: warna, lineHeight: 1.35 }}>{label}</div>
+          <div style={{ fontSize: '1rem', fontWeight: 500, color: '#1A2C4E', lineHeight: 1.4 }}>{insight.desc}</div>
+          {insight.sub && (
+            <div style={{ fontSize: '0.78rem', color: '#6F788A', lineHeight: 1.4 }}>{insight.sub}</div>
+          )}
+        </div>
+
+        {insight.actionLabel && insight.actionHref && (
           <Link href={insight.actionHref} style={{
-            background: st.iconColor, color: '#fff',
-            border: 'none', borderRadius: 8, padding: '0.45rem 1rem',
-            fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
-            textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: warna, color: '#fff', borderRadius: 8,
+            padding: '0.35rem 0.7rem',
+            fontSize: '0.8rem', fontWeight: 500, textDecoration: 'none',
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 3px 5px rgba(26, 44, 78, 0.25)',
             flexShrink: 0, whiteSpace: 'nowrap',
           }}>
-            {insight.actionLabel} <ChevronRight size={13} />
+            {insight.actionLabel} <ArrowRight size={12} />
           </Link>
-        ) : (
-          <button style={{
-            background: st.iconColor, color: '#fff',
-            border: 'none', borderRadius: 8, padding: '0.45rem 1rem',
-            fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
-            fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap',
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-          }}>
-            {insight.actionLabel} <ChevronRight size={13} />
-          </button>
-        )
-      )}
-    </div>
+        )}
+      </div>
+    </article>
   )
 }
 
-// ── Status Badge Siswa ────────────────────────────────────────────────────────
+// ── Badge tabel siswa ─────────────────────────────────────────────────────────
 
-// Empat status inti mengikuti palet bersama di lib/statusTagihan agar seragam dengan
-// halaman tagihan aktif dan laporan. Dua status sisanya khusus dashboard.
-const STATUS_BADGE_MAP: Record<string, { bg: string; color: string; label: string }> = {
-  lunas:               { ...STATUS_TAGIHAN.lunas },
-  cicilan:             { ...STATUS_TAGIHAN.cicilan },
-  belum_bayar:         { ...STATUS_TAGIHAN.belum_bayar },
-  tunggakan:           { ...STATUS_TAGIHAN.menunggak, label: 'Tunggakan' },
-  menunggu_verifikasi: { bg: '#EDE9FE', color: '#6D28D9', label: 'Menunggu Verifikasi' },
+const BAYANGAN_BADGE = '0 3px 4px rgba(0, 0, 0, 0.25)'
+
+// Rupa badge status mengikuti mockup dashboard (isi penuh, teks putih). Sengaja berbeda
+// dari palet lembut lib/statusTagihan yang masih dipakai Tagihan Aktif dan Laporan.
+// Cicilan dan Menunggu Verifikasi tidak ada di mockup — warnanya diambil dari palet dashboard.
+const STATUS_BADGE_MAP: Record<string, { bg: string; label: string }> = {
+  lunas:               { bg: '#69C183', label: 'Lunas' },
+  cicilan:             { bg: '#5B8DD6', label: 'Cicilan' },
+  belum_bayar:         { bg: '#BB8848', label: 'Belum Bayar' },
+  tunggakan:           { bg: '#E27979', label: 'Tunggakan' },
+  menunggu_verifikasi: { bg: '#7F7FE3', label: 'Menunggu Verifikasi' },
 }
 
 function StatusBadgeSiswa({ status }: { status: string }) {
   const s = STATUS_BADGE_MAP[status] ?? STATUS_BADGE_MAP.belum_bayar
   return (
-    <span style={{ background: s.bg, color: s.color, borderRadius: 20, padding: '0.3rem 0.85rem', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+    <span style={{
+      display: 'inline-block', background: s.bg, color: '#fff',
+      borderRadius: 6, padding: '0.3rem 0.95rem',
+      fontSize: '0.875rem', fontWeight: 500, lineHeight: 1.25, whiteSpace: 'nowrap',
+      boxShadow: BAYANGAN_BADGE,
+    }}>
       {s.label}
     </span>
   )
 }
 
+/** Campur warna hex dengan putih atau hitam; `porsi` = bagian warna asli (0–1). null kalau bukan hex. */
+function campurWarna(hex: string, dengan: 'putih' | 'hitam', porsi: number): string | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const h = m[1].length === 3 ? m[1].replace(/./g, c => c + c) : m[1]
+  const n = parseInt(h, 16)
+  const latar = dengan === 'putih' ? 255 : 0
+  return '#' + [n >> 16, (n >> 8) & 255, n & 255]
+    .map(c => Math.round(c * porsi + latar * (1 - porsi)).toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * Badge kelas seperti mockup: isi pastel, garis tipis, dan teks yang lebih gelap — ketiganya
+ * diturunkan dari warna kelas (kelas.warna), jadi kelas berwarna apa pun tetap terbaca.
+ */
+function BadgeKelas({ nama, warna }: { nama: string; warna: string }) {
+  const isi   = campurWarna(warna, 'putih', 0.5)
+  const garis = campurWarna(warna, 'putih', 0.6)
+  const teks  = campurWarna(warna, 'hitam', 0.75)
+  return (
+    <span style={{
+      display: 'inline-block', minWidth: 52, textAlign: 'center',
+      background: isi ?? '#E5E7EB', border: `1px solid ${garis ?? '#D1D5DB'}`, color: teks ?? '#1A2C4E',
+      borderRadius: 6, padding: '0.25rem 0.6rem',
+      fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.25, whiteSpace: 'nowrap',
+      boxShadow: BAYANGAN_BADGE,
+    }}>
+      {nama}
+    </span>
+  )
+}
 function buildPaginationPages(current: number, total: number): (number | '...')[] {
   if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1)
   const set = new Set<number>([1, 2])
@@ -1142,6 +1188,8 @@ export default function DashboardPage() {
       .filter(s => s.no_wa && s.status !== 'lunas' && !s.has_verifikasi_menunggu)
       .map(s => s.id),
   )
+  // Cooldown tombol wa.me (sekolah tanpa antrean), dicatat di browser ini
+  const pengingatManual = usePengingatManual(now)
 
   if (hasSiswa === null) {
     return (
@@ -1178,9 +1226,15 @@ export default function DashboardPage() {
   const diffTerkumpul  = d ? d.terkumpulIni - d.terkumpulLalu : 0
   const diffBelumBayar = d ? d.belumBayarNominal - d.belumBayarLalu : 0
 
-  const merahInsights  = d?.insights.filter(i => i.level === 'merah') ?? []
-  const amberInsights  = d?.insights.filter(i => i.level === 'amber') ?? []
-  const hijauInsights  = d?.insights.filter(i => i.level === 'hijau') ?? []
+  // Satu insight per kategori, urut Perlu Diperhatikan → Pengingat → Kabar Baik. Yang
+  // diambil adalah yang pertama di-push loadDashData (urutan push = prioritas).
+  const insightTampil  = (['merah', 'amber', 'hijau'] as const)
+    .map(level => d?.insights.find(i => i.level === level))
+    .filter((i): i is Insight => i !== undefined)
+
+  // Kartu "% siswa lunas bulan ini" hanya menampilkan 3 kelas teratas yang sudah punya
+  // siswa lunas; perKelas sudah urut dari persentase lunas tertinggi
+  const kelasTeratas   = d?.perKelas.filter(k => k.lunas > 0).slice(0, 3) ?? []
 
   const loading = !d
 
@@ -1208,6 +1262,8 @@ export default function DashboardPage() {
     })
 
     window.open(buildWaMeLink(s.no_wa, content), '_blank', 'noopener,noreferrer')
+    // Dicatat saat klik: ikon Terkirim tampil 3 detik, sesudahnya tombol menjadi "H-2"
+    pengingatManual.catat(s.id)
     setWaSentSuccess(prev => new Set(prev).add(s.id))
     setTimeout(() => setWaSentSuccess(prev => { const next = new Set(prev); next.delete(s.id); return next }), 3000)
   }
@@ -1384,7 +1440,7 @@ export default function DashboardPage() {
           <AlertTriangle
             size={130}
             className="watermark-float"
-            style={{ position: 'absolute', right: 400, top: '50%', color: '#e16060', pointerEvents: 'none' }}
+            style={{ position: 'absolute', right: 400, top: '50%', color: '#ef93936c', pointerEvents: 'none' }}
           />
 
           {/* Left */}
@@ -1554,7 +1610,7 @@ export default function DashboardPage() {
           value={sk(rpCompact(d?.totalBeasiswaNom ?? 0))}
           valueColor="#BB8848"
           info={d && d.penerimaBeasiswa > 0
-            ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#BB8848' }}>
+            ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#BB8848'}}>
                 <Gift size={11} />
                 {d.penerimaBeasiswa} penerima aktif
               </div>
@@ -1568,46 +1624,48 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 5. Row 3: Chart cards ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: 'minmax(300px, auto)', gap: '1rem', marginBottom: '1rem' }}>
 
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-          <Link href="/laporan" style={{
-            position: 'absolute', top: '0.6rem', right: '1rem', zIndex: 1,
-            fontSize: '0.8rem', fontWeight: 600, color: '#1A2C4E',
-            textDecoration: 'none', opacity: 0.65,
-          }}>
-            Laporan →
-          </Link>
-          <ChartCard title="Tren Tagihan Bulanan" subtitle="6 bulan terakhir" style={{ flex: 1 }}>
-            <div style={{ marginTop: 'auto' }}>
-              {d?.trenData.length ? <BarChart data={d.trenData} /> : (
-                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '1rem' }}>Belum ada data</div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10B981', flexShrink: 0 }} /> Terkumpul
+        <ChartCard
+          title="Tren Tagihan Bulanan"
+          subtitle="6 bulan terakhir"
+          action={
+            <Link href="/laporan" style={{ fontSize: '0.9rem', fontWeight: 500, color: '#1A2C4E', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              Laporan →
+            </Link>
+          }
+        >
+          <div style={{ marginTop: 'auto' }}>
+            {d?.trenData.length ? <BarChart data={d.trenData} /> : (
+              <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data</div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '3rem' }}>
+            {[
+              { warna: WARNA_TERKUMPUL, label: 'Terkumpul' },
+              { warna: WARNA_TUNGGAKAN, label: 'Tunggakan' },
+            ].map(l => (
+              <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.95rem', color: '#3c3f45' }}>
+                <span style={{ width: 16, height: 16, borderRadius: 4, background: l.warna, flexShrink: 0 }} /> {l.label}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#EF4444', flexShrink: 0 }} /> Tunggakan
-              </div>
-            </div>
-          </ChartCard>
-        </div>
+            ))}
+          </div>
+        </ChartCard>
 
         <ChartCard
           title="Komposisi Pemasukan"
-          subtitle={`Per komponen tagihan · ${mName}`}
+          subtitle="Per komponen tagihan"
+          action={<span style={{ fontSize: '0.9rem', fontWeight: 500, color: '#1A2C4E' }}>{mName}</span>}
         >
           {d?.komposisi.length ? (
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
               <DonutChart items={d.komposisi} total={d.terkumpulIni} />
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {d.komposisi.map((item, i) => (
-                  <div key={item.nama} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length], flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nama}</span>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--navy-dark)', flexShrink: 0 }}>{item.persen}%</span>
+                  <div key={item.nama} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length], flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nama}</span>
+                    <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1A2C4E', flexShrink: 0 }}>{item.persen}%</span>
                   </div>
                 ))}
               </div>
@@ -1620,50 +1678,46 @@ export default function DashboardPage() {
         <ChartCard
           title="Pembayaran per Kelas"
           subtitle="% siswa lunas bulan ini"
-          style={{ minHeight: 320 }}
         >
-          {d?.perKelas.length ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {d.perKelas.map((kelas, i) => {
+          {kelasTeratas.length ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.6rem' }}>
+              {kelasTeratas.map((kelas, i) => {
                 const pct = kelas.total > 0 ? Math.round((kelas.lunas / kelas.total) * 100) : 0
-                const colors = ['#10B981', '#6366F1', '#F59E0B', '#3B82F6', '#EF4444']
                 return (
                   <div key={kelas.nama}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--navy-dark)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 500, color: '#1A2C4E' }}>
                         {kelas.nama.startsWith('Kelas') ? kelas.nama : `Kelas ${kelas.nama}`}
                       </span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{kelas.total} siswa</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{kelas.total} siswa</span>
                     </div>
-                    <div style={{ background: '#E5E7EB', borderRadius: 4, height: 7, overflow: 'hidden' }}>
-                      <div style={{ background: colors[i % colors.length], height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.6s ease' }} />
+                    <div style={{ position: 'relative', background: '#DCDFE4', borderRadius: 999, height: 18, overflow: 'hidden' }}>
+                      <div style={{ background: WARNA_KELAS_TERATAS[i], height: '100%', width: `${pct}%`, borderRadius: 999, transition: 'width 0.6s ease' }} />
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 8, fontSize: '0.65rem', fontWeight: 500, color: '#1A2C4E' }}>
+                        {pct}%
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>{pct}%</div>
                   </div>
                 )
               })}
             </div>
           ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>Belum ada data kelas</div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+              {d ? 'Belum ada siswa yang lunas bulan ini' : '—'}
+            </div>
           )}
         </ChartCard>
       </div>
 
       {/* ── 6. Insights ─────────────────────────────────────────────────────── */}
-      {(merahInsights.length > 0 || amberInsights.length > 0 || hijauInsights.length > 0) && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '1.25rem', position: 'relative', overflow: 'hidden' }}>
-
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy-dark)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Banknote size={15} color="var(--navy)" />
-            Insight &amp; Notifikasi
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {merahInsights.map(ins => <InsightCard key={ins.id} insight={ins} />)}
-            {amberInsights.map(ins => <InsightCard key={ins.id} insight={ins} />)}
-            {hijauInsights.map(ins => <InsightCard key={ins.id} insight={ins} />)}
-          </div>
-        </div>
+      {insightTampil.length > 0 && (
+        <section aria-label="Insight & Notifikasi" style={{
+          background: '#fff', borderRadius: 12, overflow: 'hidden',
+          boxShadow: '0 2px 16px 2px rgba(45, 91, 145, 0.75)',
+          fontFamily: 'var(--font-dm-sans), sans-serif',
+        }}>
+          {insightTampil.map((ins, i) => <InsightBaris key={ins.id} insight={ins} pemisah={i > 0} />)}
+        </section>
       )}
 
       {/* ── 7. Tabel Status Pembayaran Siswa ────────────────────────────────── */}
@@ -1685,12 +1739,13 @@ export default function DashboardPage() {
                   key={tab.key}
                   onClick={() => { setTabAktif(tab.key); setHalamanTabel(1) }}
                   style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
+                    background: 'none', cursor: 'pointer',
                     padding: '0.5rem 0.9rem',
                     fontSize: '1rem', fontWeight: active ? 700 : 600,
                     color: active ? '#1A2C4E' : '#1A2C4E',
                     fontFamily: 'inherit',
-                    borderBottom: active ? '2.5px solid #1A2C4E' : '2.5px solid transparent',
+                    border: active ? '2px solid #1A2C4E' : '2px solid transparent',
+                    borderRadius: 10,
                   }}
                 >
                   {tab.label}
@@ -1698,7 +1753,7 @@ export default function DashboardPage() {
               )
             })}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#ffffff', border: '3px solid #BABFC7', borderRadius: 14, padding: '0.45rem 0.85rem', minWidth: 260, fontWeight: 500, color: '#6F788A' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#ffffff', border: '2px solid #BABFC7', borderRadius: 10, padding: '0.45rem 0.85rem', minWidth: 400, fontWeight: 500, color: '#6F788A' }}>
             <Search size={18} color="#94A3B8" />
             <input
               type="text"
@@ -1744,6 +1799,8 @@ export default function DashboardPage() {
                 const effStatus = siswa.has_verifikasi_menunggu
                   ? 'menunggu_verifikasi'
                   : (siswa.lewat_tempo && siswa.status === 'belum_bayar') ? 'tunggakan' : siswa.status
+                // Sesudah pengingat terkirim: ikon Terkirim 3 detik, lalu hitung mundur "H-n"
+                const tanda = tandaKirim(pengingat, pengingatManual, siswa.id, waSentSuccess.has(siswa.id))
                 return (
                   <tr key={siswa.id} /* style={{ borderBottom: '1px solid #F1F5F9' }} */>
                     <td style={{ padding: '0.875rem 1.25rem', textAlign: 'center', fontSize: '0.85rem', color: '#6B7280' }}>
@@ -1756,18 +1813,7 @@ export default function DashboardPage() {
                       {siswa.nama}
                     </td>
                     <td style={{ padding: '0.875rem 1.25rem' }}>
-                      {siswa.kelas ? (
-                        <span style={{
-                          background: `${siswa.kelas.warna}22`,
-                          color: siswa.kelas.warna,
-                          border: `1.5px solid ${siswa.kelas.warna}`,
-                          borderRadius: 8,
-                          padding: '0.25rem 0.6rem',
-                          fontSize: '0.78rem', fontWeight: 700,
-                        }}>
-                          {siswa.kelas.nama}
-                        </span>
-                      ) : '-'}
+                      {siswa.kelas ? <BadgeKelas nama={siswa.kelas.nama} warna={siswa.kelas.warna} /> : '-'}
                     </td>
                     <td style={{ padding: '0.875rem 1.25rem', fontSize: '0.85rem', color: '#1A2C4E', fontWeight: 500 }}>
                       {rpFull(siswa.tagihan_bulan_ini)}
@@ -1783,7 +1829,12 @@ export default function DashboardPage() {
                           <Clock size={16} /> Diproses
                         </span>
                       ) : siswa.no_wa ? (
-                        pengingat.aktif ? (
+                        tanda !== null ? (
+                          // Tinggi wadah = tinggi tombol, supaya baris tidak melompat
+                          <div style={{ display: 'flex', alignItems: 'center', minHeight: 39 }}>
+                            <TandaTerkirim tanda={tanda} />
+                          </div>
+                        ) : pengingat.aktif ? (
                           <TombolIngatkan varian="penuh" tampilan={pengingat.tampilan(siswa.id)}
                             onKlik={() => pengingat.ingatkan([siswa.id])} />
                         ) : (
@@ -1794,13 +1845,13 @@ export default function DashboardPage() {
                             disabled={pengingat.aktif === null}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 6,
-                              background: waSentSuccess.has(siswa.id) ? '#16A34A' : '#22C55E', color: '#fff',
+                              background: '#22C55E', color: '#fff',
                               border: 'none', borderRadius: 10, padding: '0.45rem 0.85rem',
                               fontSize: '0.8rem', fontWeight: 700, cursor: pengingat.aktif === null ? 'progress' : 'pointer',
                               fontFamily: 'inherit',
                             }}>
                             <Image src="/icons/IconWA.png" width={25} height={25} alt="WhatsApp" />
-                            {waSentSuccess.has(siswa.id) ? 'Terkirim!' : 'Ingatkan'}
+                            Ingatkan
                           </button>
                         )
                       ) : (

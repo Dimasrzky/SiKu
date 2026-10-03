@@ -489,7 +489,7 @@ export default function KelasPage() {
           {!showViewAdd && (
             <button
               onClick={() => openViewAdd()}
-              style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.7rem 1.4rem', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 5px 2px rgba(18,47,102,0.31)', whiteSpace: 'nowrap' }}
+              style={{ background: '#1A2C4E', color: '#fff', border: 'none', padding: '0.7rem 1.4rem', borderRadius: 10, fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, boxShadow:'0 2px 10px #3244736e', whiteSpace: 'nowrap' }}
             >
               + Tambah Kelas Baru
             </button>
@@ -634,7 +634,7 @@ export default function KelasPage() {
         </div>
 
         {/* Main card */}
-        <div style={{ ...sCard, borderLeft: '30px solid #1A2C4E', borderRadius: 15, boxShadow: '0 0 0 1px rgba(26,44,78,0.08), 6px 6px 24px rgba(26,44,78,0.14)' }}>
+        <div style={{ ...sCard, borderLeft: '30px solid #1A2C4E', borderRadius: 15, boxShadow:'0 1px 3px rgba(0,0,0,0.07), 6px 6px 24px rgba(26,44,78,0.14)' }}>
 
           {/* Card header — TA info */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -661,21 +661,21 @@ export default function KelasPage() {
                 <div style={sStatLabel}>Total kelas</div>
                 <div style={sStatValue}>{rawRows.length}</div>
               </div>
-              <LayoutGrid size={28} color="#1A2C4E" style={{ opacity: 0.55 }} />
+              <LayoutGrid size={28} color="#1A2C4E" style={sStatIkon} />
             </div>
             <div style={sStatCard}>
               <div>
                 <div style={sStatLabel}>Total siswa</div>
                 <div style={sStatValue}>{totalSiswa}</div>
               </div>
-              <Users size={28} color="#1A2C4E" style={{ opacity: 0.55 }} />
+              <Users size={28} color="#1A2C4E" style={sStatIkon} />
             </div>
             <div style={sStatCard}>
               <div>
                 <div style={sStatLabel}>Belum ada wali kelas</div>
                 <div style={sStatValue}>{belumWali}</div>
               </div>
-              <AlertCircle size={28} color="#F59E0B" style={{ opacity: 0.8 }} />
+              <AlertCircle size={28} color="#1A2C4E" style={sStatIkon} />
             </div>
           </div>
 
@@ -692,7 +692,7 @@ export default function KelasPage() {
                 onClick={() => { setFilterJenjang(''); setShowJenjangDropdown(false) }}
                 style={{ background: 'none', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '1rem', fontWeight: !filterJenjang ? 700 : 700, color: '#1A2C4E', padding: '0.3rem 0.75rem', transition: 'all 0.15s' }}
               >
-                <span style={{ display: 'inline-block', borderBottom: !filterJenjang ? '4px solid #1A2C4E' : '3px solid transparent', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
+                <span style={{ display: 'inline-block', paddingBottom: '0.25rem', transition: 'border-color 0.15s' }}>
                   Semua
                 </span>
               </button>
@@ -731,7 +731,7 @@ export default function KelasPage() {
                 placeholder="Cari kelas"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 300, border: '3px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }}
+                style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 400, border: '2px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }}
               />
             </div>
           </div>
@@ -1383,10 +1383,12 @@ export default function KelasPage() {
 // ── Style constants ───────────────────────────────────────────────────────────
 
 const sLabel:        React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 4 }
-const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.19)', borderRadius: 10, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-dark)', outline: 'none', background: '#fff', boxSizing: 'border-box' }
+const sInput:        React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2px solid #b4b9c0', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.19)', borderRadius: 10, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-dark)', outline: 'none', background: '#fff', boxSizing: 'border-box' }
 const sCard:         React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
 const sBtnPrimary:   React.CSSProperties = { background: 'var(--navy)', color: '#fff', border: 'none', padding: '0.65rem 1.5rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnSecondary: React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }
-const sStatCard:     React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow: '0 0 20px rgba(31, 85, 167, 0.52)', flex: 1, minWidth: 0  }
+// Ikon kartu statistik digeser mendekati pojok kanan atas, keluar sedikit dari padding kartu
+const sStatIkon:     React.CSSProperties = { marginTop: -4, marginRight: -6, flexShrink: 0 }
+const sStatCard:     React.CSSProperties = { background: '#ffffff', borderRadius: 16, padding: '0.875rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', boxShadow:'0 2px 10px #3244736e', flex: 1, minWidth: 0  }
 const sStatLabel:    React.CSSProperties = { fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: 6, position:'relative', bottom: 7, }
 const sStatValue:    React.CSSProperties = { fontSize: '1.75rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1 }

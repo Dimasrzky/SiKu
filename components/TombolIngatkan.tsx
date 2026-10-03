@@ -19,6 +19,8 @@ interface Props {
   onKlik:    () => void
   /** Dimatikan dari luar, mis. selama ada modal terbuka */
   nonaktif?: boolean
+  /** Pakai hijau penuh seperti tabel Dashboard, walau ukurannya varian lain (Tagihan Aktif) */
+  hijauPenuh?: boolean
 }
 
 // `display` ikut disamakan: tombol Dashboard berupa flex (rata kiri di selnya), yang lain inline-flex
@@ -42,18 +44,19 @@ const MERAH:  CSSProperties = { background: '#FEE2E2', color: '#B91C1C' }
 
 interface Rupa { label: string; warna: CSSProperties; bisaDiklik: boolean; kursor: CSSProperties['cursor']; keterangan?: string }
 
-function rupa(tampilan: TampilanTombol, varian: Varian): Rupa {
-  const siap = varian === 'profil' ? 'Ingatkan via WhatsApp' : 'Ingatkan'
+function rupa(tampilan: TampilanTombol, varian: Varian, hijauPenuh: boolean): Rupa {
+  const siap  = varian === 'profil' ? 'Ingatkan via WhatsApp' : 'Ingatkan'
+  const hijau = HIJAU[hijauPenuh ? 'penuh' : varian]
   switch (tampilan) {
     case 'ingatkan':
-      return { label: siap, warna: HIJAU[varian].siap, bisaDiklik: true, kursor: 'pointer' }
+      return { label: siap, warna: hijau.siap, bisaDiklik: true, kursor: 'pointer' }
     case 'memuat':
-      return { label: siap, warna: HIJAU[varian].siap, bisaDiklik: false, kursor: 'progress' }
+      return { label: siap, warna: hijau.siap, bisaDiklik: false, kursor: 'progress' }
     case 'mengirim':
       return { label: 'Mengirim…', warna: NETRAL, bisaDiklik: false, kursor: 'default',
         keterangan: 'Pengingat sudah masuk antrean dan dikirim bertahap' }
     case 'terkirim':
-      return { label: 'Terkirim', warna: HIJAU[varian].terkirim, bisaDiklik: false, kursor: 'default',
+      return { label: 'Terkirim', warna: hijau.terkirim, bisaDiklik: false, kursor: 'default',
         keterangan: 'Pengingat sudah terkirim. Bisa dikirim lagi dua hari sesudahnya.' }
     case 'gagal':
       return { label: 'Gagal, coba lagi', warna: MERAH, bisaDiklik: true, kursor: 'pointer',
@@ -64,8 +67,8 @@ function rupa(tampilan: TampilanTombol, varian: Varian): Rupa {
   }
 }
 
-export const TombolIngatkan = ({ tampilan, varian, onKlik, nonaktif = false }: Props) => {
-  const r      = rupa(tampilan, varian)
+export const TombolIngatkan = ({ tampilan, varian, onKlik, nonaktif = false, hijauPenuh = false }: Props) => {
+  const r      = rupa(tampilan, varian, hijauPenuh)
   const ukuran = UKURAN[varian]
   const mati   = nonaktif || !r.bisaDiklik
   // Ikon WhatsApp berwarna penuh hanya saat tombolnya memang bisa dipakai

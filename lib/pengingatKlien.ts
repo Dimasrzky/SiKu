@@ -37,8 +37,9 @@ async function panggil(ambil: Ambil, jalur: string, token: string, init: Request
 }
 
 const gabung = (hasil: HasilPengingat[]): HasilPengingat => ({
-  aktif:  hasil.every(h => h.aktif),
-  status: Object.assign({}, ...hasil.map(h => h.status)) as StatusPengingat,
+  aktif:        hasil.every(h => h.aktif),
+  status:       Object.assign({}, ...hasil.map(h => h.status)) as StatusPengingat,
+  sisaCooldown: Object.assign({}, ...hasil.map(h => h.sisaCooldown ?? {})) as Record<string, number>,
 })
 
 /**

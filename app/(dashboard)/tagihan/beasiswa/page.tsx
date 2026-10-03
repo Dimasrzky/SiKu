@@ -543,28 +543,41 @@ export default function BeasiswaPage() {
   return (
     <div className="dashboard-content">
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
-          <Award size={28} color="#fff" />
+      {/* Header — judul di kiri, tab di kanan */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
+            <Award size={28} color="#fff" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>Beasiswa & Potongan</h1>
+            <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>Kelola program beasiswa untuk siswa</p>
+          </div>
         </div>
-        <div>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>Beasiswa & Potongan</h1>
-          <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>Kelola program beasiswa untuk siswa</p>
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'inline-flex', gap: '2rem', marginBottom: '1.5rem' }}>
-        {(['program', 'potongan'] as const).map(tab => {
-          const label = tab === 'program' ? 'Program Beasiswa' : 'Potongan Personal'
-          const active = activeTab === tab
-          return (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.3rem 0', fontFamily: 'inherit' }}>
-              <span style={{ fontSize: '1rem', fontWeight: 600, color: active ? '#1A2C4E' : '#6F788A', borderBottom: active ? '4px solid #1A2C4E' : '4px solid transparent', paddingBottom: 4, transition: 'all 0.15s' }}>{label}</span>
-            </button>
-          )
-        })}
+        {/* Tabs */}
+        <div role="tablist" style={{ display: 'flex', gap: '1.4rem' }}>
+          {(['program', 'potongan'] as const).map(tab => {
+            const label  = tab === 'program' ? 'Program Beasiswa' : 'Potongan Personal'
+            const Ikon   = tab === 'program' ? Award : Scissors
+            const active = activeTab === tab
+            return (
+              <button key={tab} role="tab" aria-selected={active} onClick={() => setActiveTab(tab)} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                height: 40, padding: '0 1rem', borderRadius: 8, cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap',
+                background: active ? '#1A2C4E' : 'transparent',
+                color:      active ? '#fff' : '#1A2C4E',
+                border:     `1px solid ${active ? '#1A2C4E' : '#304263'}`,
+                boxShadow:  active ? '0 3px 6px rgba(18, 47, 102, 0.35)' : '0 2px 4px rgba(18, 47, 102, 0.12)',
+                transition: 'background 0.15s, color 0.15s',
+              }}>
+                <Ikon size={18} strokeWidth={active ? 1.75 : 2.25} />
+                {label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* ══ TAB: PROGRAM BEASISWA ══════════════════════════════════════════ */}
@@ -616,11 +629,11 @@ export default function BeasiswaPage() {
 
           {/* Card utama: header + grid */}
           {programList.length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden', boxShadow:'0 1px 3px rgba(0,0,0,0.07)' }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '0.85rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <span style={{ fontSize: '1.1rem' }}>📁</span>
+                  <Image src="/icons/Folder.png" width={23} height={18} alt="" />
                   <span style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>{programList.length} program aktif</span>
                 </div>
                 {!showForm && (
@@ -632,12 +645,12 @@ export default function BeasiswaPage() {
               {/* Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '1.25rem' }}>
                 {programList.map(p => (
-                  <div key={p.id} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div key={p.id} style={{ background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem',boxShadow:'0 2px 10px #3244736e' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1A2C4E' }}>{p.nama}</div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                          <Award size={11} /> {p.jenis_potongan === 'persen' ? `${p.persen ?? 0}%` : fRp(p.nominal ?? 0)}
+                        <div style={{ fontSize: '0.9rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Award size={14} /> {p.jenis_potongan === 'persen' ? `${p.persen ?? 0}%` : fRp(p.nominal ?? 0)}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '0.3rem' }}>
@@ -648,16 +661,15 @@ export default function BeasiswaPage() {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
                       {[
-                        { icon: '❖', val: p.jumlah_komponen, label: 'Komponen' },
-                        { icon: <Users size={11} />, val: p.jumlah_penerima, label: 'Penerima' },
-                        { icon: <AlertTriangle size={11} />, val: p.jumlah_segera_berakhir, label: 'Segera berakhir' },
+                        { icon: <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>❖</span>, val: p.jumlah_komponen, label: 'Komponen' },
+                        { icon: <Users size={20} />, val: p.jumlah_penerima, label: 'Penerima' },
+                        { icon: <AlertTriangle size={20} />, val: p.jumlah_segera_berakhir, label: 'Segera berakhir' },
                       ].map(s => (
-                        <div key={s.label} style={{ background: '#DBEAFE', borderRadius: 8, padding: '0.45rem 0.3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: '#1E40AF' }}>
-                            {typeof s.icon === 'string' ? <span style={{ fontSize: '0.7rem' }}>{s.icon}</span> : s.icon}
-                            <span style={{ fontWeight: 800, fontSize: '1rem', color: '#1A2C4E' }}>{s.val}</span>
-                          </div>
-                          <div style={{ fontSize: '0.62rem', color: '#3B82F6', fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>{s.label}</div>
+                        <div key={s.label} style={{ position: 'relative', background: '#A3CDFE', borderRadius: 8, padding: '0.45rem 0.3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          {/* Ikon di pojok kiri atas kotak */}
+                          <span style={{ position: 'absolute', top: 6, left: 7, display: 'flex', color: '#1A2C4E' }}>{s.icon}</span>
+                          <span style={{ fontWeight: 800, fontSize: '1.7rem', color: '#1A2C4E' }}>{s.val}</span>
+                          <div style={{ fontSize: '0.7rem', color: '#1A2C4E', fontWeight: 600, textAlign: 'center', lineHeight: 1.1 }}>{s.label}</div>
                         </div>
                       ))}
                     </div>
@@ -672,7 +684,7 @@ export default function BeasiswaPage() {
 
           {/* ── Card: Penerima Beasiswa ─────────────────────────────── */}
           {penerimaList.length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.08)', overflow: 'hidden', marginTop: '1.5rem' }}>
+            <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow:'0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden', marginTop: '1.5rem' }}>
               {/* Card header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -691,12 +703,12 @@ export default function BeasiswaPage() {
                   <select
                     value={penerimaFilter}
                     onChange={e => setPenerimaFilter(e.target.value)}
-                    style={{ appearance: 'none', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.45rem 2rem 0.45rem 0.9rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1A2C4E' }}
+                    style={{ appearance: 'none', background: '#ffffff', border: '2px solid #a5a9af', borderRadius: 8, padding: '0.45rem 2rem 0.45rem 0.9rem', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1A2C4E' }}
                   >
                     <option value="Semua">Semua</option>
                     {programList.map(p => <option key={p.id} value={p.nama}>{p.nama}</option>)}
                   </select>
-                  <ChevronDown size={13} style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748B' }} />
+                  <ChevronDown size={20} style={{ position: 'absolute', right: '0.2rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#000000' }} />
                 </div>
                 <div style={{ position: 'relative' }}>
                   <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
@@ -704,7 +716,7 @@ export default function BeasiswaPage() {
                     value={penerimaSearch}
                     onChange={e => setPenerimaSearch(e.target.value)}
                     placeholder="Cari nama siswa"
-                    style={{ ...sInp, paddingLeft: '2.2rem', width: 220, background: '#F8FAFC' }}
+                    style={{ ...sInp, paddingLeft: '2.2rem', width: 400, background: '#ffffff' }}
                   />
                 </div>
               </div>
@@ -951,7 +963,9 @@ export default function BeasiswaPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Edit Program Beasiswa</div>
-                <div style={{ fontSize: '0.82rem', color: '#64748B', marginTop: 2 }}>📁 {editProg.nama}</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <Image src="/icons/Folder.png" width={15} height={12} alt="" /> {editProg.nama}
+                </div>
               </div>
               <button onClick={() => setEditProg(null)} style={sBtnX}><X size={20} /></button>
             </div>
@@ -1012,7 +1026,9 @@ export default function BeasiswaPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Assign siswa</div>
-                <div style={{ fontSize: '0.82rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>📁 {assignProg.nama}</div>
+                <div style={{ fontSize: '0.82rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <Image src="/icons/Folder.png" width={15} height={12} alt="" /> {assignProg.nama}
+                </div>
               </div>
             </div>
           </div>
@@ -1404,7 +1420,7 @@ function SiswaTable({ rows, onDateChange, onRemove }: {
 
 const sCard:      CSSProperties = { background: '#fff', border: '1px solid #DBEAFE', borderLeft: '28px solid #1A2C4E', borderRadius: 12, position: 'relative', padding: '1.5rem' }
 const sLbl:       CSSProperties = { display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.4rem' }
-const sInp:       CSSProperties = { width: '100%', border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.55rem 0.85rem', fontSize: '0.875rem', color: '#1A2C4E', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
+const sInp:       CSSProperties = { width: '100%', border: '2px solid #a5a9af', borderRadius: 8, padding: '0.55rem 0.85rem', fontSize: '0.875rem', fontWeight: 600, color: '#000000', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
 const sDivider:   CSSProperties = { height: 1, background: '#F1F5F9', margin: '0 0 1.25rem' }
 const sBtnOutline:CSSProperties = { background: '#fff', border: '1.5px solid #CBD5E1', color: '#475569', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnYellow: CSSProperties = { background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.55rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }

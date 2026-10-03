@@ -537,7 +537,7 @@ export default function PembayaranPage() {
                 {stats.pctLunas}%
               </div>
               <div style={{ height:15, background:'#F1F5F9', borderRadius:99, overflow:'hidden', marginBottom:'0.5rem' }}>
-                <div style={{ height:'100%', width:`${stats.pctLunas}%`, background:'linear-gradient(90deg,#10B981,#059669)', borderRadius:99, transition:'width 0.5s' }} />
+                <div style={{ height:'100%', width:`${stats.pctLunas}%`, background:'#10B981', borderRadius:99, transition:'width 0.5s' }} />
               </div>
               <div style={{ fontSize:'0.9rem', color:'#64748B', fontWeight:600 }}>
                 Sisa belum masuk: {formatRp(stats.sisBelumMasuk)}
@@ -577,7 +577,7 @@ export default function PembayaranPage() {
             <div style={{ display:'flex', gap:'0.6rem', padding:'0.875rem 1rem', borderBottom:'1px solid #F1F5F9', flexWrap:'wrap', alignItems:'center' }}>
               <div style={{ position:'relative' }}>
                 <select value={filterKelas} onChange={e => { setFilterKelas(e.target.value); setCurrentPage(1) }}
-                  style={{ appearance:'none', background:'#F8FAFC', border:'1.5px solid #E2E8F0', borderRadius:8, padding:'0.45rem 2rem 0.45rem 0.75rem', fontSize:'0.82rem', fontWeight:600, color:'#0F172A', cursor:'pointer', minWidth:130 }}>
+                  style={{ appearance:'none', background:'#ffffff', border:'1.5px solid #E2E8F0', borderRadius:8, padding:'0.45rem 2rem 0.45rem 0.75rem', fontSize:'0.82rem', fontWeight:600, color:'#0F172A', cursor:'pointer', minWidth:130 }}>
                   <option value="semua">Semua kelas</option>
                   {kelasList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
                 </select>
@@ -586,20 +586,20 @@ export default function PembayaranPage() {
 
               <div style={{ position:'relative' }}>
                 <select value={filterMetode} onChange={e => { setFilterMetode(e.target.value); setCurrentPage(1) }}
-                  style={{ appearance:'none', background:'#F8FAFC', border:'1.5px solid #E2E8F0', borderRadius:8, padding:'0.45rem 2rem 0.45rem 0.75rem', fontSize:'0.82rem', fontWeight:600, color:'#0F172A', cursor:'pointer', minWidth:140 }}>
+                  style={{ appearance:'none', background:'#ffffff', border:'1.5px solid #E2E8F0', borderRadius:8, padding:'0.45rem 2rem 0.45rem 0.75rem', fontSize:'0.82rem', fontWeight:600, color:'#0F172A', cursor:'pointer', minWidth:140 }}>
                   <option value="semua">Semua metode</option>
                   {METODE_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 <SelectArrow />
               </div>
 
-              <div style={{ position:'relative', flex:'1 1 200px', minWidth:0, marginLeft:'auto' }}>
+              <div style={{ position:'relative', marginLeft:'auto' }}>
                 <Search size={15} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94A3B8' }} />
                 <input
                   value={search}
                   onChange={e => { setSearch(e.target.value); setCurrentPage(1) }}
                   placeholder="Cari nama siswa..."
-                  style={{ width:'100%', paddingLeft:32, paddingRight:10, paddingTop:'0.45rem', paddingBottom:'0.45rem', border:'1.5px solid #E2E8F0', borderRadius:8, fontSize:'0.85rem', outline:'none', boxSizing:'border-box', background:'#F8FAFC' }}
+                  style={{ width:'100%', minWidth: 400, paddingLeft:32, paddingRight:10, paddingTop:'0.45rem', paddingBottom:'0.45rem', border:'2px solid #b3b7bc', borderRadius:8, fontSize:'0.85rem', outline:'none', boxSizing:'border-box', background:'#ffffff' }}
                 />
               </div>
             </div>

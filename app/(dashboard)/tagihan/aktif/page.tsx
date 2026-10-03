@@ -19,6 +19,8 @@ import {
 } from '@/lib/komponenTagihan'
 import { usePengingat } from '@/lib/usePengingat'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
+import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
+import { usePengingatManual } from '@/lib/usePengingatManual'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -619,6 +621,8 @@ function TagihanAktifContent() {
         })
 
     window.open(buildWaMeLink(t.no_wa, content), '_blank', 'noopener,noreferrer')
+    // Dicatat per siswa (sama dengan Dashboard): ikon Terkirim 3 detik, lalu "H-2"
+    pengingatManual.catat(t.siswa_id)
     setWaSentSuccess(prev => new Set(prev).add(t.tagihan_id))
     setTimeout(() => setWaSentSuccess(prev => { const s = new Set(prev); s.delete(t.tagihan_id); return s }), 3000)
   }
@@ -667,6 +671,8 @@ function TagihanAktifContent() {
   // tombol membuka wa.me seperti biasa.
   const adaTombolIngatkan = (t: SiswaTagihanRow) => !!t.no_wa && getEffStatus(t) !== 'lunas'
   const pengingat = usePengingat(tagihanList.filter(adaTombolIngatkan).map(t => t.siswa_id))
+  // Cooldown tombol wa.me (sekolah tanpa antrean), dicatat di browser ini
+  const pengingatManual = usePengingatManual(now)
   // "Ingatkan semua" mengikuti baris yang sedang tampil — filter dan pencarian ikut berlaku
   const siapDiingatkan = pengingat.aktif
     ? filtered.filter(t => adaTombolIngatkan(t) && pengingat.tampilan(t.siswa_id) === 'ingatkan').map(t => t.siswa_id)
@@ -691,16 +697,21 @@ function TagihanAktifContent() {
 
   // Satu tombol untuk dua cara: antrean (TombolIngatkan) atau wa.me. Selama belum
   // diketahui sekolah ini memakai yang mana, tombolnya tampil tetapi belum bisa diklik.
-  const tombolIngatkan = (t: SiswaTagihanRow) => pengingat.aktif ? (
-    <TombolIngatkan varian="ringkas" tampilan={pengingat.tampilan(t.siswa_id)} nonaktif={anyModalOpen}
+  // Sesudah terkirim: ikon Terkirim 3 detik, lalu hitung mundur "H-n" yang terkunci.
+  const tombolIngatkan = (t: SiswaTagihanRow) => {
+    const tanda = tandaKirim(pengingat, pengingatManual, t.siswa_id, waSentSuccess.has(t.tagihan_id))
+    return tanda !== null ? <TandaTerkirim tanda={tanda} kecil /> : tombolIngatkanSiap(t)
+  }
+  const tombolIngatkanSiap = (t: SiswaTagihanRow) => pengingat.aktif ? (
+    <TombolIngatkan varian="ringkas" hijauPenuh tampilan={pengingat.tampilan(t.siswa_id)} nonaktif={anyModalOpen}
       onKlik={() => pengingat.ingatkan([t.siswa_id])} />
   ) : (
     <button
       onClick={() => { if (!anyModalOpen) kirimWA(t) }}
       disabled={anyModalOpen || pengingat.aktif === null}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: waSentSuccess.has(t.tagihan_id) ? '#BBF7D0' : '#DCFCE7', color: '#15803D', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : pengingat.aktif === null ? 'progress' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#22C55E', color: '#fff', borderRadius: 8, padding: '0.3rem 0.7rem', fontSize: '0.75rem', fontWeight: 700, border: 'none', cursor: anyModalOpen ? 'not-allowed' : pengingat.aktif === null ? 'progress' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.6 : 1, whiteSpace: 'nowrap' }}>
       <Image src='/icons/IconWA.png' width={16} height={16} alt='WA' />
-      {waSentSuccess.has(t.tagihan_id) ? 'Terkirim!' : 'Ingatkan'}
+      Ingatkan
     </button>
   )
 
@@ -1047,10 +1058,10 @@ function TagihanAktifContent() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '1.25rem 1.5rem' }}>
 
               {/* Inner card 1 — Donut */}
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem', boxShadow:'0 2px 10px #3244736e' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
                   <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total siswa ditagih</span>
-                  <Image src="/icons/IconDollar.png" width={22} height={22} alt="" style={{ opacity: 0.45 }} />
+                  <Image src="/icons/DolarBiru.png" width={40} height={40} alt="" />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8rem' }}>
                   <DonutChart
@@ -1078,10 +1089,13 @@ function TagihanAktifContent() {
               </div>
 
               {/* Inner card 2 — Total nominal */}
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #E2E8F0', borderRadius: 14, padding: '1rem 1.25rem', boxShadow:'0 2px 10px #3244736e' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
+                  <Image src="/icons/BankBiru.png" width={30} height={30} alt="" />
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <div>
-                    <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-muted)' }}>Total tagihan periode ini</span>
                     {keteranganPeriode && (
                       <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', marginTop: 2 }}>{keteranganPeriode}</div>
                     )}
@@ -1094,7 +1108,7 @@ function TagihanAktifContent() {
                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ background: '#F7DD7D', borderRadius: 10, padding: '0.45rem 0.75rem', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.4rem' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A2C4E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/><path d="M5 5v14"/></svg>
+                      <Image src='/icons/Sampun.png' width={14} height={14} alt='' />
                       <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A2C4E' }}>Sudah masuk</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
@@ -1104,7 +1118,7 @@ function TagihanAktifContent() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ background: '#F7DD7D', borderRadius: 10, padding: '0.45rem 0.75rem', display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.4rem' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1A2C4E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/><path d="M19 5v14"/></svg>
+                      <Image src='/icons/Dereng.png' width={14} height={14} alt='' />
                       <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1A2C4E' }}>Belum masuk</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: '0.25rem' }}>
@@ -1160,7 +1174,7 @@ function TagihanAktifContent() {
                     placeholder="Cari nama siswa"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    style={{ ...sInput, paddingLeft: '2.25rem', width: 220 }}
+                    style={{ ...sInput, paddingLeft: '2.25rem', width: 500 }}
                   />
                 </div>
               </div>
@@ -1265,11 +1279,13 @@ function TagihanAktifContent() {
                               )
                             )}
 
+                            {/* Didorong ke tepi kanan sel: lebar tombol di kirinya berbeda-beda
+                                (Ingatkan / Mengirim… / H-n / kosong), ikon mata tetap sejajar antarbaris */}
                             <button
                               onClick={() => { if (!anyModalOpen) openDetailModal(t) }}
                               disabled={anyModalOpen}
                               title="Lihat detail"
-                              style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, cursor: anyModalOpen ? 'not-allowed' : 'pointer', color: '#64748B', flexShrink: 0, opacity: anyModalOpen ? 0.4 : 0.8 }}>
+                              style={{ width: 30, height: 30, marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid #E2E8F0', borderRadius: 8, cursor: anyModalOpen ? 'not-allowed' : 'pointer', color: '#64748B', flexShrink: 0, opacity: anyModalOpen ? 0.4 : 0.8 }}>
                               <Eye size={14} />
                             </button>
                           </div>
@@ -1662,12 +1678,12 @@ const sCard: React.CSSProperties = {
   padding: '6rem 2rem',
   marginBottom: '1rem',
   borderLeft: '28px solid #1A2C4E',
-  boxShadow: '0 0 10px #1a2c4e6e',
+  boxShadow:'0 1px 3px rgba(0,0,0,0.07)',
 }
 
 const sSelect: React.CSSProperties = {
   padding: '0.45rem 0.75rem',
-  border: '1.5px solid var(--border)',
+  border: '2px solid var(--border)',
   borderRadius: 8,
   fontFamily: 'inherit',
   fontSize: '0.82rem',
@@ -1680,7 +1696,7 @@ const sSelect: React.CSSProperties = {
 
 const sInput: React.CSSProperties = {
   padding: '0.55rem 0.85rem',
-  border: '1.5px solid var(--border)',
+  border: '2px solid var(--border)',
   borderRadius: 8,
   fontFamily: 'inherit',
   fontSize: '0.875rem',

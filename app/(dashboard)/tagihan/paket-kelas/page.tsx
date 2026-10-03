@@ -613,7 +613,7 @@ export default function PaketPerKelasPage() {
         </div>
         {!showForm && (
           <button onClick={openForm}
-            style={{ marginLeft: 'auto', background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.6rem 1.1rem', borderRadius: 10, fontWeight: 900, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 5px 2px rgba(18,47,102,0.31)', flexShrink: 0 }}>
+            style={{ marginLeft: 'auto', background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.6rem 1.1rem', borderRadius: 10, fontWeight: 900, fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 10, boxShadow:'0 2px 10px #3244736e', flexShrink: 0 }}>
             Tambah Paket Baru <Image src="/icons/IconEdit2.png" width={18} height={18} alt="Tambah" style={{ display: 'block' }} />
           </button>
         )}
@@ -814,7 +814,7 @@ export default function PaketPerKelasPage() {
 
       {/* ── Section A: Active Paket Cards ──────────────────────────────────── */}
       {filtered.length > 0 && (
-        <div style={{ ...sCard, borderLeft: '30px solid #1A2C4E', borderRadius: 15, boxShadow: '0 0 0 1px rgba(26,44,78,0.08), 6px 6px 24px rgba(26,44,78,0.14)', marginBottom: '1rem' }}>
+        <div style={{ ...sCard, borderLeft: '30px solid #1A2C4E', borderRadius: 15, boxShadow:'0 1px 3px rgba(0,0,0,0.07), 6px 6px 24px rgba(26,44,78,0.14)', marginBottom: '1rem' }}>
 
           {/* Search bar */}
           {activePakets.length > 1 && (
@@ -823,7 +823,7 @@ export default function PaketPerKelasPage() {
                 <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                 <input
                   placeholder="Cari paket" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 280, border: '3px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }}
+                  style={{ ...sInput, padding: '0.3rem 0.85rem 0.3rem 2.25rem', width: 280, border: '2px solid #C1C6CF', boxShadow: 'none', fontSize: '0.875rem' }}
                 />
               </div>
             </div>
@@ -843,7 +843,7 @@ export default function PaketPerKelasPage() {
             const extraCount   = Math.max(0, p.komponen_list.length - 5)
 
             return (
-              <div key={p.id} style={{ background: '#fff', borderRadius: 12, boxShadow: '0 0 10px rgba(56, 96, 151, 0.52)', padding: '1.2rem 1.5rem', marginBottom: i < filtered.length - 1 ? '1.6rem' : 0, marginTop:10, }}>
+              <div key={p.id} style={{ background: '#fff', borderRadius: 12, boxShadow:'0 2px 10px #3244736e', padding: '1.2rem 1.5rem', marginBottom: i < filtered.length - 1 ? '1.6rem' : 0, marginTop:10, }}>
 
                 {/* Top: nama + badge | actions */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
@@ -1328,7 +1328,7 @@ export default function PaketPerKelasPage() {
 }
 
 const sLabel: React.CSSProperties = { display: 'block', fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)', marginBottom: 4 }
-const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', boxShadow: '6px 6px 8px rgba(18,47,102,0.19)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-dark)', outline: 'none', background: '#fff', boxSizing: 'border-box' }
+const sInput: React.CSSProperties = { width: '100%', padding: '0.65rem 0.85rem', border: '2.5px solid #BABFC7', boxShadow: '6px 6px 8px rgba(18,47,102,0.19)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.875rem', fontWeight: 600, color: '#000000', outline: 'none', background: '#fff', boxSizing: 'border-box' }
 const sHint:  React.CSSProperties = { fontSize: '0.75rem', fontWeight: 500, color: '#6F788A', margin: '0.4rem 0 0', lineHeight: 1.4 }
 const sCard:  React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '1.25rem 1.5rem', marginBottom: '1rem' }
 const sBtn:   React.CSSProperties = { background: 'transparent', color: 'var(--navy)', border: '1.5px solid var(--navy)', padding: '0.65rem 1.25rem', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }

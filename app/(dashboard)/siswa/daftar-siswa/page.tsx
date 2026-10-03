@@ -757,7 +757,7 @@ export default function DaftarSiswaPage() {
       {previewRows && renderPreview()}
 
       {/* Ringkasan card */}
-      <div style={{ background: '#ffffff', borderRadius: 16, padding: '1.5rem', marginBottom: '1.5rem', boxShadow: '0 4px 24px rgba(26,44,78,0.3)', borderLeft:'28px solid #1A2C4E' }}>
+      <div style={{ background: '#ffffff', borderRadius: 16, padding: '1.5rem', marginBottom: '1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', borderLeft:'28px solid #1A2C4E' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '2rem' }}>
           <div style={{ width: 46, height: 46, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Users size={22} color="#ffffff" />
@@ -770,7 +770,7 @@ export default function DaftarSiswaPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom:20, }}>
 
           {/* Total siswa — donut */}
-          <div style={{ background: '#fff', borderRadius: 12, padding: '1.25rem 1.5rem', boxShadow: '0 4px 24px rgba(26,44,78,0.3)' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: '1.25rem 1.5rem', boxShadow:'0 2px 10px #3244736e' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <span style={{ fontWeight: 700, fontSize: '1.2rem', color: '#1A2C4E' }}>Total siswa</span>
               <Users size={22} color="#94A3B8" />
@@ -803,7 +803,7 @@ export default function DaftarSiswaPage() {
           </div>
 
           {/* Beasiswa & potongan */}
-          <div style={{ background: '#fff', borderRadius: 12, padding: '1.25rem 1.5rem', boxShadow: '0 4px 24px rgba(26,44,78,0.3)' }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: '1.25rem 1.5rem', boxShadow:'0 2px 10px #3244736e' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span style={{ fontWeight: 700, fontSize: '1.2rem', color: '#1A2C4E' }}>Beasiswa &amp; potongan</span>
               <GraduationCap size={22} color="#94A3B8" />
@@ -830,7 +830,7 @@ export default function DaftarSiswaPage() {
       </div>
 
       {/* Semua siswa card */}
-      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 2px 16px rgba(26,44,78,0.07)', overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow:'0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
           <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1A2C4E' }}>Semua siswa</div>
           <div style={{ fontSize: '0.83rem', color: '#64748B' }}>Cari, lihat, dan kelola data siswa secara individual</div>
@@ -878,10 +878,10 @@ export default function DaftarSiswaPage() {
             )}
           </div>
 
-          <div style={{ flex: 1, minWidth: 200, position: 'relative', marginLeft: 'auto' }}>
+          <div style={{ minWidth: 500, position: 'relative', marginLeft: 'auto' }}>
             <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari nama siswa"
-              style={{ width: '100%', border: '1.5px solid #CBD5E1', borderRadius: 8, padding: '0.45rem 0.75rem 0.45rem 2.1rem', fontSize: '0.875rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+              style={{ width: '97%', border: '2px solid #CBD5E1', borderRadius: 8, padding: '0.45rem 0.75rem 0.45rem 2.1rem', fontSize: '0.875rem', color: '#1A2C4E', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
           </div>
         </div>
 
