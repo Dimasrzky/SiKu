@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase-service'
+import { muatTertagih, rincianSisa, type TagihanBayar } from '@/lib/tagihanTertagih'
 import BayarWizard from './BayarWizard'
 import BayarHeader from './BayarHeader'
 import BayarFooter from './BayarFooter'
@@ -15,7 +16,6 @@ export const metadata: Metadata = {
   description: 'Lihat rincian tagihan sekolah dan lakukan pembayaran.',
 }
 
-type TagihanItemRaw = { nama_komponen: string; nominal: number; komponen: { kelas_warna: string | null } | null }
 type SiswaJoin      = { nama: string; nis: string | null; nama_wali: string | null; kelas: { nama: string } | null }
 type TagihanRow      = {
   id:                  string
@@ -27,16 +27,16 @@ type TagihanRow      = {
   tahun:               number
   payment_token_aktif: boolean
   siswa:               SiswaJoin | null
-  tagihan_item:        TagihanItemRaw[]
 }
 
 export interface TagihanItem {
   nama_komponen: string
+  /** Negatif untuk potongan beasiswa dan pembayaran yang sudah masuk */
   nominal:       number
   warna:         string
 }
 
-/** Komponen non-bulanan dari tagihan periode sebelumnya yang masih belum lunas. */
+/** Baris rincian tagihan periode sebelumnya yang masih bersisa. */
 export interface TunggakanItem extends TagihanItem {
   bulan: number
   tahun: number
@@ -68,7 +68,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
 
   const { data } = await supabase
     .from('tagihan')
-    .select('id, siswa_id, sekolah_id, total_nominal, status, bulan, tahun, payment_token_aktif, siswa:siswa_id(nama, nis, nama_wali, kelas:kelas_id(nama)), tagihan_item(nama_komponen, nominal, komponen:komponen_id(kelas_warna))')
+    .select('id, siswa_id, sekolah_id, total_nominal, status, bulan, tahun, payment_token_aktif, siswa:siswa_id(nama, nis, nama_wali, kelas:kelas_id(nama))')
     .eq('payment_token', token)
     .single()
 
@@ -79,8 +79,9 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
   const siswa     = tagihan.siswa
   const kelasNama = formatKelasNama(siswa?.kelas?.nama ?? '')
 
-  const today = new Date().toISOString().split('T')[0]
-  const [{ data: sekolahData }, { data: staffAll }, { data: beasiswaRaw }, { data: rekeningData }, { data: verifikasiLatest }] = await Promise.all([
+  const sekarang = new Date()
+  const today    = sekarang.toISOString().split('T')[0]
+  const [{ data: sekolahData }, { data: staffAll }, { data: beasiswaRaw }, { data: rekeningData }, { data: verifikasiMenunggu }, tertagihRes] = await Promise.all([
     supabase.from('sekolah').select('nama, no_wa, yayasan').eq('id', tagihan.sekolah_id).maybeSingle(),
     supabase.from('profiles').select('nama, jabatan, no_wa, avatar').eq('sekolah_id', tagihan.sekolah_id).limit(20),
     supabase
@@ -91,8 +92,12 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     supabase.from('rekening').select('bank, no_rek, atas_nama')
       .eq('sekolah_id', tagihan.sekolah_id).eq('jenis', 'transfer').eq('aktif', true)
       .order('urutan', { ascending: true }).limit(1).maybeSingle(),
-    supabase.from('verifikasi_pembayaran').select('status, nominal_diajukan, created_at')
-      .eq('tagihan_id', tagihan.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    // Bukti yang belum diverifikasi untuk tagihan mana pun milik siswa ini — disaring di
+    // bawah ke tagihan yang ikut ditagih lewat tautan ini
+    supabase.from('verifikasi_pembayaran').select('tagihan_id, nominal_diajukan, created_at')
+      .eq('siswa_id', tagihan.siswa_id).eq('status', 'menunggu')
+      .order('created_at', { ascending: false }).limit(20),
+    muatTertagih(supabase, tagihan, sekarang),
   ])
 
   const sekolah  = sekolahData  as SekolahRow  | null
@@ -144,14 +149,34 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     )
   }
 
-  if (verifikasiLatest?.status === 'menunggu') {
+  // Menampilkan angka dari data yang tidak lengkap berarti meminta wali mentransfer
+  // jumlah yang salah — lebih baik halamannya meminta dimuat ulang
+  const tertagih = tertagihRes.data
+  if (!tertagih) {
+    return (
+      <PageShell headerProps={headerProps} footerProps={footerProps}>
+        <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 0 6px #21386b7b', padding: '2rem 1.5rem', textAlign: 'center' }}>
+          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#1A2C4E' }}>Rincian tagihan gagal dimuat</div>
+          <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: 6 }}>Silakan muat ulang halaman ini beberapa saat lagi.</div>
+        </div>
+      </PageShell>
+    )
+  }
+
+  // Bukti yang sedang diproses untuk salah satu tagihan yang ditagih di sini — mis.
+  // dikirim lewat tautan bulan lalu — berarti tunggakannya sudah dibayar dan menunggu
+  // dicatat. Halaman ini tidak menawarkan transfer kedua untuk tagihan yang sama.
+  const idTertagih = new Set([tagihan.id, ...tertagih.daftar.map(t => t.id)])
+  type VerifikasiRow = { tagihan_id: string; nominal_diajukan: number; created_at: string }
+  const menunggu = ((verifikasiMenunggu ?? []) as VerifikasiRow[]).find(v => idTertagih.has(v.tagihan_id))
+  if (menunggu) {
     return (
       <PageShell headerProps={headerProps} footerProps={footerProps}>
         <BuktiSedangDiprosesView
           namaSiswa={siswa?.nama ?? ''}
           kelasNama={kelasNama}
-          totalNominal={verifikasiLatest.nominal_diajukan}
-          buktiDikirim={verifikasiLatest.created_at}
+          totalNominal={menunggu.nominal_diajukan}
+          buktiDikirim={menunggu.created_at}
           namaBendahara={footerProps.namaBendahara}
           noWaBendahara={footerProps.noWaBendahara}
         />
@@ -159,63 +184,27 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     )
   }
 
-  // Hitung sisa
-  const { data: pembayaranList } = await supabase
-    .from('pembayaran')
-    .select('jumlah')
-    .eq('tagihan_id', tagihan.id)
+  // Tiap blok rincian berjumlah sama dengan sisa tagihannya: komponen tagihan_item
+  // (dicatat sebelum potongan), lalu potongan beasiswa dan pembayaran yang sudah masuk
+  const rincian = (t: TagihanBayar): TagihanItem[] => rincianSisa(
+    t.tagihan_item.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, warna: i.komponen?.kelas_warna ?? '#94A3B8' })),
+    t,
+    (nama_komponen, nominal) => ({ nama_komponen, nominal, warna: '#94A3B8' }),
+  )
 
-  const totalBayar = (pembayaranList ?? []).reduce((s, p: { jumlah: number }) => s + p.jumlah, 0)
-  const sisa         = tagihan.total_nominal - totalBayar
+  const items: TagihanItem[] = tertagih.sasaran ? rincian(tertagih.sasaran) : []
 
-  const items: TagihanItem[] = (tagihan.tagihan_item ?? []).map(it => ({
-    nama_komponen: it.nama_komponen,
-    nominal:       it.nominal,
-    warna:         it.komponen?.kelas_warna ?? '#94A3B8',
-  }))
-
-  // Tunggakan periode sebelumnya — ditampilkan terpisah sebagai informasi.
-  // Alur pembayaran tidak berubah: tombol bayar tetap menagih tagihan bulan ini saja.
-  type TunggakanRaw = {
-    bulan: number
-    tahun: number
-    tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string; kelas_warna: string | null } | null }[]
-  }
-  const periodeIni = tagihan.tahun * 12 + tagihan.bulan
-  const { data: tunggakanRaw } = await supabase
-    .from('tagihan')
-    .select('bulan, tahun, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis, kelas_warna))')
-    .eq('sekolah_id', tagihan.sekolah_id)
-    .eq('siswa_id', tagihan.siswa_id)
-    .eq('status', 'belum_bayar')
-    .neq('id', tagihan.id)
-    .limit(24)
-
-  // Seluruh komponen tagihan lama ditampilkan, bukan hanya yang non-bulanan: nominal
-  // ini sekarang ikut ditagihkan, jadi daftarnya harus benar-benar berjumlah sama
-  // dengan sisa tagihan periode tersebut.
-  const tunggakan: TunggakanItem[] = ((tunggakanRaw ?? []) as unknown as TunggakanRaw[])
-    .filter(t => t.tahun * 12 + t.bulan < periodeIni)
-    .flatMap(t => (t.tagihan_item ?? []).map(i => ({
-      nama_komponen: i.nama_komponen,
-      nominal:       i.nominal,
-      warna:         i.komponen?.kelas_warna ?? '#94A3B8',
-      bulan:         t.bulan,
-      tahun:         t.tahun,
-    })))
-    .sort((a, b) => (a.tahun * 12 + a.bulan) - (b.tahun * 12 + b.bulan))
-
-  // Yang ditagihkan tombol bayar = sisa bulan ini + seluruh tunggakan.
-  // Statusnya belum_bayar sehingga sisa tiap tagihan lama = total_nominal penuh.
-  const totalTunggakan = tunggakan.reduce((s, t) => s + t.nominal, 0)
-  const sisaGabungan   = sisa + totalTunggakan
+  // Tunggakan bulan-bulan sebelumnya, terlama dulu — ikut ditagih dan ikut dilunasi
+  // saat bukti transfernya diverifikasi
+  const tunggakan: TunggakanItem[] = tertagih.daftar
+    .filter(t => t.id !== tagihan.id)
+    .flatMap(t => rincian(t).map(i => ({ ...i, bulan: t.bulan, tahun: t.tahun })))
 
   return (
     <PageShell headerProps={headerProps} footerProps={footerProps}>
       <BayarWizard
         paymentToken={token}
-        totalNominal={tagihan.total_nominal + totalTunggakan}
-        sisa={sisaGabungan}
+        total={tertagih.total}
         namaSiswa={siswa?.nama ?? ''}
         nis={siswa?.nis ?? ''}
         kelasNama={kelasNama}

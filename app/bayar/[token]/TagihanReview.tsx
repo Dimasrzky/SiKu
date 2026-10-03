@@ -4,6 +4,8 @@ import { Receipt, Scissors, Award, AlertTriangle } from 'lucide-react'
 import type { BeasiswaBadge, TagihanItem, TunggakanItem } from './page'
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+/** Baris potongan dan pembayaran yang sudah masuk bernilai negatif */
+const formatBaris = (n: number) => (n < 0 ? `−${formatRp(-n)}` : formatRp(n))
 
 const BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
@@ -89,7 +91,7 @@ export default function TagihanReview({ namaSiswa, nis, kelasNama, items, tungga
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.warna, flexShrink: 0 }} />
                   {item.nama_komponen}
                 </span>
-                <span style={{ fontWeight: 700 }}>{formatRp(item.nominal)}</span>
+                <span style={{ fontWeight: 700 }}>{formatBaris(item.nominal)}</span>
               </div>
             ))}
           </div>
@@ -120,7 +122,7 @@ export default function TagihanReview({ namaSiswa, nis, kelasNama, items, tungga
                       <span style={{ fontSize: 'clamp(0.62rem, 2.2vw, 0.7rem)', color: '#92400E', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {BULAN_NAMES[t.bulan]} {t.tahun}
                       </span>
-                      <span style={{ fontWeight: 700, color: '#92400E', whiteSpace: 'nowrap' }}>{formatRp(t.nominal)}</span>
+                      <span style={{ fontWeight: 700, color: '#92400E', whiteSpace: 'nowrap' }}>{formatBaris(t.nominal)}</span>
                     </span>
                   </div>
                 ))}

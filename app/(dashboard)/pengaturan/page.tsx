@@ -851,7 +851,7 @@ export default function PengaturanPage() {
         <Toggle label="Konfirmasi pembayaran otomatis"    sub="Kirim WA konfirmasi ke orang tua setelah bayar"       defaultOn={true}  />
         <Toggle label="Laporan bulanan ke kepala sekolah" sub="Kirim ringkasan keuangan tiap awal bulan"             defaultOn={true}  />
         <div style={{ padding:'0.75rem 0 0', fontSize:'0.78rem', color:'var(--text-muted)' }}>
-          Notifikasi WA dikirim menggunakan api.co.id. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
+          Notifikasi WA dikirim menggunakan fonnte. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
         </div>
       </Section>
     </div>

@@ -15,6 +15,7 @@ import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { pesanPenahanTerbit, statusPenerbitan } from '@/lib/statusPenerbitan'
+import { sisaTagihan, tunggakanSebelum } from '@/lib/tagihanTertagih'
 import { usePengingat } from '@/lib/usePengingat'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { SetupChecklist } from '@/components/SetupChecklist'
@@ -406,18 +407,18 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
         && idx <= periodeIndex(selesai.getMonth() + 1, selesai.getFullYear())
   }
 
-  // Menunggak ditentukan statusEfektif — sama persis dengan badge di tagihan aktif
-  // dan donut di laporan. Cicilan sengaja tidak ikut: pembayarannya sedang berjalan
-  // dan di kedua halaman itu pun berstatus Cicilan, bukan Menunggak.
+  // Sama dengan status Menunggak di Tagihan Aktif: tagihan bulan-bulan sebelumnya yang
+  // masih bersisa setelah jatuh tempo (tunggakanSebelum — sisa cicilan ikut, keputusan
+  // 3 Okt 2026), dan tagihan bulan ini yang belum dibayar sama sekali setelah jatuh
+  // tempo. Cicilan bulan berjalan tetap berstatus Cicilan, bukan Menunggak.
+  const periodeIni = periodeIndex(bulanIni, tahunIni)
   const tunggakanRows = allTagihan
     .filter(t => dalamPeriodeAktif(t.bulan, t.tahun))
-    .filter(t => statusEfektif(
-      t.status,
-      lewatJatuhTempo(t, now),
-      t.siswa?.status === 'alumni',
-      t.total_nominal,
-    ) === 'menunggak')
-    .map(t => ({ ...t, sisa: t.total_nominal - (dibayarPerTagihan.get(t.id) ?? 0) }))
+    .map(t => ({ ...t, is_alumni: t.siswa?.status === 'alumni', terbayar: dibayarPerTagihan.get(t.id) ?? 0 }))
+    .filter(t => periodeIndex(t.bulan, t.tahun) < periodeIni
+      ? tunggakanSebelum(t, periodeIni, now)
+      : statusEfektif(t.status, lewatJatuhTempo(t, now), t.is_alumni, t.total_nominal) === 'menunggak')
+    .map(t => ({ ...t, sisa: sisaTagihan(t) }))
     .filter(t => t.sisa > 0)
 
   // "Lama" = tunggakan dari bulan-bulan sebelumnya saja — tagihan bulan berjalan
@@ -1064,13 +1065,18 @@ export default function DashboardPage() {
                 .filter(s => s.kelas?.jenjang === maxLevel).length
 
               const now2 = new Date()
+              const periodeNow2 = periodeIndex(now2.getMonth() + 1, now2.getFullYear())
               const { data: tagihanRows } = await supabase
-                .from('tagihan').select('siswa_id, bulan, tahun, jatuh_tempo, total_nominal')
-                .eq('sekolah_id', sekolahId).eq('status', 'belum_bayar').limit(5000)
+                .from('tagihan').select('siswa_id, status, bulan, tahun, jatuh_tempo, total_nominal')
+                .eq('sekolah_id', sekolahId).neq('status', 'lunas').limit(5000)
 
+              // Aturan yang sama dengan kartu tunggakan: sisa cicilan bulan-bulan
+              // sebelumnya ikut, cicilan bulan berjalan tidak. Tagihan berstatus cicilan
+              // selalu masih bersisa — yang terbayar penuh berstatus lunas.
               const menunggak = new Set(
-                ((tagihanRows ?? []) as {siswa_id:string;bulan:number;tahun:number;jatuh_tempo:string|null;total_nominal:number}[])
-                  .filter(t => !tanpaKewajiban(t.total_nominal) && lewatJatuhTempo(t, now2))
+                ((tagihanRows ?? []) as {siswa_id:string;status:string;bulan:number;tahun:number;jatuh_tempo:string|null;total_nominal:number}[])
+                  .filter(t => !tanpaKewajiban(t.total_nominal) && lewatJatuhTempo(t, now2)
+                    && (t.status === 'belum_bayar' || periodeIndex(t.bulan, t.tahun) < periodeNow2))
                   .map(t => t.siswa_id)
               ).size
 

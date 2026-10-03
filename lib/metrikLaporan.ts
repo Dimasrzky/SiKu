@@ -70,19 +70,22 @@ export function selisihHari(dari: Date, ke: Date): number {
 
 // ── Predikat ─────────────────────────────────────────────────────────────────
 
-const sisaTagihan = (t: TagihanMetrik) => Math.max(0, t.total_nominal - t.terbayar)
-const sudahLunas  = (t: TagihanMetrik) => t.status === 'lunas'
+/** Kolom yang dibutuhkan predikat tunggakan — halaman lain cukup mengambil kolom ini */
+export type TagihanSisaDasar = WaktuTagihan & Pick<TagihanMetrik, 'total_nominal' | 'status' | 'is_alumni' | 'terbayar'>
+
+const sisaTagihan = (t: TagihanSisaDasar) => Math.max(0, t.total_nominal - t.terbayar)
+const sudahLunas  = (t: TagihanSisaDasar) => t.status === 'lunas'
 
 /**
  * Tagihan yang sudah masuk hitungan jatuh tempo: akhir hari jatuh temponya sudah
  * lewat, atau siswanya sudah alumni — aturan yang sama dengan statusEfektif.
  * Hari jatuh tempo itu sendiri belum dihitung, orang tua masih punya waktu.
  */
-export const sudahJatuhTempo = (t: TagihanMetrik, sekarang: Date): boolean =>
+export const sudahJatuhTempo = (t: TagihanSisaDasar, sekarang: Date): boolean =>
   t.is_alumni || lewatJatuhTempo(t, sekarang)
 
 /** Tunggakan berjalan: sudah jatuh tempo, belum lunas, dan masih bersisa. */
-export const adalahTunggakan = (t: TagihanMetrik, sekarang: Date): boolean =>
+export const adalahTunggakan = (t: TagihanSisaDasar, sekarang: Date): boolean =>
   !tanpaKewajiban(t.total_nominal) && !sudahLunas(t) && sisaTagihan(t) > 0 && sudahJatuhTempo(t, sekarang)
 
 // ── Ringkasan ────────────────────────────────────────────────────────────────

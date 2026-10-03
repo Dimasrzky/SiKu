@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { muatTertagih } from '@/lib/tagihanTertagih'
 
 const BUKTI_BUCKET  = 'bukti-transfer'
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
@@ -7,10 +8,11 @@ const ALLOWED_TYPES  = ['image/jpeg', 'image/png']
 
 type TagihanRow = {
   id:                  string
-  total_nominal:       number
   status:              string
   sekolah_id:          string
   siswa_id:            string
+  bulan:               number
+  tahun:               number
   payment_token_aktif: boolean
 }
 
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const { data: tagihanData, error: tagErr } = await supabase
     .from('tagihan')
-    .select('id, total_nominal, status, sekolah_id, siswa_id, payment_token_aktif')
+    .select('id, status, sekolah_id, siswa_id, bulan, tahun, payment_token_aktif')
     .eq('payment_token', paymentToken)
     .single()
 
@@ -59,13 +61,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Tagihan sudah lunas.' }, { status: 400 })
   }
 
-  const { data: pembayaranList } = await supabase
-    .from('pembayaran')
-    .select('jumlah')
-    .eq('tagihan_id', tagihan.id)
-
-  const totalBayar = (pembayaranList ?? []).reduce((s: number, p: { jumlah: number }) => s + p.jumlah, 0)
-  const sisa        = tagihan.total_nominal - totalBayar
+  // Yang diajukan = total yang diminta halaman bayar: sisa tagihan ini + tunggakan
+  // sebelumnya. Saat diverifikasi, jumlah itu dibagi ke tagihan-tagihan tersebut.
+  const tertagih = await muatTertagih(supabase, tagihan, new Date())
+  if (!tertagih.data) {
+    return NextResponse.json({ error: 'Gagal memuat rincian tagihan. Silakan coba lagi.' }, { status: 500 })
+  }
+  const sisa = tertagih.data.total
 
   if (sisa <= 0) {
     return NextResponse.json({ error: 'Tagihan sudah lunas.' }, { status: 400 })

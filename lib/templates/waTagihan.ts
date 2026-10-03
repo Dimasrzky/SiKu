@@ -79,8 +79,11 @@ export interface PesanTunggakanParams {
   namaWali:     string
   namaSiswa:    string
   kelasNama:    string
-  /** Tagihan yang sudah lewat jatuh tempo beserta sisanya, terlama dulu */
-  daftar:       { bulan: number; tahun: number; sisa: number }[]
+  /**
+   * Yang ditagih halaman bayar lewat `paymentUrl`, terlama dulu: tunggakan beserta sisanya,
+   * lalu tagihan di tautan itu sendiri — yang terakhir bisa saja belum jatuh tempo
+   */
+  daftar:       { bulan: number; tahun: number; sisa: number; belumJatuhTempo?: boolean }[]
   namaSekolah?: string
   /** Tautan tagihan belum lunas terbaru — halaman bayar ikut menampilkan tunggakan sebelumnya */
   paymentUrl?:  string
@@ -92,18 +95,21 @@ export function buildPesanTunggakanText(p: PesanTunggakanParams): string {
   const wali    = p.namaWali || 'Orang Tua/Wali'
   const sekolah = p.namaSekolah || 'Admin Sekolah'
   const total   = p.daftar.reduce((s, d) => s + d.sisa, 0)
+  const adaBelumJatuhTempo = p.daftar.some(d => d.belumJatuhTempo)
 
   const lines = [
     `Assalamualaikum wr. wb.`,
     ``,
     `Yth. Bapak/Ibu *${wali}*`,
     ``,
-    `Kami dari ${sekolah} mengingatkan tagihan pendidikan yang sudah melewati jatuh tempo:`,
+    adaBelumJatuhTempo
+      ? `Kami dari ${sekolah} mengingatkan tagihan pendidikan berikut, termasuk yang sudah melewati jatuh tempo:`
+      : `Kami dari ${sekolah} mengingatkan tagihan pendidikan yang sudah melewati jatuh tempo:`,
     ``,
     `*Nama Siswa* : ${p.namaSiswa}`,
     `*Kelas*       : ${p.kelasNama}`,
     ``,
-    ...p.daftar.map(d => `• ${BULAN_NAMES[d.bulan]} ${d.tahun}: ${formatRp(d.sisa)}`),
+    ...p.daftar.map(d => `• ${BULAN_NAMES[d.bulan]} ${d.tahun}${d.belumJatuhTempo ? ' (belum jatuh tempo)' : ''}: ${formatRp(d.sisa)}`),
     ``,
     `*Total* : *${formatRp(total)}*`,
     ``,

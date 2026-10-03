@@ -16,8 +16,8 @@ interface Rekening {
 
 interface Props {
   paymentToken:   string
-  totalNominal:   number
-  sisa:           number
+  /** Sisa tagihan di tautan ini + sisa tunggakan sebelumnya (lib/tagihanTertagih) */
+  total:          number
   namaSiswa:      string
   nis:            string
   kelasNama:      string
@@ -30,7 +30,7 @@ interface Props {
 }
 
 export default function BayarWizard({
-  paymentToken, totalNominal, sisa,
+  paymentToken, total,
   namaSiswa, nis, kelasNama, items, tunggakan, badges, rekening, namaBendahara, noWaBendahara,
 }: Props) {
   const router = useRouter()
@@ -48,7 +48,7 @@ export default function BayarWizard({
           kelasNama={kelasNama}
           items={items}
           tunggakan={tunggakan}
-          totalNominal={totalNominal}
+          totalNominal={total}
           badges={badges}
           onLanjut={() => setStep(2)}
         />
@@ -57,7 +57,7 @@ export default function BayarWizard({
       {step === 2 && (
         <MetodePembayaran
           paymentToken={paymentToken}
-          totalNominal={sisa}
+          totalNominal={total}
           rekening={rekening}
           onBack={() => setStep(1)}
           onSubmitted={() => { setWaktuKirim(new Date().toISOString()); setStep(3) }}
@@ -68,7 +68,7 @@ export default function BayarWizard({
         <TerimaKasihView
           namaSiswa={namaSiswa}
           kelasNama={kelasNama}
-          totalNominal={sisa}
+          totalNominal={total}
           waktuKirim={waktuKirim}
           namaBendahara={namaBendahara}
           noWaBendahara={noWaBendahara}

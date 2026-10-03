@@ -103,6 +103,11 @@ export default function VerifikasiTable({ items, namaSekolah }: Props) {
                       <td style={{ padding: '0.75rem 1rem', whiteSpace: 'nowrap' }}>
                         <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0F172A' }}>{formatRp(it.nominalTagihan)}</div>
                         <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#D97706' }}>Diajukan: {formatRp(it.nominalDiajukan)}</div>
+                        {/* Halaman bayar menagih tagihan ini beserta tunggakan sebelumnya,
+                            dan verifikasi membagi transfernya ke tagihan-tagihan itu */}
+                        {it.nominalDiajukan > it.nominalTagihan && (
+                          <div style={{ fontSize: '0.68rem', color: '#64748B' }}>termasuk tunggakan sebelumnya</div>
+                        )}
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem' }}>

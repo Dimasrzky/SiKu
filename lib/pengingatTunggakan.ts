@@ -1,5 +1,6 @@
 import { adalahTunggakan, type TagihanMetrik } from './metrikLaporan'
-import { batasJatuhTempo, tanpaKewajiban } from './statusTagihan'
+import { batasJatuhTempo } from './statusTagihan'
+import { sisaTagihan, tagihanTautan, tagihanTertagih } from './tagihanTertagih'
 import { buildPesanTunggakanText, buildWaMeLink } from './templates/waTagihan'
 
 // Pengingat tunggakan dari laporan (level Kelas dan Siswa) — satu pesan merangkum
@@ -29,19 +30,20 @@ export function tautanPengingatTunggakan(p: {
   namaSekolah: string
   origin:      string
 }): string | null {
-  const tunggakan = tunggakanSiswa(p.tagihan, p.sekarang)
-  if (!p.noWa || tunggakan.length === 0) return null
+  if (!p.noWa || tunggakanSiswa(p.tagihan, p.sekarang).length === 0) return null
 
-  // Tautan tagihan belum lunas terbaru: halaman bayar ikut menampilkan tunggakan sebelumnya
-  const terbaru = p.tagihan
-    .filter(t => t.status !== 'lunas' && !tanpaKewajiban(t.total_nominal))
-    .sort((a, b) => batasJatuhTempo(b).getTime() - batasJatuhTempo(a).getTime())[0]
+  // Tautan tagihan belum lunas terbaru. Pesannya merinci isi halaman bayar tautan itu —
+  // tunggakan sebelumnya beserta tagihan itu sendiri — supaya totalnya sama
+  const terbaru = tagihanTautan(p.tagihan)
+  const daftar  = terbaru ? tagihanTertagih(p.tagihan, terbaru, p.sekarang).daftar : []
 
   const pesan = buildPesanTunggakanText({
     namaWali:    p.namaWali,
     namaSiswa:   p.namaSiswa,
     kelasNama:   p.kelasNama,
-    daftar:      tunggakan.map(t => ({ bulan: t.bulan, tahun: t.tahun, sisa: Math.max(0, t.total_nominal - t.terbayar) })),
+    daftar:      daftar.map(t => ({
+      bulan: t.bulan, tahun: t.tahun, sisa: sisaTagihan(t), belumJatuhTempo: !adalahTunggakan(t, p.sekarang),
+    })),
     namaSekolah: p.namaSekolah,
     paymentUrl:  terbaru?.payment_token ? `${p.origin}/bayar/${terbaru.payment_token}` : undefined,
   })
