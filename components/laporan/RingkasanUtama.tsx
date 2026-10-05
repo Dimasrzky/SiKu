@@ -39,14 +39,15 @@ const Kosong = ({ children }: { children: ReactNode }) => (
 
 // ── Baris 1: kartu metrik ────────────────────────────────────────────────────
 
-const sKartuMetrik:  CSSProperties = { ...sKartuTab, padding: '0.6rem 0.75rem 0.7rem 1rem' }
-const sKepalaMetrik: CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }
-const sJudulMetrik:  CSSProperties = { fontSize: '1.2rem', fontWeight: 400, lineHeight: 1.2, color: WARNA.abu }
+// Diekspor untuk kerangka halaman (components/skeleton/SkeletonLaporan.tsx)
+export const sKartuMetrik:  CSSProperties = { ...sKartuTab, padding: '0.6rem 0.75rem 0.7rem 1rem' }
+export const sKepalaMetrik: CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }
+export const sJudulMetrik:  CSSProperties = { fontSize: '1.2rem', fontWeight: 400, lineHeight: 1.2, color: WARNA.abu }
 const sNilaiMetrik:  CSSProperties = { fontSize: '1.9rem', fontWeight: 700, lineHeight: 1.15, color: WARNA.navy, overflowWrap: 'anywhere' }
-const sGarisBawah:   CSSProperties = { display: 'inline-block', paddingBottom: 2, borderBottom: '1.5px solid #D5D7DD' }
-const sKetMetrik:    CSSProperties = { fontSize: '1rem', lineHeight: 1.4, color: WARNA.abuMuda }
+export const sGarisBawah:   CSSProperties = { display: 'inline-block', paddingBottom: 2, borderBottom: '1.5px solid #D5D7DD' }
+export const sKetMetrik:    CSSProperties = { fontSize: '1rem', lineHeight: 1.4, color: WARNA.abuMuda }
 /** Nilai dan rinciannya menjorok dari judul kartu, seperti di mockup */
-const sIsiMetrik:    CSSProperties = { paddingLeft: '1rem', marginTop: '1.1rem' }
+export const sIsiMetrik:    CSSProperties = { paddingLeft: '1rem', marginTop: '1.1rem' }
 
 const BarisRincian = ({ warna, label, nilai, warnaNilai = WARNA.abu }: { warna: string; label: string; nilai: number; warnaNilai?: string }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
@@ -118,7 +119,7 @@ export const KartuRingkasanUtama = ({ ringkasan, pemasukan }: {
 
 // ── Baris 2: komposisi status ────────────────────────────────────────────────
 
-const URUTAN_DONUT: { status: StatusTagihan; label: string; warna: string }[] = [
+export const URUTAN_DONUT: { status: StatusTagihan; label: string; warna: string }[] = [
   { status: 'lunas',       label: 'Lunas',       warna: WARNA.hijau },
   { status: 'cicilan',     label: 'Cicilan',     warna: WARNA.navy },
   { status: 'belum_bayar', label: 'Belum bayar', warna: WARNA.biruMuda },

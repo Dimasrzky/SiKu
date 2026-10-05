@@ -6,6 +6,11 @@ import { komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type Periode
 // bulan itu, lengkap dengan rincian komponen, komponen individu, dan potongan beasiswanya.
 // Tagihan yang sudah ada tidak pernah diubah.
 //
+// Penerbitannya per kelas: siswa di kelas yang belum masuk paket tahun ajaran itu
+// dilewati, kelas lain tetap ditagih. Sekolah yang baru menyerahkan sebagian kelas, atau
+// sedang menambah kelas sendiri, tidak boleh tertahan seluruhnya karena satu kelas yang
+// belum lengkap. Siswa yang terlewat disebut di pemberitahuan (lib/statusPenerbitan).
+//
 // Dipakai bersama oleh halaman Tagihan Aktif (klien browser, tunduk pada RLS) dan cron
 // pengingat (server, service role) — karena itu klien database-nya diterima sebagai
 // parameter. Service role melewati RLS, jadi setiap query di sini harus tetap dibatasi
@@ -20,21 +25,14 @@ type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen
 type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type RiwayatRow        = { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }
 
-// Syarat penerbitan — selama salah satunya tidak terpenuhi, tidak ada tagihan yang
-// diterbitkan untuk kelas mana pun. Diekspor supaya pemberitahuan "tagihan belum terbit"
-// (lib/statusPenerbitan) memakai aturan yang sama, bukan salinannya.
-export const PESAN_KELAS_TANPA_PAKET = 'Beberapa kelas belum memiliki paket. Konfigurasi paket per kelas terlebih dahulu.'
-export const PESAN_KELAS_TANPA_SISWA = 'Beberapa kelas yang sudah dipaketkan belum memiliki siswa.'
-
-/** Kelas yang belum masuk paket mana pun pada tahun ajaran itu */
+/**
+ * Kelas yang belum masuk paket mana pun pada tahun ajaran itu — siswanya dilewati
+ * runGenerate. Diekspor supaya pemberitahuan "tagihan belum terbit" (lib/statusPenerbitan)
+ * memakai aturan yang sama, bukan salinannya.
+ */
 export const kelasTanpaPaket = <K extends { id: string }>(
   semuaKelas: K[], kelasBerpaket: { has(id: string): boolean },
 ): K[] => semuaKelas.filter(k => !kelasBerpaket.has(k.id))
-
-/** Kelas yang sudah berpaket tetapi belum punya siswa aktif */
-export const kelasBerpaketTanpaSiswa = (
-  kelasBerpaket: Iterable<string>, kelasBersiswa: { has(id: string): boolean },
-): string[] => [...kelasBerpaket].filter(id => !kelasBersiswa.has(id))
 
 export async function runGenerate(
   db: SupabaseClient, sid: string, tahunAjaran: string, bulan: number, tahun: number,
@@ -55,22 +53,9 @@ export async function runGenerate(
     for (const pk of p.paket_kelas) kelasToKomponen.set(pk.kelas_id, komps)
   }
 
-  // Pembacaan yang gagal tidak boleh dibaca sebagai "datanya kosong": tagihan yang terbit
-  // dari data separuh tidak dikoreksi lagi, jadi lebih baik tidak terbit sama sekali
-  const { data: allKelasData, error: eKelas } = await db.from('kelas').select('id').eq('sekolah_id', sid)
-  if (eKelas) return { success: false, error: 'Gagal memuat data kelas.' }
-  const missingKelas = kelasTanpaPaket((allKelasData ?? []) as { id: string }[], kelasToKomponen)
-  if (missingKelas.length > 0)
-    return { success: false, error: PESAN_KELAS_TANPA_PAKET }
-
   const { data: siswaData, error: e2 } = await db
     .from('siswa').select('id, nama, kelas_id').eq('sekolah_id', sid).eq('status', 'aktif').limit(1000)
   if (e2 || !siswaData) return { success: false, error: 'Gagal memuat data siswa.' }
-
-  const siswaPorKelas = new Set((siswaData as SiswaForGenerate[]).map(s => s.kelas_id))
-  const kelasKosong   = kelasBerpaketTanpaSiswa(kelasToKomponen.keys(), siswaPorKelas)
-  if (kelasKosong.length > 0)
-    return { success: false, error: PESAN_KELAS_TANPA_SISWA }
 
   const siswaIds = (siswaData as SiswaForGenerate[]).map(s => s.id)
   const today    = new Date().toISOString().split('T')[0]
@@ -146,6 +131,7 @@ export async function runGenerate(
 
   for (const siswa of (siswaData as SiswaForGenerate[])) {
     if (existingIds.has(siswa.id)) continue
+    // Kelas yang belum berpaket dilewati tanpa menahan kelas lain
     const komps = kelasToKomponen.get(siswa.kelas_id)
     if (!komps || komps.length === 0) continue
 

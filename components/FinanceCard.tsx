@@ -1,21 +1,25 @@
 'use client'
 
 import React from 'react'
+import { Blok } from './skeleton/Blok'
 
 interface FinanceCardProps {
   title: string
-  value: string
+  /** Teks nilai, atau blok kerangka selama data dimuat */
+  value: React.ReactNode
   valueColor: string
   info?: React.ReactNode
   progress: number
   progressColor: string
-  progressLabel: string
+  progressLabel: React.ReactNode
   progressSub?: string
+  /** Kerangka Dashboard: batang progres berupa blok berkilau */
+  memuat?: boolean
 }
 
 export function FinanceCard({
   title, value, valueColor, info,
-  progress, progressColor, progressLabel, progressSub,
+  progress, progressColor, progressLabel, progressSub, memuat = false,
 }: FinanceCardProps) {
   return (
     <div style={{
@@ -78,15 +82,19 @@ export function FinanceCard({
             )}
           </div>
           {/* Lebar mengikuti ruang kartu (maks 280px) supaya tidak meluap di layar sempit */}
-          <div style={{ background: '#E5E7EB', borderRadius: 999, height: 10, width: '80%', maxWidth: 280, overflow: 'hidden', marginTop: 2 }}>
-            <div style={{
-              background: progressColor,
-              height: '100%',
-              width: `${Math.min(progress, 100)}%`,
-              borderRadius: 999,
-              transition: 'width 0.6s ease',
-            }} />
-          </div>
+          {memuat ? (
+            <Blok lebar="80%" tinggi={10} sudut={999} style={{ maxWidth: 280, marginTop: 2 }} />
+          ) : (
+            <div style={{ background: '#E5E7EB', borderRadius: 999, height: 10, width: '80%', maxWidth: 280, overflow: 'hidden', marginTop: 2 }}>
+              <div style={{
+                background: progressColor,
+                height: '100%',
+                width: `${Math.min(progress, 100)}%`,
+                borderRadius: 999,
+                transition: 'width 0.6s ease',
+              }} />
+            </div>
+          )}
         </div>
       </div>
     </div>

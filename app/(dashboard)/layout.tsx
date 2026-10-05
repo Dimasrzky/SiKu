@@ -26,6 +26,7 @@ import {
   Database,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
 interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string }
@@ -474,11 +475,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push('/')
   }
 
-  if (!user) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#F1F5F9' }}>
-      <p style={{ color:'#9CA3AF', fontSize:'0.9rem' }}>Memuat...</p>
-    </div>
-  )
+  // Data login dibaca dari localStorage, jadi di server dan sesaat sebelum hydrate
+  // belum ada: tampilkan kerangka sidebar + kerangka halaman sesuai URL
+  if (!user) return <SkeletonShell pathname={pathname} />
 
   const schoolInitial   = user?.sekolah?.charAt(0)?.toUpperCase() || 'S'
   const tahunAjaranDone = setupSteps['tahun_ajaran']     === true

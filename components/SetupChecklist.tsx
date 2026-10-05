@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, Circle } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { BlokTeks } from './skeleton/Blok'
 
 interface SetupSteps {
   profil_sekolah:     boolean
@@ -292,6 +293,72 @@ function SuccessPopup({ onClose }: { onClose: () => void }) {
   )
 }
 
+/* ─── Kerangka selama langkah setup dimuat ──────────────────────── */
+
+/**
+ * Bentuk checklist dengan label langkah asli; teks banner (bergantung langkah yang
+ * sedang berjalan) dan status tiap langkah belum diketahui. Dipakai juga Dashboard
+ * selama memuat, untuk sekolah yang setupnya belum selesai.
+ */
+export function SkeletonSetupChecklist() {
+  return (
+    <div aria-busy="true" style={{ marginBottom: '1.5rem' }}>
+      <span role="status" className="skeleton-sr">Memuat checklist setup…</span>
+
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+        background: '#1A2C4E', borderRadius: 12, padding: '1rem 1.25rem', marginBottom: '2rem',
+        boxShadow: '3px 6px 14px rgba(26, 44, 78, 0.58)',
+      }}>
+        <div style={{ flex: 1 }}>
+          <BlokTeks gelap lebar="94%" ukuran="1.2rem" tinggiBaris={1.65} />
+          <BlokTeks gelap lebar="62%" ukuran="1.2rem" tinggiBaris={1.65} />
+        </div>
+        <div style={{
+          flexShrink: 0, position: 'relative', top: '-0.4rem', right: '-0.65rem',
+          width: 40, height: 40, background: '#F7DD7D', borderRadius: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Image src="/icons/IconTSeru.png" width={3.5} height={3.5} alt="" style={{ display: 'block' }} />
+        </div>
+      </div>
+
+      <div style={{
+        background: '#fff', border: '1px solid var(--border)', borderLeft: '30px solid var(--navy)',
+        borderRadius: 12, padding: '1.25rem 1.5rem', boxShadow: '0 0 12px rgba(31, 85, 167, 0.58)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <span style={{ fontWeight: 700, color: 'var(--navy-dark)', fontSize: '1.8rem', display: 'block', fontFamily: 'var(--font-dm-sans), sans-serif', marginTop: '-0.5rem' }}>
+              Sambutan &amp; cheklist setup
+            </span>
+            <p style={{ fontSize: '0.98rem', color: 'var(--text-muted)', lineHeight: 1.5, margin: '0.2rem 0 0' }}>
+              Selesaikan {STEPS.length} langkah setup berikut terlebih dahulu.
+            </p>
+          </div>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1B2B45', color: '#fff',
+            padding: '0.3rem 0.85rem', borderRadius: 20, fontSize: '0.9rem', fontWeight: 400,
+            whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '1rem',
+          }}>
+            <span className="dot-pulse" style={{ position: 'relative', right: 6, width: 18, height: 18, borderRadius: '50%', background: '#D35E5E', flexShrink: 0 }} />
+            Sistem belum aktif
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+          {STEPS.map(step => (
+            <div key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.75rem' }}>
+              <Circle size={17} color="#CBD5E1" />
+              <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>{step.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ─── Komponen utama ────────────────────────────────────────────── */
 
 export function SetupChecklist() {
@@ -386,7 +453,8 @@ export function SetupChecklist() {
     return () => { cancelled = true }
   }, [])
 
-  if (loading || !steps) return null
+  if (loading) return <SkeletonSetupChecklist />
+  if (!steps) return null
 
   const allComplete = STEPS.every(s => steps[s.key])
 

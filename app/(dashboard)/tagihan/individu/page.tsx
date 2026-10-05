@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { LayoutList, Puzzle, Pencil, Trash2, X, Plus, Search, Users, AlertTriangle, Eye } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { SkeletonKomponenIndividu } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -349,11 +350,7 @@ export default function IndividuPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <div className="dashboard-content">
-      <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-    </div>
-  )
+  if (loading) return <SkeletonKomponenIndividu />
 
   return (
     <div className="dashboard-content">

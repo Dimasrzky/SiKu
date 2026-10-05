@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Pencil, Plus, AlertTriangle, CheckCircle2, XCircle, ChevronRight, Users2, LayoutGrid, BookOpen, Save, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonTahunAjaran } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -317,15 +318,7 @@ export default function TahunAjaranPage() {
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  if (pageLoading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Memuat...
-        </div>
-      </div>
-    )
-  }
+  if (pageLoading) return <SkeletonTahunAjaran />
 
   // ── VIEW MODE ─────────────────────────────────────────────────────────────
 

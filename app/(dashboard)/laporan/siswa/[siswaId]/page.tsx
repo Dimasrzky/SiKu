@@ -25,6 +25,7 @@ import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
 import { StatusSiswaBadge } from '@/components/laporan/StatusSiswaBadge'
 import { KATEGORI_BULAN_UI, URUTAN_LEGENDA, LegendaBulan, detailSel } from '@/components/laporan/HeatmapSiswa'
 import { sKartu, sBingkai, sJudulPanel, sSubjudulPanel } from '@/components/laporan/gayaLaporan'
+import { SkeletonLaporanSiswa } from '@/components/skeleton/SkeletonLaporan'
 
 // Level Siswa drill-down (Draft Pengembangan Fitur Laporan, Prioritas 2): ringkasan
 // metrik, timeline 12 bulan, riwayat transaksi dan metode bayar, catatan tindak
@@ -72,11 +73,7 @@ const kunciBulan = (bulan: number, tahun: number) => `${tahun}-${bulan}`
 // useSearchParams (lewat useFilterLaporan) wajib berada di bawah batas Suspense
 export default function LaporanSiswaPage() {
   return (
-    <Suspense fallback={
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
-    }>
+    <Suspense fallback={<SkeletonLaporanSiswa />}>
       <LaporanSiswaContent />
     </Suspense>
   )
@@ -265,7 +262,7 @@ function LaporanSiswaContent() {
       : `NIS ${siswa.nis ?? '—'} · Kelas ${siswa.kelas_id ? kelas.get(siswa.kelas_id)?.nama ?? '—' : '—'}`
     : `${selectedFilter.label} · ${selectedFilter.sublabel}`
 
-  const sedangMemuat = loading || memuatDetail
+  if (loading || memuatDetail) return <SkeletonLaporanSiswa />
 
   return (
     <div className="dashboard-content">
@@ -273,14 +270,10 @@ function LaporanSiswaContent() {
         judul={namaSiswa}
         subjudul={keteranganSiswa}
         jejak={jejak}
-        kanan={!loading && <FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />}
+        kanan={<FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />}
       />
 
-      {sedangMemuat ? (
-        <div style={{ ...sBingkai, borderLeft: '28px solid #E2E8F0', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '0.875rem', minHeight: 220 }}>
-          Memuat data...
-        </div>
-      ) : !siswa && rows.length === 0 ? (
+      {!siswa && rows.length === 0 ? (
         <div style={{ ...sBingkai, alignItems: 'center', justifyContent: 'center', minHeight: 300, textAlign: 'center' }}>
           <Database size={48} strokeWidth={1.2} color="#CBD5E1" />
           <div style={{ fontWeight: 700, color: '#0F172A' }}>Siswa tidak ditemukan</div>

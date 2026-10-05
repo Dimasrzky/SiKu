@@ -13,6 +13,7 @@ import { FilterLaporan } from '@/components/laporan/FilterLaporan'
 import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
 import { TrenTagihanChart } from '@/components/laporan/TrenTagihanChart'
 import { sKartu, sBingkai, sJudulPanel, sSubjudulPanel } from '@/components/laporan/gayaLaporan'
+import { SkeletonLaporanJenjang } from '@/components/skeleton/SkeletonLaporan'
 
 // Level Jenjang drill-down (Draft Pengembangan Fitur Laporan, Prioritas 2):
 // tren jenjang dan ranking kelas berdasarkan ketepatan waktu dan tunggakan.
@@ -44,12 +45,9 @@ function nilaiKolom(b: BarisKelas, kolom: KolomUrut): number | string | null {
 
 // useSearchParams (lewat useFilterLaporan) wajib berada di bawah batas Suspense
 export default function LaporanJenjangPage() {
+  const { jenjang } = useParams<{ jenjang: string }>()
   return (
-    <Suspense fallback={
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
-    }>
+    <Suspense fallback={<SkeletonLaporanJenjang jenjang={decodeURIComponent(jenjang)} />}>
       <LaporanJenjangContent />
     </Suspense>
   )
@@ -128,20 +126,18 @@ function LaporanJenjangContent() {
 
   const judul = `Jenjang ${jenjang}`
 
+  if (loading) return <SkeletonLaporanJenjang jenjang={jenjang} />
+
   return (
     <div className="dashboard-content">
       <HeaderLaporan
         judul={judul}
         subjudul={`${selectedFilter.label} · ${selectedFilter.sublabel}`}
         jejak={[{ label: 'Laporan', href: `/laporan${qsFilter}` }, { label: judul }]}
-        kanan={!loading && <FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />}
+        kanan={<FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />}
       />
 
-      {loading ? (
-        <div style={{ ...sBingkai, borderLeft: '28px solid #E2E8F0', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '0.875rem', minHeight: 220 }}>
-          Memuat data...
-        </div>
-      ) : periodRows.length === 0 ? (
+      {periodRows.length === 0 ? (
         <div style={{ ...sBingkai, alignItems: 'center', justifyContent: 'center', minHeight: 300, textAlign: 'center' }}>
           <Database size={48} strokeWidth={1.2} color="#CBD5E1" />
           <div style={{ fontWeight: 700, color: '#0F172A' }}>Belum ada tagihan {judul.toLowerCase()} pada periode ini</div>

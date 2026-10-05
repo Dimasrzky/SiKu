@@ -40,8 +40,9 @@ export interface LaporanOtomatis {
   /** Pembuatan job gagal untuk sekolah ini; sekolah lain tetap diproses */
   galat?:    string
   /**
-   * Alasan tagihan bulan berjalan tidak diterbitkan pagi ini (mis. ada kelas tanpa paket).
-   * Pengingat untuk tagihan yang sudah ada tetap dibuat.
+   * Alasan tagihan bulan berjalan tidak diterbitkan pagi ini (mis. belum ada tahun ajaran
+   * aktif, atau datanya gagal dimuat). Kelas tanpa paket bukan alasan: kelasnya saja yang
+   * dilewati. Pengingat untuk tagihan yang sudah ada tetap dibuat.
    */
   tidakTerbit?: string
 }

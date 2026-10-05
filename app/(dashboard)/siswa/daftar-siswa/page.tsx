@@ -12,6 +12,7 @@ import {
 import * as XLSX from 'xlsx'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { SkeletonDaftarSiswa } from '@/components/skeleton/SkeletonSiswa'
 
 const SekolahId = ''
 
@@ -320,6 +321,17 @@ export default function DaftarSiswaPage() {
 
   // ── Import confirm ────────────────────────────────────────────────────────
 
+  // Siswa yang baru masuk ke kelas berpaket langsung ditagih untuk bulan berjalan, sama
+  // seperti sesudah paket, komponen, atau beasiswa disimpan. Tanpa ini tagihannya menunggu
+  // pemicu lain: Tagihan Aktif hanya menerbitkan sendiri selama bulan itu masih kosong.
+  const triggerRecalculate = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    fetch('/api/recalculate-tagihan', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+    }).catch(() => {})
+  }
+
   const handleImport = async () => {
     if (!previewRows) return
     const valid = previewRows.filter(r => !r.error)
@@ -338,6 +350,7 @@ export default function DaftarSiswaPage() {
 
     const json = await res.json() as { error?: string }
     if (!res.ok) { setImportError(json.error ?? 'Gagal mengimpor.'); setImporting(false); return }
+    triggerRecalculate()
 
     if (!setupDone) {
       await fetch('/api/setup-step', {
@@ -381,6 +394,7 @@ export default function DaftarSiswaPage() {
 
     const json = await res.json() as { error?: string }
     if (!res.ok) { setMError(json.error ?? 'Gagal menyimpan.'); setMSaving(false); return }
+    triggerRecalculate()
 
     const wasSetupMode = !setupDone
     if (wasSetupMode) {
@@ -435,6 +449,8 @@ export default function DaftarSiswaPage() {
       .eq('id', editSiswa.id)
 
     if (error) { setEditError(error.message); setEditSaving(false); return }
+    // Pindah dari kelas yang belum berpaket berarti belum punya tagihan bulan ini
+    if (editKelasId !== editSiswa.kelas?.id) triggerRecalculate()
 
     await loadSiswa(sekolahId)
     setEditSiswa(null)
@@ -548,15 +564,7 @@ export default function DaftarSiswaPage() {
 
   // ── Main render ───────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Memuat data...
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <SkeletonDaftarSiswa />
 
   // ── Setup Mode ────────────────────────────────────────────────────────────
 

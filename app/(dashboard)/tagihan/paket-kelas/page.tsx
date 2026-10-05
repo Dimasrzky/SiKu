@@ -5,14 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Trash2, Search, Pencil, Layers, AlertTriangle, Archive, ChevronRight, X, CalendarDays } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-
-const JENJANG_MAP: Record<string, string[]> = {
-  'TK/PAUD': ['A', 'B', 'C'],
-  'SD/MI':   ['1', '2', '3', '4', '5', '6'],
-  'SMP/MTs': ['7', '8', '9'],
-  'SMA/MA':  ['10', '11', '12'],
-  'SMK':     ['10', '11', '12'],
-}
+import { SkeletonPaketKelas } from '@/components/skeleton/SkeletonTagihan'
 
 const formatRupiah = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
@@ -146,10 +139,10 @@ export default function PaketPerKelasPage() {
   const [editSaving,              setEditSaving]              = useState(false)
   const [editError,               setEditError]               = useState('')
 
-  // Popup kelas belum lengkap
-  const [jenjangOptions,         setJenjangOptions]         = useState<string[]>([])
-  const [showKelasKurangPopup,   setShowKelasKurangPopup]   = useState(false)
-  const [showAllPaketedPopup,    setShowAllPaketedPopup]    = useState(false)
+  // Popup semua kelas sudah berpaket. Tingkat yang belum punya kelas sengaja tidak
+  // diperiksa: penerbitan tagihan hanya mensyaratkan kelas yang ada berpaket dan bersiswa,
+  // jadi sekolah yang baru menyerahkan sebagian kelas tetap bisa membuat paket.
+  const [showAllPaketedPopup, setShowAllPaketedPopup] = useState(false)
 
   // Rekening sekolah — paket tagihan tak ada gunanya tanpa rekening tujuan pembayaran
   const [hasRekening,          setHasRekening]          = useState(true)
@@ -229,11 +222,10 @@ export default function PaketPerKelasPage() {
 
   useEffect(() => {
     ;(async () => {
-      const { data: pData } = await supabase.from('pengaturan').select('setup_steps, jenjang_sekolah').maybeSingle()
-      const peng  = pData as { setup_steps?: Record<string, boolean>; jenjang_sekolah?: string } | null
+      const { data: pData } = await supabase.from('pengaturan').select('setup_steps').maybeSingle()
+      const peng  = pData as { setup_steps?: Record<string, boolean> } | null
       const steps = peng?.setup_steps ?? {}
       if (!steps['buat_kelas']) { router.replace('/siswa/manajemen-kelas'); return }
-      setJenjangOptions(JENJANG_MAP[peng?.jenjang_sekolah ?? ''] ?? [])
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -314,12 +306,9 @@ export default function PaketPerKelasPage() {
     // Tanpa rekening tujuan, tagihan yang dibuat tidak bisa dibayar orang tua
     if (!hasRekening) { setShowRekeningPopup(true); return }
 
-    const allJenjangReady = jenjangOptions.length > 0 &&
-      jenjangOptions.every(j => kelasList.some(k => k.jenjang === j))
-    if (!allJenjangReady) { setShowKelasKurangPopup(true); return }
-
-    const allPaketed = kelasList.length > 0 &&
-      kelasList.every(k => paketList.some(p => p.kelas_list.some(pk => pk.id === k.id)))
+    // Paket tahun ajaran aktif saja, sama dengan pilihan kelas di form. Paket tahun lalu
+    // masih memuat semua kelas, jadi di tahun ajaran baru tombol ini akan selalu berhenti di sini.
+    const allPaketed = kelasList.length > 0 && availableKelas.length === 0
     if (allPaketed) { setShowAllPaketedPopup(true); return }
 
     setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
@@ -581,13 +570,7 @@ export default function PaketPerKelasPage() {
     triggerRecalculate()
   }
 
-  if (loading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
-    )
-  }
+  if (loading) return <SkeletonPaketKelas />
 
   return (
     <div className="dashboard-content">
@@ -1176,7 +1159,6 @@ export default function PaketPerKelasPage() {
         </div>
       )}
 
-      {/* ── Popup kelas belum lengkap ─────────────────────────────────────────── */}
       {/* ── Popup bawa paket periode sebelumnya ──────────────────────────── */}
       {showCarryPopup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
@@ -1269,56 +1251,6 @@ export default function PaketPerKelasPage() {
             >
               Mengerti
             </button>
-          </div>
-        </div>
-      )}
-
-      {showKelasKurangPopup && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'modalBackdrop 0.2s ease' }}>
-          <div style={{ position: 'relative', background: '#fff', borderRadius: 20, width: '100%', maxWidth: 400, padding: '2rem 1.75rem', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', animation: 'modalCard 0.28s cubic-bezier(0.34,1.56,0.64,1)', textAlign: 'center' }}>
-            <button
-              onClick={() => setShowKelasKurangPopup(false)}
-              style={{ position: 'absolute', top: 14, right: 14, width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
-            >
-              <X size={15} />
-            </button>
-            <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
-              <AlertTriangle size={28} color="#D97706" />
-            </div>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--navy-dark)', margin: '0 0 0.6rem' }}>
-              Kelas Belum Lengkap
-            </h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 0.5rem', lineHeight: 1.6 }}>
-              Semua jenjang kelas belum dibuat. Silahkan buat terlebih dahulu sebelum menambah paket.
-            </p>
-            <p style={{ fontSize: '0.82rem', color: '#D97706', fontWeight: 600, background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 8, padding: '0.5rem 0.75rem', margin: '0 0 1.5rem' }}>
-              Jenjang yang belum punya kelas:{' '}
-              <strong>
-                {jenjangOptions.filter(j => !kelasList.some(k => k.jenjang === j)).map(j => `Kelas ${j}`).join(', ')}
-              </strong>
-            </p>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button
-                onClick={() => {
-                  setShowKelasKurangPopup(false)
-                  setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
-                  setSelectedJenjang(''); setSelectedKelasIds([])
-                  setCheckedKomponenIds([]); setNominalMap({})
-                  setEditingNominalId(null)
-                  setShowForm(true)
-                  window.scrollTo({ top: 0, behavior: 'smooth' })
-                }}
-                style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: '1.5px solid #E2E8F0', background: '#fff', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', color: 'var(--navy-dark)' }}
-              >
-                Tetap Buat
-              </button>
-              <button
-                onClick={() => { setShowKelasKurangPopup(false); router.push('/siswa/manajemen-kelas') }}
-                style={{ flex: 1, padding: '0.7rem', borderRadius: 10, border: 'none', background: '#1A2C4E', color: '#fff', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer' }}
-              >
-                Buat Kelas Sekarang
-              </button>
-            </div>
           </div>
         </div>
       )}

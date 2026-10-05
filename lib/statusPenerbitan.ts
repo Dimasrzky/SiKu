@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilSemua } from './ambilSemua'
-import { kelasBerpaketTanpaSiswa, kelasTanpaPaket } from './generateTagihan'
+import { kelasTanpaPaket } from './generateTagihan'
 
 // Kenapa tagihan bulan berjalan belum terbit — bahan pemberitahuan di Dashboard dan
 // Tagihan Aktif (diputuskan 2 Okt 2026: sekolah diberi tahu di aplikasi, bukan lewat
@@ -9,7 +9,7 @@ import { kelasBerpaketTanpaSiswa, kelasTanpaPaket } from './generateTagihan'
 //
 // Dipakai dari komponen 'use client' (klien browser, tunduk pada RLS).
 
-export type JenisPenahan = 'tanpa_tahun_ajaran' | 'kelas_tanpa_paket' | 'kelas_tanpa_siswa'
+export type JenisPenahan = 'tanpa_tahun_ajaran' | 'kelas_tanpa_paket'
 
 export interface PenahanTerbit {
   jenis: JenisPenahan
@@ -18,11 +18,15 @@ export interface PenahanTerbit {
 }
 
 export interface StatusPenerbitan {
-  /** Siswa aktif yang sudah punya kelas tetapi belum punya tagihan bulan itu */
+  /**
+   * Siswa aktif yang sudah punya kelas tetapi belum punya tagihan bulan itu. Kalau ada
+   * penahan, hanya siswa yang tertahan olehnya — angka ini tampil di samping alasannya.
+   */
   belumDitagih: number
   /**
    * Yang menahan penerbitan tagihan mereka. null = tidak ada yang menahan: tagihannya
-   * terbit begitu Tagihan Aktif dibuka atau cron pagi berjalan.
+   * terbit pada penerbitan berikutnya (Tagihan Aktif, simpan data siswa atau pengaturan
+   * tagihan, cron pagi).
    */
   penahan: PenahanTerbit | null
 }
@@ -45,7 +49,9 @@ export async function statusPenerbitan(
   if (siswaRes.error || tagihanRes.error) return { data: null, error: GAGAL }
 
   const sudahDitagih = new Set(tagihanRes.data.map(t => t.siswa_id))
-  const belumDitagih = siswaRes.data.filter(s => s.kelas_id && !sudahDitagih.has(s.id)).length
+  const belum = siswaRes.data.filter((s): s is { id: string; kelas_id: string } =>
+    !!s.kelas_id && !sudahDitagih.has(s.id))
+  const belumDitagih = belum.length
   // Keadaan yang paling sering: semua sudah ditagih. Tidak perlu membaca apa-apa lagi.
   if (belumDitagih === 0) return { data: { belumDitagih: 0, penahan: null }, error: null }
 
@@ -69,16 +75,19 @@ export async function statusPenerbitan(
   )
   const urut = (nama: string[]) => [...nama].sort((a, b) => a.localeCompare(b, 'id', { numeric: true }))
 
-  const tanpaPaket = kelasTanpaPaket(semuaKelas, kelasBerpaket)
+  // Penerbitan berjalan per kelas, jadi yang disebut hanya kelas tanpa paket yang siswanya
+  // memang belum ditagih. Kelas kosong tidak menahan siapa pun.
+  const kelasSiswaBelum = new Set(belum.map(s => s.kelas_id))
+  const tanpaPaket = kelasTanpaPaket(semuaKelas, kelasBerpaket).filter(k => kelasSiswaBelum.has(k.id))
   if (tanpaPaket.length > 0) {
-    return { data: { belumDitagih, penahan: { jenis: 'kelas_tanpa_paket', kelas: urut(tanpaPaket.map(k => k.nama)) } }, error: null }
-  }
-
-  const kelasBersiswa = new Set(siswaRes.data.map(s => s.kelas_id).filter((id): id is string => !!id))
-  const tanpaSiswa    = new Set(kelasBerpaketTanpaSiswa(kelasBerpaket, kelasBersiswa))
-  if (tanpaSiswa.size > 0) {
-    const nama = semuaKelas.filter(k => tanpaSiswa.has(k.id)).map(k => k.nama)
-    return { data: { belumDitagih, penahan: { jenis: 'kelas_tanpa_siswa', kelas: urut(nama) } }, error: null }
+    const idTanpaPaket = new Set(tanpaPaket.map(k => k.id))
+    return {
+      data: {
+        belumDitagih: belum.filter(s => idTanpaPaket.has(s.kelas_id)).length,
+        penahan:      { jenis: 'kelas_tanpa_paket', kelas: urut(tanpaPaket.map(k => k.nama)) },
+      },
+      error: null,
+    }
   }
 
   return { data: { belumDitagih, penahan: null }, error: null }
@@ -107,7 +116,5 @@ export function pesanPenahanTerbit(p: PenahanTerbit): PesanPenahan {
       return { alasan: 'Belum ada tahun ajaran aktif.', aksiLabel: 'Atur Tahun Ajaran', aksiHref: '/tagihan/tahun-ajaran' }
     case 'kelas_tanpa_paket':
       return { alasan: `${daftarKelas(p.kelas)} belum punya paket.`, aksiLabel: 'Atur Paket Kelas', aksiHref: '/tagihan/paket-kelas' }
-    case 'kelas_tanpa_siswa':
-      return { alasan: `${daftarKelas(p.kelas)} sudah punya paket tetapi belum punya siswa aktif.`, aksiLabel: 'Atur Paket Kelas', aksiHref: '/tagihan/paket-kelas' }
   }
 }

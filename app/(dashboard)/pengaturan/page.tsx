@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonPengaturan } from '@/components/skeleton/SkeletonPengaturan'
 
 const BANK_LIST = ['BCA', 'BNI', 'BPD DIY', 'BRI', 'BSI', 'BTN', 'CIMB', 'MANDIRI'] as const
 
@@ -205,6 +206,8 @@ function CopyField({ label, value, onCopy }: { label: string; value: string; onC
 }
 
 export default function PengaturanPage() {
+  // Sebelum data datang, kartu rekening akan tampil sebagai "Belum ada rekening" — keliru
+  const [memuat,       setMemuat]       = useState(true)
   const [saved,        setSaved]        = useState(false)
   const [savedLeaving, setSavedLeaving] = useState(false)
   const [saving,       setSaving]       = useState(false)
@@ -290,7 +293,12 @@ export default function PengaturanPage() {
         idSekolah:   sekolahId,
       })
     }
-    load()
+    // Kerangka dilepas juga saat pemuatan gagal — isian kosong lebih berguna daripada
+    // kerangka yang tidak pernah hilang
+    const muat = async () => {
+      try { await load() } finally { setMemuat(false) }
+    }
+    muat()
   }, [])
 
   const handleSave = () => {
@@ -448,6 +456,8 @@ export default function PengaturanPage() {
       handleSave()
     }
   }
+
+  if (memuat) return <SkeletonPengaturan />
 
   return (
     <div className="dashboard-content">

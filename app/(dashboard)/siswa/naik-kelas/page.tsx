@@ -9,6 +9,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
+import { SkeletonNaikKelas } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -486,15 +487,7 @@ export default function NaikKelasPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.875rem' }}>
-          Memuat data...
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <SkeletonNaikKelas />
 
   return (
     <div className="dashboard-content">

@@ -25,6 +25,7 @@ import {
   type JenjangRingkas, type KomponenBelum,
 } from '@/components/laporan/RingkasanUtama'
 import { sBingkai, WARNA_LAPORAN } from '@/components/laporan/gayaLaporan'
+import { SkeletonLaporan } from '@/components/skeleton/SkeletonLaporan'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -312,11 +313,7 @@ interface TahunAjaranFullRaw {
 // saat Next mencoba melakukan prerender statis halaman ini.
 export default function LaporanPage() {
   return (
-    <Suspense fallback={
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
-    }>
+    <Suspense fallback={<SkeletonLaporan />}>
       <LaporanContent />
     </Suspense>
   )
@@ -1056,6 +1053,8 @@ function LaporanContent() {
     }
   }
 
+  if (loading) return <SkeletonLaporan />
+
   return (
     <div className="dashboard-content">
 
@@ -1063,7 +1062,7 @@ function LaporanContent() {
       <HeaderLaporan
         judul="Laporan"
         subjudul="Analisis keuangan dan unduhan laporan per periode"
-        kanan={!loading && (
+        kanan={(
           <>
             <FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />
             <button
@@ -1076,15 +1075,8 @@ function LaporanContent() {
         )}
       />
 
-      {/* ── Loading ── */}
-      {loading && (
-        <div style={{ background: '#fff', borderRadius: 14, borderLeft: '28px solid #E2E8F0', border: '1.5px solid #E2E8F0', padding: '4rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '0.875rem', minHeight: 220 }}>
-          Memuat data...
-        </div>
-      )}
-
       {/* ── Empty State ── */}
-      {!loading && !hasData && (
+      {!hasData && (
         <div style={{
           background: '#fff',
           borderRadius: 14,
@@ -1108,7 +1100,7 @@ function LaporanContent() {
       )}
 
       {/* ── Data State ── */}
-      {!loading && hasData && (
+      {hasData && (
         <>
           {/* Semua baris stat dalam satu wrapper card border-left. Huruf DM Sans seperti
               mockup Figma (Okt 2026); kelas laporan-utama merapatkan jarak hurufnya. */}

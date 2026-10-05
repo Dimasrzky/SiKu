@@ -4,7 +4,8 @@ import { type LucideIcon } from 'lucide-react'
 
 interface StatCardProps {
   title: string
-  value: string
+  /** Teks nilai, atau blok kerangka selama data dimuat */
+  value: React.ReactNode
   icon: LucideIcon
   valueStyle?: React.CSSProperties
 }

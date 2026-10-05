@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Award, Scissors, X, Plus, Eye, Pencil, Trash2, ChevronDown, Users, AlertTriangle, Bell, Search } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { SkeletonBeasiswa } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -534,11 +535,7 @@ export default function BeasiswaPage() {
 
   const isProgram = activeTab === 'program'
 
-  if (loading) return (
-    <div className="dashboard-content">
-      <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-    </div>
-  )
+  if (loading) return <SkeletonBeasiswa />
 
   return (
     <div className="dashboard-content">

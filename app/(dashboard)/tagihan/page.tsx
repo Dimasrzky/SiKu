@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { SkeletonTagihanAktif } from '@/components/skeleton/SkeletonTagihan'
 
 export default function TagihanIndexPage() {
   const router = useRouter()
@@ -10,5 +11,6 @@ export default function TagihanIndexPage() {
     router.replace('/tagihan/aktif')
   }, [router])
 
-  return null
+  // Kerangka halaman tujuan, supaya pengalihan tidak menampilkan layar kosong
+  return <SkeletonTagihanAktif />
 }

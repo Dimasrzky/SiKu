@@ -130,8 +130,8 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
   // Tagihan bulan berjalan untuk siswa aktif yang belum punya diterbitkan lewat fungsi
   // yang sama dengan halaman Tagihan Aktif dan cron pengingat: potongan beasiswa dan
   // komponen individu dihitung saat terbit, bukan dikoreksi pada panggilan berikutnya.
-  // Syaratnya ikut sama (semua kelas berpaket, kelas berpaket punya siswa). Tidak terbit
-  // bukan alasan untuk berhenti: tagihan yang sudah ada tetap perlu dihitung ulang.
+  // Kelas yang belum berpaket dilewati, sama seperti di sana. Gagal terbit bukan alasan
+  // untuk berhenti: tagihan yang sudah ada tetap perlu dihitung ulang.
   if (tahunAjaran) {
     const terbit = await runGenerate(db, sid, tahunAjaran, bulan, tahun)
     if (!terbit.success) {

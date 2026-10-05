@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle, Eye, X, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonManajemenKelas } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -416,15 +417,7 @@ export default function KelasPage() {
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  if (dataLoading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Memuat data...
-        </div>
-      </div>
-    )
-  }
+  if (dataLoading) return <SkeletonManajemenKelas />
 
   // ── VIEW MODE ─────────────────────────────────────────────────────────────
 

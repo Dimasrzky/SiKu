@@ -7,6 +7,8 @@ import {
   AlertTriangle, Plus, Eye, ChevronDown, ChevronRight, CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { Blok, BlokTeks, giliran } from '@/components/skeleton/Blok'
+import { SkeletonAlumni } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -289,11 +291,7 @@ export default function AlumniPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <div className="dashboard-content">
-      <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-    </div>
-  )
+  if (loading) return <SkeletonAlumni />
 
   return (
     <div className="dashboard-content">
@@ -615,11 +613,35 @@ export default function AlumniPage() {
               <div style={{ padding: '1rem 1.5rem 1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
                   <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0F172A' }}>Riwayat pembayaran</span>
-                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#1A2C4E' }}>Total: {formatRp(totalTagihan)}</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#1A2C4E' }}>
+                    Total: {viewLoading
+                      ? <Blok lebar={72} tinggi={10} sudut={3} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+                      : formatRp(totalTagihan)}
+                  </span>
                 </div>
 
                 {viewLoading ? (
-                  <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.8rem' }}>Memuat riwayat...</div>
+                  // Kerangka kelompok per tahun ajaran — yang terbaru terbuka, seperti aslinya
+                  <div aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {[3, 0].map((jumlahBaris, g) => (
+                      <div key={g} style={{ border: '1px solid #E2E8F0', borderRadius: 10, overflow: 'hidden' }}>
+                        <div style={{ background: '#F8FAFC', padding: '0.65rem 0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <BlokTeks lebar={84} ukuran="0.82rem" />
+                            <BlokTeks lebar={56} ukuran="0.7rem" />
+                          </div>
+                          <BlokTeks lebar={90} ukuran="0.78rem" />
+                        </div>
+                        {Array.from({ length: jumlahBaris }, (_, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem 0.875rem 0.5rem 2.25rem', borderTop: '1px solid #F1F5F9' }}>
+                            <BlokTeks lebar={giliran([100, 84, 112], i)} ukuran="0.78rem" style={{ flex: 1 }} />
+                            <BlokTeks lebar={80} ukuran="0.78rem" style={{ marginRight: '0.75rem' }} />
+                            <Blok lebar={46} tinggi={18} sudut={20} />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 ) : tagihanGroups.length === 0 ? (
                   <div style={{ padding: '1.25rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.8rem', background: '#F8FAFC', borderRadius: 10, border: '1px solid #F1F5F9' }}>Belum ada riwayat pembayaran</div>
                 ) : (

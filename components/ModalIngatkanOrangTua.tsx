@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { Bell, Check, ChevronRight, Minus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { ambilSemua } from '@/lib/ambilSemua'
+import { Blok, giliran } from './skeleton/Blok'
 
 // Modal "Ingatkan orang tua" di dashboard: memilih kelas mana yang orang tuanya
 // menerima pengingat H-7. Pilihannya disimpan di pengaturan.pengingat_kelas_ids.
@@ -242,7 +243,18 @@ export const ModalIngatkanOrangTua = ({ sekolahId, onTutup }: Props) => {
             {galatMuat ? (
               <div role="alert" style={{ ...sPesan, color: '#DC2626' }}>{galatMuat}</div>
             ) : !daftar ? (
-              <div style={sPesan}>Memuat data...</div>
+              // Kerangka bar jenjang (tertutup) selama daftar kelas dimuat
+              <>
+                <span role="status" className="skeleton-sr">Memuat daftar kelas…</span>
+                {[0, 1, 2].map(i => (
+                  <div key={i} aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 11, minHeight: 50, padding: '0 10px 0 14px', borderRadius: 10, flexShrink: 0, background: NAVY, boxShadow: '0 3px 8px rgba(26, 44, 78, 0.16)' }}>
+                    <Blok gelap lebar={25} tinggi={25} sudut={5} />
+                    <Blok gelap lebar={giliran([96, 108, 88], i)} tinggi={14} sudut={4} />
+                    <Blok gelap lebar={120} tinggi={12} sudut={4} style={{ marginLeft: 'auto' }} />
+                    <ChevronRight size={30} strokeWidth={2} color="rgba(255,255,255,0.35)" style={{ flexShrink: 0 }} />
+                  </div>
+                ))}
+              </>
             ) : daftar.length === 0 ? (
               <div style={sPesan}>Belum ada kelas.</div>
             ) : daftar.map((j, i) => {
@@ -315,7 +327,9 @@ export const ModalIngatkanOrangTua = ({ sekolahId, onTutup }: Props) => {
               <span aria-hidden style={sIkon('/icons/IconGroup.png', 20, ABU)} />
               Total penerima pesan pengingat
             </span>
-            <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{totalPenerima} Orang Tua</span>
+            {daftar || galatMuat
+              ? <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{totalPenerima} Orang Tua</span>
+              : <Blok lebar={84} tinggi={12} sudut={4} />}
           </div>
         </div>
 

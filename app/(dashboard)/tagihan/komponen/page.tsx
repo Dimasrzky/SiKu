@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { CheckCircle2, XCircle, ChevronDown, Search, Trash2, Plus, LayoutGrid, RefreshCw, Banknote, CalendarDays, Eye, X, Upload, Download, AlertCircle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
+import { SkeletonKomponen } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -586,15 +587,7 @@ export default function KomponenTagihanPage() {
 
   // ── Loading ───────────────────────────────────────────────────────────────────
 
-  if (dataLoading) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          Memuat data...
-        </div>
-      </div>
-    )
-  }
+  if (dataLoading) return <SkeletonKomponen />
 
   // ── SETUP MODE ────────────────────────────────────────────────────────────────
 

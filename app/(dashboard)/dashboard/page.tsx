@@ -20,7 +20,8 @@ import { usePengingat } from '@/lib/usePengingat'
 import { usePengingatManual } from '@/lib/usePengingatManual'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
-import { SetupChecklist } from '@/components/SetupChecklist'
+import { SetupChecklist, SkeletonSetupChecklist } from '@/components/SetupChecklist'
+import { SkeletonDashboard } from '@/components/skeleton/SkeletonDashboard'
 import { StatCard } from '@/components/StatCard'
 import { FinanceCard } from '@/components/FinanceCard'
 import { ChartCard } from '@/components/ChartCard'
@@ -568,8 +569,8 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const bulanNama = BULAN_NAMES[now.getMonth()]
 
   // Tagihan bulan ini tertahan untuk sebagian atau semua siswa. Ditaruh paling atas:
-  // selama penyebabnya belum dibereskan, tidak ada tagihan yang terbit untuk kelas mana
-  // pun, dan angka-angka lain di halaman ini tidak memuat siswa tersebut.
+  // selama penyebabnya belum dibereskan, siswa itu tidak ditagih, dan angka-angka lain di
+  // halaman ini tidak memuat mereka.
   const terbit = terbitRes.data
   if (terbit?.penahan && terbit.belumDitagih > 0) {
     const penahan = pesanPenahanTerbit(terbit.penahan)
@@ -964,6 +965,17 @@ function SetupBerhasilPopup({ onClose }: { onClose: () => void }) {
 function getAuthRaw()       { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
 
+/**
+ * Setup belum selesai menurut cache langkah setup yang ditulis layout. Tanpa cache
+ * (mis. tepat sesudah login) tidak diketahui — dianggap selesai, karena itu yang umum.
+ */
+function setupBelumSelesai(): boolean {
+  try {
+    const raw = localStorage.getItem('siku_setup_steps')
+    return raw !== null && (JSON.parse(raw) as Record<string, boolean>).import_siswa !== true
+  } catch { return false }
+}
+
 // ── Animasi masuk popup alert naik kelas ──────────────────────────────────────
 
 const ALERT_CSS = `
@@ -1191,14 +1203,27 @@ export default function DashboardPage() {
   // Cooldown tombol wa.me (sekolah tanpa antrean), dicatat di browser ini
   const pengingatManual = usePengingatManual(now)
 
+  const dd       = String(now.getDate()).padStart(2, '0')
+  const mName    = BULAN_NAMES[now.getMonth()]
+  const yyyy     = now.getFullYear()
+  const dateStr  = `${dd} ${mName} ${yyyy}`
+
+  // ── Kerangka selama memuat ──────────────────────────────────────────────────
+  // Dua tahap: cek setup + jumlah siswa, lalu isi Dashboard. Keduanya memakai kerangka
+  // yang sama, jadi tidak ada lompatan di antaranya.
+  const kerangka = (
+    <SkeletonDashboard
+      nama={user?.nama}
+      keterangan={`${user?.jabatan ?? ''}${user?.jabatan && user?.sekolah ? ' – ' : ''}${user?.sekolah ?? ''}`}
+      tanggal={dateStr}
+      periode={`${mName} ${yyyy}`}
+    />
+  )
+
   if (hasSiswa === null) {
-    return (
-      <div className="dashboard-content">
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 320 }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Memuat data...</span>
-        </div>
-      </div>
-    )
+    return setupBelumSelesai()
+      ? <div className="dashboard-content"><SkeletonSetupChecklist /></div>
+      : kerangka
   }
 
   if (!hasSiswa) {
@@ -1209,12 +1234,9 @@ export default function DashboardPage() {
     )
   }
 
-  // ── Computed values ─────────────────────────────────────────────────────────
+  if (!data) return kerangka
 
-  const dd       = String(now.getDate()).padStart(2, '0')
-  const mName    = BULAN_NAMES[now.getMonth()]
-  const yyyy     = now.getFullYear()
-  const dateStr  = `${dd} ${mName} ${yyyy}`
+  // ── Computed values ─────────────────────────────────────────────────────────
 
   const d              = data
   // Badge di kartu tunggakan: proporsi siswa yang sudah bayar tagihan bulan ini
@@ -1235,11 +1257,6 @@ export default function DashboardPage() {
   // Kartu "% siswa lunas bulan ini" hanya menampilkan 3 kelas teratas yang sudah punya
   // siswa lunas; perKelas sudah urut dari persentase lunas tertinggi
   const kelasTeratas   = d?.perKelas.filter(k => k.lunas > 0).slice(0, 3) ?? []
-
-  const loading = !d
-
-  // ── Skeleton value helper ───────────────────────────────────────────────────
-  const sk = (val: string) => loading ? '—' : val
 
   const fmtTgl = (iso: string) =>
     new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -1458,13 +1475,13 @@ export default function DashboardPage() {
             </div>
 
             <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--navy-dark)', lineHeight: 1.5, marginBottom: '0.6rem', letterSpacing: '-0.02em', borderBottom: '5px solid #1A2C4E', paddingBottom: '0.25rem', display: 'inline-block' }}>
-              {sk(rpFull(d?.totalTunggakan ?? 0))}
+              {rpFull(d?.totalTunggakan ?? 0)}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap', position: 'relative', top: 8 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Users size={16} />
-                {sk(`${d?.siswaBelumBayar ?? 0} Siswa belum bayar`)}
+                {d?.siswaBelumBayar ?? 0} Siswa belum bayar
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '1rem', fontWeight: 500, color: '#1A2C4E' }}>
                 <Clock size={16} />
@@ -1473,7 +1490,7 @@ export default function DashboardPage() {
                   if (menit < 1)  return 'Baru saja diperbarui'
                   if (menit <= 60) return `${menit} menit yang lalu`
                   return `Diperbarui ${lastUpd.getHours()}:${String(lastUpd.getMinutes()).padStart(2, '0')}`
-                })() : 'Memuat...'}
+                })() : '—'}
               </span>
             </div>
           </div>
@@ -1502,11 +1519,11 @@ export default function DashboardPage() {
               <Image src="/icons/IconDollar.png" alt="Lunas" width={20} height={20} />
             </div>
             <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', marginTop: '-1.7rem', marginLeft: '-1.5rem' }}>
-              {sk(`${pctSudahBayar}%`)}
+              {pctSudahBayar}%
             </div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A' }}>Siswa sudah bayar</div>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#6F788A', marginLeft: '-0.2rem' }}>
-              {sk(`${d?.lunasRef ?? 0} dari ${d?.totalSiswaRef ?? 0} siswa`)}
+              {d?.lunasRef ?? 0} dari {d?.totalSiswaRef ?? 0} siswa
             </div>
           </div>
         </div>
@@ -1537,9 +1554,9 @@ export default function DashboardPage() {
       {/* ── 3. Row 1: Stats cards ───────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 230px) 1fr', gap: '1.2rem', marginBottom: '1.3rem', marginTop: '2rem' }}>
 
-        <StatCard title="Total siswa aktif" value={sk(String(d?.totalSiswaAktif ?? 0))} icon={Users} />
-        <StatCard title="Kelas aktif" value={sk(String(d?.totalKelas ?? 0))} icon={BookOpen} />
-        <StatCard title="Tahun ajaran aktif" value={sk((d?.tahunAjaranNama ?? '-').replace(/(\d{4})\/(\d{4})/, (_, y1, y2: string) => `${y1}/${y2.slice(2)}`))} icon={Calendar} valueStyle={{ marginLeft: '-1.8rem', marginTop: '0.2rem', fontSize: '2.2rem' }} />
+        <StatCard title="Total siswa aktif" value={String(d?.totalSiswaAktif ?? 0)} icon={Users} />
+        <StatCard title="Kelas aktif" value={String(d?.totalKelas ?? 0)} icon={BookOpen} />
+        <StatCard title="Tahun ajaran aktif" value={(d?.tahunAjaranNama ?? '-').replace(/(\d{4})\/(\d{4})/, (_, y1, y2: string) => `${y1}/${y2.slice(2)}`)} icon={Calendar} valueStyle={{ marginLeft: '-1.8rem', marginTop: '0.2rem', fontSize: '2.2rem' }} />
 
         {/* Target Pembayaran */}
         <div style={{ background: '#fff', borderRadius: 13, padding: '0.6rem 1.25rem', boxShadow: '0 4px 8px rgba(92, 135, 184, 0.67)',}}>
@@ -1558,8 +1575,8 @@ export default function DashboardPage() {
             </div>
           </div>
           <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{sk(`${d?.lunasRef ?? 0} siswa sudah lunas`)}</span>
-            <span>{sk(`Tersisa ${(d?.totalSiswaRef ?? 0) - (d?.lunasRef ?? 0)}`)}</span>
+            <span>{d?.lunasRef ?? 0} siswa sudah lunas</span>
+            <span>Tersisa {(d?.totalSiswaRef ?? 0) - (d?.lunasRef ?? 0)}</span>
           </div>
         </div>
       </div>
@@ -1569,7 +1586,7 @@ export default function DashboardPage() {
 
         <FinanceCard
           title="Terkumpul bulan ini"
-          value={sk(rpCompact(d?.terkumpulIni ?? 0))}
+          value={rpCompact(d?.terkumpulIni ?? 0)}
           valueColor="#69C183"
           info={
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.7rem', fontWeight: 700, color: diffTerkumpul >= 0 ? '#69C183' : '#DE6666' }}>
@@ -1584,7 +1601,7 @@ export default function DashboardPage() {
 
         <FinanceCard
           title="Belum dibayar"
-          value={sk(rpCompact(d?.belumBayarNominal ?? 0))}
+          value={rpCompact(d?.belumBayarNominal ?? 0)}
           valueColor="#DE6666"
           info={
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
@@ -1607,7 +1624,7 @@ export default function DashboardPage() {
 
         <FinanceCard
           title="Total beasiswa"
-          value={sk(rpCompact(d?.totalBeasiswaNom ?? 0))}
+          value={rpCompact(d?.totalBeasiswaNom ?? 0)}
           valueColor="#BB8848"
           info={d && d.penerimaBeasiswa > 0
             ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.68rem', fontWeight: 700, color: '#BB8848'}}>
@@ -1783,13 +1800,7 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94A3B8', fontSize: '0.88rem' }}>
-                    Memuat data...
-                  </td>
-                </tr>
-              ) : paginatedSiswa.length === 0 ? (
+              {paginatedSiswa.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '3rem', color: '#94A3B8', fontSize: '0.88rem' }}>
                     {searchQuery ? 'Tidak ada siswa yang cocok dengan pencarian.' : 'Belum ada data tagihan siswa bulan ini.'}

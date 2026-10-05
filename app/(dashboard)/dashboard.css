@@ -964,6 +964,50 @@
 
 
 /* ═══════════════════════════════════════════
+   SKELETON LOADING — kerangka halaman selama data dimuat (components/skeleton)
+═══════════════════════════════════════════ */
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(60, 117, 183, 0.18);
+}
+/* Kilau menyapu kiri → kanan lalu jeda sejenak. Digerakkan lewat transform supaya
+   cukup dikerjakan compositor — puluhan blok sekaligus tetap ringan. */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: skeleton-kilau 1.6s ease-in-out infinite;
+}
+/* Di atas latar navy atau berwarna: sidebar, bar sambutan Dashboard, kotak navy */
+.skeleton--gelap { background: rgba(255, 255, 255, 0.16); }
+.skeleton--gelap::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent); }
+@keyframes skeleton-kilau {
+  0%        { transform: translateX(-100%); }
+  70%, 100% { transform: translateX(100%); }
+}
+/* Pengumuman "Memuat …" khusus pembaca layar */
+.skeleton-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; display: none; }
+}
+
+
+/* ═══════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════ */
 @media (max-width: 900px) {

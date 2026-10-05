@@ -8,6 +8,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
+import { SkeletonPembayaran } from '@/components/skeleton/SkeletonPembayaran'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -441,6 +442,8 @@ export default function PembayaranPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  if (loading) return <SkeletonPembayaran />
+
   const hasData = tagihan.length > 0
 
   return (
@@ -466,11 +469,7 @@ export default function PembayaranPage() {
       </div>
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      {loading ? (
-        <div style={{ background:'#fff', borderRadius:14, borderLeft:'28px solid #E2E8F0', border:'1.5px solid #E2E8F0', padding:'4rem 2rem', display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', fontSize:'0.875rem', minHeight:220 }}>
-          Memuat data...
-        </div>
-      ) : !hasData ? (
+      {!hasData ? (
 
         /* ── Empty state ───────────────────────────────────────────────────── */
         <div style={{ background:'#fff', borderRadius:14, border:'1.5px solid #E2E8F0', borderLeft:'28px solid #1A2C4E', padding:'4rem 2rem', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'0.875rem', minHeight:260, boxShadow:'0 1px 3px rgba(0,0,0,0.07)' }}>

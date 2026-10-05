@@ -20,6 +20,8 @@ import {
 import { usePengingat } from '@/lib/usePengingat'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
+import { Blok, BlokTeks, giliran } from '@/components/skeleton/Blok'
+import { SkeletonTagihanAktif } from '@/components/skeleton/SkeletonTagihan'
 import { usePengingatManual } from '@/lib/usePengingatManual'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -161,11 +163,7 @@ function DonutChart({ segments, total, label }: { segments: DonutSegment[]; tota
 // saat Next mencoba melakukan prerender statis halaman ini.
 export default function TagihanAktifPage() {
   return (
-    <Suspense fallback={
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
-    }>
+    <Suspense fallback={<SkeletonTagihanAktif />}>
       <TagihanAktifContent />
     </Suspense>
   )
@@ -911,11 +909,13 @@ function TagihanAktifContent() {
 
   // ── Loading ───────────────────────────────────────────────────────────────────
 
+  // Tagihan bulan ini yang belum terbit dibuat otomatis selama status muat masih
+  // berjalan — keterangannya tampil di atas kerangka
   if (loading) {
     return (
-      <div className="dashboard-content">
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>Memuat data...</div>
-      </div>
+      <SkeletonTagihanAktif
+        catatan={autoGenerating ? `Membuat tagihan otomatis untuk ${BULAN_NAMES[bulanIni]} ${tahunIni}…` : undefined}
+      />
     )
   }
 
@@ -952,31 +952,8 @@ function TagihanAktifContent() {
         )}
       </div>
 
-      {/* ── States: no paket / auto-generating / error / empty ───────────── */}
-      {!hasPaket ? (
-        <div style={sCard}>
-          <div style={{ textAlign: 'center', padding: '3rem 2rem' }}>
-            <div style={{ width: 64, height: 64, background: '#F1F5F9', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-              <ClipboardList size={30} color="#94A3B8" />
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
-            <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-              Tagihan akan muncul otomatis setelah paket per kelas dan data siswa sudah diatur
-            </div>
-            {penahanTerbit && (
-              <>
-                <div style={{ fontSize: '0.84rem', color: '#374151', maxWidth: 420, margin: '1rem auto 1.25rem' }}>
-                  {penahanTerbit.pesan.alasan}
-                </div>
-                <button onClick={() => router.push(penahanTerbit.pesan.aksiHref)}
-                  style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {penahanTerbit.pesan.aksiLabel}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      ) : autoGenerating ? (
+      {/* ── States: auto-generating / error / no paket or empty ───────────── */}
+      {autoGenerating ? (
         <div style={sCard}>
           <div style={{ textAlign: 'center', padding: '3rem 2rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
             Membuat tagihan otomatis untuk {BULAN_NAMES[bulanIni]} {tahunIni}...
@@ -989,17 +966,18 @@ function TagihanAktifContent() {
               <AlertTriangle size={24} color="#DC2626" />
             </div>
             <div style={{ fontWeight: 700, fontSize: '1rem', color: '#DC2626', marginBottom: '0.4rem' }}>Belum ada tagihan saat ini</div>
-            {/* Penyebab yang menyebut kelasnya, kalau sudah diketahui; selain itu pesan umum dari penerbitan */}
+            {/* Penerbitan hanya gagal karena data tidak terbaca atau tidak tersimpan — kelas
+                yang belum berpaket cukup dilewati — jadi yang menolong adalah mencoba lagi */}
             <div style={{ fontSize: '0.84rem', color: '#374151', marginBottom: '1.25rem', maxWidth: 380, margin: '0 auto 1.25rem' }}>
-              {penahanTerbit?.pesan.alasan ?? autoGenError}
+              {autoGenError}
             </div>
-            <button onClick={() => router.push(penahanTerbit?.pesan.aksiHref ?? '/tagihan/paket-kelas')}
+            <button onClick={() => window.location.reload()}
               style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
-              {penahanTerbit?.pesan.aksiLabel ?? 'Konfigurasi Paket Per Kelas'}
+              Muat Ulang
             </button>
           </div>
         </div>
-      ) : tagihanList.length === 0 ? (
+      ) : !hasPaket || tagihanList.length === 0 ? (
         <div style={sCard}>
           <div style={{ textAlign: 'center', padding: '3rem 2rem' }}>
             <div style={{ width: 64, height: 64, background: '#F1F5F9', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
@@ -1009,6 +987,19 @@ function TagihanAktifContent() {
             <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
               Tagihan akan muncul otomatis setelah paket per kelas dan data siswa sudah diatur
             </div>
+            {/* Penyebabnya — belum ada tahun ajaran, atau kelas bersiswa yang belum berpaket —
+                disebut di sini: penerbitan tidak gagal karena itu, kelasnya hanya dilewati */}
+            {penahanTerbit && (
+              <>
+                <div style={{ fontSize: '0.84rem', color: '#374151', maxWidth: 420, margin: '1rem auto 1.25rem' }}>
+                  {penahanTerbit.pesan.alasan}
+                </div>
+                <button onClick={() => router.push(penahanTerbit.pesan.aksiHref)}
+                  style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.5rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {penahanTerbit.pesan.aksiLabel}
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -1515,7 +1506,7 @@ function TagihanAktifContent() {
                 {detailBadge.label}
               </span>
               {detailLoading
-                ? <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '4px 0' }}>Memuat...</span>
+                ? <Blok lebar={110} tinggi={27} sudut={20} />
                 : detailBeasiswa.map((bs, i) => (
                     <span key={i} style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20 }}>
                       🎗 {bs.nama}
@@ -1527,7 +1518,7 @@ function TagihanAktifContent() {
             {/* Info rows */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #F1F5F9' }}>
               {[
-                { label: 'Paket berlaku', val: detailLoading ? '...' : detailPaketNama },
+                { label: 'Paket berlaku', val: detailLoading ? <Blok lebar={120} tinggi={13} sudut={4} style={{ marginTop: 5 }} /> : detailPaketNama },
                 { label: 'Jatuh tempo',   val: formatJatuhTempo(waktuTagihan(detailSiswa)) },
                 { label: 'Orang tua',     val: detailSiswa.nama_wali || '—' },
                 { label: 'No WA',         val: detailSiswa.no_wa || '—' },
@@ -1569,7 +1560,13 @@ function TagihanAktifContent() {
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E', marginBottom: '0.5rem' }}>Rincian komponen</div>
               <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
                 {detailLoading ? (
-                  <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Memuat rincian...</div>
+                  [0, 1, 2].map(i => (
+                    <div key={i} aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
+                      <Blok lebar={8} tinggi={8} sudut="50%" />
+                      <BlokTeks lebar={giliran([120, 96, 140], i)} ukuran="0.82rem" style={{ flex: 1 }} />
+                      <BlokTeks lebar={80} ukuran="0.82rem" />
+                    </div>
+                  ))
                 ) : detailKomponen.length === 0 ? (
                   <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Belum ada rincian komponen.</div>
                 ) : (
