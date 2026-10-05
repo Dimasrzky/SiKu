@@ -6,8 +6,10 @@ import type { RingkasanMetrik } from '@/lib/metrikLaporan'
 import { sKartu, sKepalaKartu, sJudulKartu, sIkonKartu, sNilaiKartu, sKetKartu, sBarisKartu } from './gayaLaporan'
 
 /**
- * Empat kartu metrik yang sama di setiap level drill-down (prinsip 1: rumus sama
- * dari sekolah sampai siswa). Jumlah selalu ditulis di samping persen (prinsip 4).
+ * Empat kartu metrik yang sama di level Jenjang, Kelas, dan Siswa (prinsip 1: rumus
+ * sama dari sekolah sampai siswa). Jumlah selalu ditulis di samping persen (prinsip 4).
+ * Halaman Laporan utama memakai KartuRingkasanUtama (RingkasanUtama.tsx): tiga kartu
+ * tanpa Ketepatan waktu — di level Kelas, status "Lancar" dibaca dari ketepatan waktu.
  */
 export function KartuRingkasan({ ringkasan, pemasukan }: {
   ringkasan: RingkasanMetrik

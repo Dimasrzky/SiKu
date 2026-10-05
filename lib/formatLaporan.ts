@@ -23,6 +23,12 @@ export function formatRingkas(n: number): string {
   return String(n)
 }
 
+/** Label ringkas berspasi untuk halaman Laporan utama: 0 / 500 rb / 2,5 jt / 1,2 M */
+export const formatRingkasSpasi = (n: number): string => formatRingkas(n).replace(/(\d)(rb|jt|M)$/, '$1 $2')
+
+/** Rupiah ringkas: "Rp 24,1 jt" — satu bentuk untuk semua angka ringkas di Laporan utama */
+export const formatRupiahRingkas = (n: number): string => `Rp ${formatRingkasSpasi(n)}`
+
 /** Persen metrik — null berarti belum ada yang bisa dihitung */
 export const formatPersen = (p: number | null): string => (p === null ? '—' : `${Math.round(p)}%`)
 

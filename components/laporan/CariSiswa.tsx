@@ -38,9 +38,9 @@ export function CariSiswa({ siswa, qsFilter }: { siswa: SiswaCari[]; qsFilter: s
   const href = (id: string) => `/laporan/siswa/${id}${qsFilter}`
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: 8, padding: '0.5rem 0.75rem' }}>
-        <Search size={15} color="#94A3B8" />
+    <div ref={ref} style={{ position: 'relative', width: 475, maxWidth: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '2px solid #acacac', borderRadius: 8, padding: '0.5rem 0.75rem' }}>
+        <Search size={18} color="#707172" />
         <input
           value={kata}
           onChange={e => { setKata(e.target.value); setBuka(true) }}
@@ -51,7 +51,7 @@ export function CariSiswa({ siswa, qsFilter }: { siswa: SiswaCari[]; qsFilter: s
           }}
           placeholder="Cari siswa (nama atau NIS)"
           aria-label="Cari siswa"
-          style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.82rem', width: '100%', color: '#0F172A', background: 'transparent' }}
+          style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.9rem', fontWeight: 500, width: '100%', color: '#0F172A', background: 'transparent' }}
         />
       </div>
       {buka && kata.trim().length >= 2 && (

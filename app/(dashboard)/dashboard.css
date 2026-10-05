@@ -909,9 +909,19 @@
 .tren-baris { animation: tren-masuk 0.22s ease-out both; }
 /* transform-origin diisi per batang (koordinat SVG di garis dasar), jadi pakai view-box */
 .tren-kolom { transform-box: view-box; animation: tren-tumbuh 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.tren-tooltip { animation: fadeIn 0.12s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .tren-ganti, .tren-baris, .tren-kolom { animation: none; }
+  .tren-ganti, .tren-baris, .tren-kolom, .tren-tooltip { animation: none; }
   .tren-wadah { transition: none; }
+}
+
+/* Laporan utama (mockup Figma, Okt 2026). Huruf di desain lebih rapat dari bawaan
+   DM Sans — dipasang per elemen karena letter-spacing diwariskan sebagai px. */
+.laporan-utama * { letter-spacing: -0.02em; }
+.laporan-baris-dua   { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 1.5rem; }
+.laporan-baris-empat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+@media (max-width: 1180px) {
+  .laporan-baris-dua, .laporan-baris-empat { grid-template-columns: minmax(0, 1fr); }
 }
 
 

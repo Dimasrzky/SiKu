@@ -1,27 +1,30 @@
 'use client'
 
 import { useState, useMemo, Suspense } from 'react'
-import Link from 'next/link'
 import Image from 'next/image'
 import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { BarChart2, Database, AlertTriangle, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText, ChevronRight } from 'lucide-react'
+import { BarChart2, Database, AlertTriangle, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, batasJatuhTempo, tanpaKewajiban, type StatusTagihan, type WaktuTagihan } from '@/lib/statusTagihan'
 import {
   hitungRingkasan, hitungPemasukan, umurTunggakan, trenTagihanRealisasi, adalahTunggakan,
-  type KelompokUmur,
+  komposisiStatusSiswa, hitungSiswaLunas, jumlahSiswaTertunggak,
 } from '@/lib/metrikLaporan'
-import { BULAN_PANJANG as BULAN_NAMES_FULL, formatRupiah as fmt, formatRingkas as fmtRingkas, formatPersen as fmtPersen } from '@/lib/formatLaporan'
+import { BULAN_PANJANG as BULAN_NAMES_FULL, formatRupiah as fmt, formatPersen as fmtPersen } from '@/lib/formatLaporan'
 import { useDataLaporan } from '@/lib/useDataLaporan'
 import { useFilterLaporan, monthsInRange } from '@/lib/useFilterLaporan'
 import { HeaderLaporan } from '@/components/laporan/HeaderLaporan'
 import { FilterLaporan } from '@/components/laporan/FilterLaporan'
-import { KartuRingkasan } from '@/components/laporan/KartuRingkasan'
 import { TrenTagihanChart } from '@/components/laporan/TrenTagihanChart'
 import { CariSiswa, type SiswaCari } from '@/components/laporan/CariSiswa'
-import { sKartu, sBingkai, sJudulPanel, sSubjudulPanel } from '@/components/laporan/gayaLaporan'
+import { KartuTab } from '@/components/laporan/KartuTab'
+import {
+  KartuRingkasanUtama, KomposisiStatus, KomponenBelumDibayar, UmurTunggakan, PembayaranPerJenjang,
+  type JenjangRingkas, type KomponenBelum,
+} from '@/components/laporan/RingkasanUtama'
+import { sBingkai, WARNA_LAPORAN } from '@/components/laporan/gayaLaporan'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,10 +36,6 @@ const JENJANG_MAP: Record<string, string[]> = {
   'SMA/MA':  ['10', '11', '12'],
   'SMK':     ['10', '11', '12'],
 }
-
-// Umur tunggakan = satu hue merah, makin tua makin gelap (diuji dengan validator
-// palet dataviz, ordinal, permukaan terang)
-const WARNA_UMUR = ['#F87171', '#EF4444', '#B91C1C', '#7F1D1D']
 
 const periodKey = (bulan: number, tahun: number) => `${tahun}-${bulan}`
 
@@ -307,74 +306,6 @@ interface TahunAjaranFullRaw {
   is_aktif:        boolean
 }
 
-// ── Umur tunggakan ────────────────────────────────────────────────────────────
-
-function UmurTunggakanList({ data }: { data: KelompokUmur[] }) {
-  const maks = Math.max(1, ...data.map(k => k.nominal))
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {data.map((k, i) => (
-        <div key={k.label}>
-          {/* Nominal tiap rentang sudah digabung dengan tunggakan yang lebih tua (lihat umurTunggakan) */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.375rem' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>{k.label}</span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>
-              {fmt(k.nominal)}
-              <span style={{ fontWeight: 500, color: '#6F788A' }}> · {k.jumlahSiswa} siswa</span>
-            </span>
-          </div>
-          <div style={{ height: 10 }}>
-            {k.nominal > 0 && (
-              <div style={{ height: '100%', width: `${(k.nominal / maks) * 100}%`, minWidth: 4, background: WARNA_UMUR[i], borderRadius: '0 4px 4px 0' }} />
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Donut Chart ───────────────────────────────────────────────────────────────
-
-function DonutChart({ data }: { data: { label: string; value: number; color: string }[] }) {
-  const total = Math.max(1, data.reduce((s, d) => s + d.value, 0))
-  const SIZE  = 140; const R = 52; const STROKE = 24; const C = SIZE / 2
-  const CIRC  = 2 * Math.PI * R
-
-  const slices = data.reduce<(typeof data[0] & { dash: number; gap: number; offset: number })[]>((acc, d) => {
-    const dash   = (d.value / total) * CIRC
-    const gap    = CIRC - dash
-    const offset = acc.reduce((s, x) => s + x.dash, 0)
-    return [...acc, { ...d, dash, gap, offset }]
-  }, [])
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-      <svg width={SIZE} height={SIZE} style={{ flexShrink: 0 }}>
-        {slices.map(s => (
-          <circle key={s.label} cx={C} cy={C} r={R} fill="none" stroke={s.color}
-            strokeWidth={STROKE} strokeDasharray={`${s.dash} ${s.gap}`}
-            strokeDashoffset={-s.offset}
-            style={{ transform: 'rotate(-90deg)', transformOrigin: `${C}px ${C}px` }} />
-        ))}
-        <text x={C} y={C - 4}  textAnchor="middle" fontSize={20} fontWeight={800} fill="#0F172A">{total}</text>
-        <text x={C} y={C + 10} textAnchor="middle" fontSize={8.5} fill="#94A3B8">Tagihan</text>
-      </svg>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {data.map(d => (
-          <div key={d.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: '1px solid #F8FAFC' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color, flexShrink: 0 }} />
-              <span style={{ fontSize: '0.78rem', color: '#64748B' }}>{d.label}</span>
-            </div>
-            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A' }}>{d.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 // useSearchParams wajib berada di bawah batas Suspense, kalau tidak build gagal
@@ -396,7 +327,7 @@ function LaporanContent() {
   // dan lib/useFilterLaporan. Filter tinggal di URL (?ta=&periode=).
   const { sekolahId, namaSekolah, loading, rows: metrikRows, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
   const filter = useFilterLaporan(activeTA, archivedTAs, sekarang)
-  const { taTerpilih, taArsipTerpilih, selectedFilter, dalamPeriode, qsFilter } = filter
+  const { taTerpilih, selectedFilter, dalamPeriode, qsFilter } = filter
 
   const [exportingTransaksi, setExportingTransaksi] = useState(false)
   const [exportingTunggakan, setExportingTunggakan] = useState(false)
@@ -426,6 +357,8 @@ function LaporanContent() {
   const akhirTA        = taTerpilih?.tanggal_selesai ?? null
   const semuaTunggakan = useMemo(() => hitungRingkasan(metrikRows, sekarang), [metrikRows, sekarang])
   const umur           = useMemo(() => umurTunggakan(metrikRows, sekarang), [metrikRows, sekarang])
+  // "Butuh tindakan segera" di kartu umur — ikut tidak memakai filter, seperti kartunya
+  const tertunggak     = useMemo(() => jumlahSiswaTertunggak(metrikRows, sekarang), [metrikRows, sekarang])
   const tren           = useMemo(
     () => trenTagihanRealisasi(metrikRows, sekarang, akhirTA ? new Date(akhirTA) : sekarang),
     [metrikRows, sekarang, akhirTA],
@@ -449,7 +382,12 @@ function LaporanContent() {
       .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
   }, [metrikRows, kelas])
 
-  const donutData = useMemo(() => {
+  // Donut di layar menghitung siswa — satu status per siswa, aturan Tagihan Aktif
+  const komposisiSiswa = useMemo(() => komposisiStatusSiswa(periodTagihan, sekarang), [periodTagihan, sekarang])
+
+  // Per tagihan — hanya untuk PDF Laporan Utama, yang tabel komposisinya masih
+  // berjudul "Jumlah Tagihan"
+  const komposisiTagihan = useMemo(() => {
     // Aturan sama persis dengan halaman tagihan aktif, termasuk pengecualian alumni
     const jumlah: Record<StatusTagihan, number> = { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 }
     for (const t of periodTagihan) {
@@ -468,7 +406,7 @@ function LaporanContent() {
   // tempo), dikelompokkan menurut kelas saat tagihan dibuat — bukan kelas siswa
   // sekarang, yang sudah bergeser setelah naik kelas. Tagihan tanpa snapshot kelas
   // (tahun ajaran sebelum kolom itu ada) hanya ikut di angka sekolah.
-  const jenjangData = useMemo(() => {
+  const jenjangData = useMemo<(JenjangRingkas & { jenjang: string; terbayar: number; nilai: number })[]>(() => {
     const perJenjang = new Map<string, typeof periodTagihan>()
     for (const t of periodTagihan) {
       const jenjang = t.kelas_id ? kelas.get(t.kelas_id)?.jenjang : undefined
@@ -479,35 +417,39 @@ function LaporanContent() {
     }
     return Array.from(perJenjang.entries())
       .map(([kode, rows]) => {
-        const r = hitungRingkasan(rows, sekarang)
+        const r     = hitungRingkasan(rows, sekarang)
+        const siswa = hitungSiswaLunas(rows, sekarang)
         return {
           kode,
-          jenjang:   `Jenjang ${kode}`,
-          pct:       r.tingkatPelunasan,
-          terbayar:  r.terbayarJatuhTempo,
-          nilai:     r.nilaiJatuhTempo,
-          ketepatan: r.ketepatanWaktu,
-          tunggakan: r.tunggakanBerjalan,
+          jenjang:      `Jenjang ${kode}`,
+          pct:          r.tingkatPelunasan,
+          terbayar:     r.terbayarJatuhTempo,
+          nilai:        r.nilaiJatuhTempo,
+          tunggakan:    r.tunggakanBerjalan,
+          siswaLunas:   siswa.lunas,
+          siswaDinilai: siswa.dinilai,
         }
       })
       .sort((a, b) => a.kode.localeCompare(b.kode, 'id', { numeric: true }))
   }, [periodTagihan, kelas, sekarang])
 
-  const komponenData = useMemo(() => {
+  const komponenData = useMemo<(KomponenBelum & { jumlah: number })[]>(() => {
     // Dikelompokkan per komponen_id dan diberi label nama hidup dari master komponen,
     // bukan snapshot nama_komponen. Kalau memakai snapshot, komponen yang di-rename
     // pecah jadi dua baris (nama lama dari tagihan lama, nama baru dari tagihan baru).
     // Komponen yang sudah dihapus tidak punya komponen_id lagi — jatuh ke snapshot.
-    const byKomponen = new Map<string, { nama: string; jumlah: number; total: number }>()
+    // `jumlah` = tagihan (dipakai PDF), `siswa` = siswa berbeda (dipakai kartu).
+    const byKomponen = new Map<string, { nama: string; jumlah: number; total: number; siswa: Set<string> }>()
     for (const t of periodTagihan) {
       if (t.status === 'lunas' || tanpaKewajiban(t.total_nominal)) continue
       for (const item of t.tagihan_item) {
         const kunci = item.komponen_id ?? `nama:${item.nama_komponen}`
         const nama  = item.komponen?.nama ?? item.nama_komponen
-        const cur   = byKomponen.get(kunci) ?? { nama, jumlah: 0, total: 0 }
+        const cur   = byKomponen.get(kunci) ?? { nama, jumlah: 0, total: 0, siswa: new Set<string>() }
         cur.nama    = nama
         cur.jumlah += 1
         cur.total  += item.nominal
+        cur.siswa.add(t.siswa_id)
         byKomponen.set(kunci, cur)
       }
     }
@@ -515,7 +457,7 @@ function LaporanContent() {
     // belum lunas memuat komponen yang sama, jadi jumlahnya selalu seri dan urutannya
     // jatuh ke urutan penyisipan Map. Nilai rupiah juga yang ditonjolkan di kartu.
     return Array.from(byKomponen.values())
-      .map(v => ({ nama: v.nama, jumlah: v.jumlah, total: v.total }))
+      .map(v => ({ nama: v.nama, jumlah: v.jumlah, total: v.total, siswa: v.siswa.size }))
       .sort((a, b) => b.total - a.total || b.jumlah - a.jumlah)
       .slice(0, 4)
   }, [periodTagihan])
@@ -1038,7 +980,7 @@ function LaporanContent() {
       autoTable(doc, {
         startY: y,
         head: [['Status', 'Jumlah Tagihan']],
-        body: donutData.map(d => [d.label, String(d.value)]),
+        body: komposisiTagihan.map(d => [d.label, String(d.value)]),
         theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
       y = getFinalY(doc) + 10
@@ -1168,127 +1110,56 @@ function LaporanContent() {
       {/* ── Data State ── */}
       {!loading && hasData && (
         <>
-          {/* Semua baris stat dalam satu wrapper card border-left */}
-          <div style={sBingkai}>
+          {/* Semua baris stat dalam satu wrapper card border-left. Huruf DM Sans seperti
+              mockup Figma (Okt 2026); kelas laporan-utama merapatkan jarak hurufnya. */}
+          <div className="laporan-utama" style={{ ...sBingkai, padding: '1.5rem 1.875rem 2.5rem', gap: '1.75rem', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
 
             {/* Section header + pencarian siswa langsung (prinsip 5 draft) */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-                <div style={{ width: 60, height: 50, background: '#1A2C4E', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Image src="/icons/Grafik.png" alt="Bar Chart" width={20} height={20} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.625rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ width: 70, height: 46, background: WARNA_LAPORAN.navy, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 6px rgba(26, 44, 78, 0.3)' }}>
+                  <Image src="/icons/Grafik.png" alt="" width={22} height={22} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: '1.3rem', color: '#0F172A' }}>Ringkasan periode ini</div>
-                  <div style={{ fontSize: '1rem', color: '#747474' }}>Analisis status dan kondisi pembayaran berdasarkan periode yang dipilih</div>
+                  <h2 style={{ margin: 0, fontWeight: 700, fontSize: '1.5rem', lineHeight: 1.2, color: WARNA_LAPORAN.navy }}>Ringkasan periode ini</h2>
+                  <div style={{ fontSize: '0.875rem', color: WARNA_LAPORAN.abu }}>Analisis status dan kondisi pembayaran berdasarkan periode yang dipilih</div>
                 </div>
               </div>
               <CariSiswa siswa={daftarCariSiswa} qsFilter={qsFilter} />
             </div>
 
-            {/* Row 1: kartu metrik — semuanya mengikuti filter periode */}
-            <KartuRingkasan ringkasan={ringkasan} pemasukan={pemasukan} />
+            {/* Kartu menjorok sedikit dari judul, seperti mockup */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem', padding: '0 0.875rem' }}>
 
-            {/* Row 2: Donut + Tagihan vs realisasi */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)', gap: '1.5rem', marginBottom: '0.9rem' }}>
-              <div style={sKartu}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komposisi status pembayaran</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '1.25rem' }}>Distribusi per status tagihan periode ini</div>
-                <DonutChart data={donutData} />
+              {/* Baris 1: kartu metrik — semuanya mengikuti filter periode */}
+              <KartuRingkasanUtama ringkasan={ringkasan} pemasukan={pemasukan} />
+
+              {/* Baris 2: komposisi per siswa (filter periode) + tagihan vs realisasi
+                  (12 bulan tahun ajaran terpilih, tidak mengikuti periode) */}
+              <div className="laporan-baris-dua">
+                <KartuTab judul="Komposisi status pembayaran">
+                  <KomposisiStatus jumlah={komposisiSiswa} />
+                </KartuTab>
+                <TrenTagihanChart data={tren} ringkasAwalPakai judul="Tagihan vs realisasi" />
               </div>
-              <div style={sKartu}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Tagihan vs realisasi</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '0.75rem' }}>
-                  {taArsipTerpilih
-                    ? `Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir ${taTerpilih?.nama} · tidak mengikuti filter periode`
-                    : 'Per bulan jatuh tempo, termasuk tunggakan bulan sebelumnya · 12 bulan terakhir · tidak mengikuti filter periode'}
-                </div>
-                <TrenTagihanChart data={tren} ringkasAwalPakai />
+
+              {/* Baris 3: komponen belum dibayar — filter periode */}
+              <KartuTab judul="Komponen paling banyak belum dibayar">
+                <KomponenBelumDibayar data={komponenData} />
+              </KartuTab>
+
+              {/* Baris 4: umur tunggakan (semua tunggakan per hari ini, tanpa filter) +
+                  pembayaran per jenjang (filter periode, menurut kelas saat ditagih) */}
+              <div className="laporan-baris-empat">
+                <KartuTab judul="Umur tunggakan">
+                  <UmurTunggakan total={semuaTunggakan.tunggakanBerjalan} siswa={semuaTunggakan.siswaMenunggak} kelompok={umur} tertunggak={tertunggak} />
+                </KartuTab>
+                <KartuTab judul="Pembayaran per jenjang">
+                  <PembayaranPerJenjang data={jenjangData} qsFilter={qsFilter} />
+                </KartuTab>
               </div>
+
             </div>
-
-            {/* Row 3: Umur tunggakan + Pelunasan per jenjang + Komponen belum dibayar */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-              <div style={sKartu}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Umur tunggakan</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginBottom: '0.9rem' }}>Semua tunggakan per hari ini, dari semua tahun ajaran · tidak mengikuti filter</div>
-                {semuaTunggakan.tunggakanBerjalan === 0 ? (
-                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Tidak ada tunggakan.</div>
-                ) : (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A' }}>{fmt(semuaTunggakan.tunggakanBerjalan)}</span>
-                      <span style={{ fontSize: '0.78rem', color: '#6F788A' }}>{semuaTunggakan.siswaMenunggak} siswa</span>
-                    </div>
-                    <UmurTunggakanList data={umur} />
-                  </>
-                )}
-              </div>
-              <div style={sKartu}>
-                <div style={sJudulPanel}>Perbandingan jenjang</div>
-                <div style={{ ...sSubjudulPanel, marginBottom: '1rem' }}>Pelunasan tagihan jatuh tempo, menurut kelas saat ditagih · klik untuk rincian per kelas</div>
-                {jenjangData.length === 0 ? (
-                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Belum ada data.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    {jenjangData.map(j => {
-                      const pct   = j.pct ?? 0
-                      const color = pct >= 80 ? '#22C55E' : pct >= 60 ? '#3B82F6' : '#F59E0B'
-                      return (
-                        <Link key={j.kode} href={`/laporan/jenjang/${encodeURIComponent(j.kode)}${qsFilter}`}
-                          className="laporan-baris-tautan"
-                          style={{ display: 'block', padding: '0.55rem 0.6rem', margin: '0 -0.6rem', borderRadius: 8, textDecoration: 'none' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1A2C4E', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              {j.jenjang} <ChevronRight size={13} color="#94A3B8" />
-                            </span>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0F172A' }}>{fmtPersen(j.pct)}</span>
-                          </div>
-                          <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden' }}>
-                            {j.pct !== null && <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99 }} />}
-                          </div>
-                          <div style={{ fontSize: '0.72rem', color: '#6F788A', marginTop: '0.3rem' }}>
-                            {j.pct === null
-                              ? 'Belum ada tagihan yang jatuh tempo'
-                              : `Rp ${fmtRingkas(j.terbayar)} dari Rp ${fmtRingkas(j.nilai)} · tepat waktu ${fmtPersen(j.ketepatan)} · tunggakan Rp ${fmtRingkas(j.tunggakan)}`}
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-              <div style={sKartu}>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#101010', marginBottom: 4 }}>Komponen paling banyak belum dibayar</div>
-                <div style={{ fontSize: '0.75rem', color: '#6F788A', marginBottom: '1rem' }}>Berdasarkan nilai tagihan yang belum lunas</div>
-                {komponenData.length === 0 ? (
-                  <div style={{ fontSize: '0.8rem', color: '#94A3B8', textAlign: 'center', padding: '1rem 0' }}>Tidak ada komponen menunggak.</div>
-                ) : (
-                  <div>
-                    {komponenData.map((k, i) => {
-                      const amountColor = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#94A3B8'
-                      const badgeBg     = i === 0 ? '#FEF2F2' : i === 1 ? '#FFFBEB' : '#F1F5F9'
-                      const badgeColor  = i === 0 ? '#EF4444' : i === 1 ? '#D97706' : '#64748B'
-                      const kode = k.nama.split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase()).join('')
-                      return (
-                        <div key={k.nama} style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', padding: '0.75rem 0', borderBottom: i < komponenData.length - 1 ? '1px solid #E2E8F0' : 'none' }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 9, background: badgeBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <span style={{ fontSize: '0.62rem', fontWeight: 800, color: badgeColor, letterSpacing: '-0.3px' }}>{kode}</span>
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A', marginBottom: 2 }}>{k.nama}</div>
-                            <div style={{ fontSize: '0.73rem', color: '#6F788A' }}>{k.jumlah} tagihan belum lunas</div>
-                          </div>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: amountColor, flexShrink: 0 }}>
-                            {fmt(k.total)}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
           </div>
 
           {/* ── Daftar Laporan ── */}

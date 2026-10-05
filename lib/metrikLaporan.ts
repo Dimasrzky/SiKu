@@ -1,5 +1,5 @@
 import { periodeIndex } from './komponenTagihan'
-import { batasJatuhTempo, lewatJatuhTempo, tanpaKewajiban, type WaktuTagihan } from './statusTagihan'
+import { batasJatuhTempo, lewatJatuhTempo, statusEfektif, tanpaKewajiban, type StatusTagihan, type WaktuTagihan } from './statusTagihan'
 
 // Rumus metrik laporan — satu-satunya sumber. Level sekolah memakainya sekarang;
 // level jenjang, kelas, dan siswa (drill-down) cukup menyaring baris yang sama,
@@ -183,6 +183,54 @@ export function hitungPemasukan(rows: KolomPembayaran[]): { total: number; trans
     total:     rows.reduce((s, t) => s + t.terbayar, 0),
     transaksi: rows.filter(t => t.terbayar > 0).length,
   }
+}
+
+// ── Per siswa ────────────────────────────────────────────────────────────────
+
+function kelompokPerSiswa<T extends { siswa_id: string }>(rows: T[]): Map<string, T[]> {
+  const grup = new Map<string, T[]>()
+  for (const t of rows) {
+    const daftar = grup.get(t.siswa_id)
+    if (daftar) daftar.push(t)
+    else grup.set(t.siswa_id, [t])
+  }
+  return grup
+}
+
+/**
+ * Satu status per siswa — aturan yang sama dengan Tagihan Aktif: tagihan terakhir
+ * siswa itu menentukan statusnya (statusEfektif), kecuali ada tagihan sebelumnya
+ * yang masih menunggak; siswanya Menunggak apa pun status tagihan terakhirnya.
+ * Untuk baris satu bulan hasilnya sama dengan menghitung per tagihan.
+ */
+export function komposisiStatusSiswa(rows: TagihanMetrik[], sekarang: Date): Record<StatusTagihan, number> {
+  const jumlah: Record<StatusTagihan, number> = { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 }
+  for (const daftar of kelompokPerSiswa(rows).values()) {
+    const terakhir = daftar.reduce((a, b) => (periodeIndex(b.bulan, b.tahun) > periodeIndex(a.bulan, a.tahun) ? b : a))
+    const periodeTerakhir = periodeIndex(terakhir.bulan, terakhir.tahun)
+    const menunggakLama   = daftar.some(t => periodeIndex(t.bulan, t.tahun) < periodeTerakhir && adalahTunggakan(t, sekarang))
+    const status = menunggakLama
+      ? 'menunggak'
+      : statusEfektif(terakhir.status, lewatJatuhTempo(terakhir, sekarang), terakhir.is_alumni, terakhir.total_nominal)
+    jumlah[status] += 1
+  }
+  return jumlah
+}
+
+/**
+ * Siswa lunas = sudah punya tagihan jatuh tempo dan tidak satu pun menunggak.
+ * Siswa yang belum punya tagihan jatuh tempo tidak dihitung di kedua sisi — dasar
+ * yang sama dengan tingkat pelunasan.
+ */
+export function hitungSiswaLunas(rows: TagihanMetrik[], sekarang: Date): { lunas: number; dinilai: number } {
+  const dinilai   = new Set<string>()
+  const menunggak = new Set<string>()
+  for (const t of rows) {
+    if (tanpaKewajiban(t.total_nominal) || !sudahJatuhTempo(t, sekarang)) continue
+    dinilai.add(t.siswa_id)
+    if (adalahTunggakan(t, sekarang)) menunggak.add(t.siswa_id)
+  }
+  return { lunas: dinilai.size - menunggak.size, dinilai: dinilai.size }
 }
 
 // ── Umur tunggakan ───────────────────────────────────────────────────────────
@@ -385,6 +433,15 @@ export function nilaiSiswa<T extends TagihanMetrik>(rows: T[], sekarang: Date): 
   else                                                                                         status = 'perlu_perhatian'
 
   return { status, ringkasan, tunggakan, umurTertuaHari }
+}
+
+/** Jumlah siswa berstatus Tertunggak — "butuh tindakan segera" di kartu Umur tunggakan */
+export function jumlahSiswaTertunggak(rows: TagihanMetrik[], sekarang: Date): number {
+  let jumlah = 0
+  for (const daftar of kelompokPerSiswa(rows).values()) {
+    if (nilaiSiswa(daftar, sekarang).status === 'tertunggak') jumlah += 1
+  }
+  return jumlah
 }
 
 // ── Kategori sel heatmap ─────────────────────────────────────────────────────
