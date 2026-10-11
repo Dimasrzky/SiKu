@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase-service'
-import { muatTertagih, rincianSisa, type TagihanBayar } from '@/lib/tagihanTertagih'
+import { kunciUnit, rentangRencana, unitBayar, type PilihanBayar } from '@/lib/rincianKomponen'
+import { muatBuktiMenunggu, muatTertagih, rincianSisa, sisaTagihan, type TagihanBayar } from '@/lib/tagihanTertagih'
 import BayarWizard from './BayarWizard'
 import BayarHeader from './BayarHeader'
 import BayarFooter from './BayarFooter'
@@ -36,10 +37,47 @@ export interface TagihanItem {
   warna:         string
 }
 
-/** Baris rincian tagihan periode sebelumnya yang masih bersisa. */
-export interface TunggakanItem extends TagihanItem {
-  bulan: number
-  tahun: number
+/** Satu komponen yang bisa dicentang wali */
+export interface KomponenPilih {
+  /** kunciUnit — sama dengan kunci di daftar unit */
+  kunci:    string
+  nama:     string
+  warna:    string
+  /** Sebelum potongan beasiswa */
+  nominal:  number
+  potongan: number
+  terbayar: number
+  /** 0 = komponen ini sudah lunas */
+  sisa:     number
+}
+
+/** Satu bulan tagihan yang masih bersisa */
+export interface BlokTagihan {
+  tagihan_id: string
+  bulan:      number
+  tahun:      number
+  /** Tagihan yang ditunjuk tautan ini; yang lain tunggakan bulan sebelumnya */
+  diTautan:   boolean
+  sisa:       number
+  /** null = tagihan ini dibayar utuh, dicentang lewat `kunciUtuh` */
+  komponen:   KomponenPilih[] | null
+  kunciUtuh:  string
+  /** Untuk tagihan utuh: komponen apa adanya, lalu potongan dan yang sudah dibayar */
+  rincian:    TagihanItem[]
+}
+
+/** Yang dipilih wali di langkah 1, dikirim bersama bukti transfer */
+export interface Pengajuan {
+  /** kunciUnit yang dicentang — dipakai lagi kalau wali kembali ke langkah 1 */
+  kunci:        string[]
+  pilihan:      PilihanBayar[]
+  jenis:        'lunas' | 'cicilan'
+  /** Yang ditransfer sekarang */
+  nominal:      number
+  totalDipilih: number
+  /** 'YYYY-MM-DD', hanya untuk cicilan */
+  rencana:      string | null
+  catatan:      string
 }
 
 type SekolahRow  = { nama: string; no_wa: string | null; yayasan: string | null }
@@ -81,7 +119,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
 
   const sekarang = new Date()
   const today    = sekarang.toISOString().split('T')[0]
-  const [{ data: sekolahData }, { data: staffAll }, { data: beasiswaRaw }, { data: rekeningData }, { data: verifikasiMenunggu }, tertagihRes] = await Promise.all([
+  const [{ data: sekolahData }, { data: staffAll }, { data: beasiswaRaw }, { data: rekeningData }, menungguRes, tertagihRes] = await Promise.all([
     supabase.from('sekolah').select('nama, no_wa, yayasan').eq('id', tagihan.sekolah_id).maybeSingle(),
     supabase.from('profiles').select('nama, jabatan, no_wa, avatar').eq('sekolah_id', tagihan.sekolah_id).limit(20),
     supabase
@@ -92,11 +130,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     supabase.from('rekening').select('bank, no_rek, atas_nama')
       .eq('sekolah_id', tagihan.sekolah_id).eq('jenis', 'transfer').eq('aktif', true)
       .order('urutan', { ascending: true }).limit(1).maybeSingle(),
-    // Bukti yang belum diverifikasi untuk tagihan mana pun milik siswa ini — disaring di
-    // bawah ke tagihan yang ikut ditagih lewat tautan ini
-    supabase.from('verifikasi_pembayaran').select('tagihan_id, nominal_diajukan, created_at')
-      .eq('siswa_id', tagihan.siswa_id).eq('status', 'menunggu')
-      .order('created_at', { ascending: false }).limit(20),
+    muatBuktiMenunggu(supabase, tagihan),
     muatTertagih(supabase, tagihan, sekarang),
   ])
 
@@ -126,7 +160,14 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     noWaBendahara: staff?.no_wa ?? sekolah?.no_wa ?? '',
   }
 
-  if (tagihan.status === 'lunas') {
+  // Menampilkan angka dari data yang tidak lengkap berarti meminta wali mentransfer
+  // jumlah yang salah — lebih baik halamannya meminta dimuat ulang
+  const tertagih = tertagihRes.data
+
+  // Tagihan di tautan ini sudah lunas. Wali boleh membayar bulan ini lebih dulu dan menunda
+  // tunggakannya, jadi tunggakan yang tersisa tetap ditawarkan di sini; "Lunas" hanya
+  // kalau memang tidak ada sisa.
+  if (tagihan.status === 'lunas' && (!tertagih || tertagih.daftar.length === 0)) {
     const { data: pembayaranLunas } = await supabase
       .from('pembayaran')
       .select('tanggal_bayar')
@@ -149,10 +190,9 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     )
   }
 
-  // Menampilkan angka dari data yang tidak lengkap berarti meminta wali mentransfer
-  // jumlah yang salah — lebih baik halamannya meminta dimuat ulang
-  const tertagih = tertagihRes.data
-  if (!tertagih) {
+  // Tanpa daftar bukti yang menunggu, halaman bisa menawarkan transfer kedua untuk
+  // komponen yang sudah dibayar — sama gagalnya dengan rincian yang tidak lengkap
+  if (!tertagih || menungguRes.error) {
     return (
       <PageShell headerProps={headerProps} footerProps={footerProps}>
         <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 0 6px #21386b7b', padding: '2rem 1.5rem', textAlign: 'center' }}>
@@ -163,19 +203,22 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     )
   }
 
-  // Bukti yang sedang diproses untuk salah satu tagihan yang ditagih di sini — mis.
-  // dikirim lewat tautan bulan lalu — berarti tunggakannya sudah dibayar dan menunggu
-  // dicatat. Halaman ini tidak menawarkan transfer kedua untuk tagihan yang sama.
-  const idTertagih = new Set([tagihan.id, ...tertagih.daftar.map(t => t.id)])
-  type VerifikasiRow = { tagihan_id: string; nominal_diajukan: number; created_at: string }
-  const menunggu = ((verifikasiMenunggu ?? []) as VerifikasiRow[]).find(v => idTertagih.has(v.tagihan_id))
+  // Bukti siswa ini yang sedang diproses — lewat tautan mana pun, mis. tautan bulan lalu
+  // — berarti sebagian tagihannya sudah dibayar dan menunggu dicatat. Halaman ini tidak
+  // menawarkan transfer kedua sampai bukti itu selesai diverifikasi.
+  const menunggu = menungguRes.data
   if (menunggu) {
+    const cicilan = menunggu.jenis === 'cicilan'
     return (
       <PageShell headerProps={headerProps} footerProps={footerProps}>
         <BuktiSedangDiprosesView
           namaSiswa={siswa?.nama ?? ''}
           kelasNama={kelasNama}
           totalNominal={menunggu.nominal_diajukan}
+          cicilan={cicilan ? {
+            sisa:    Math.max(0, (menunggu.total_dipilih ?? 0) - menunggu.nominal_diajukan),
+            rencana: menunggu.rencana_lunas,
+          } : null}
           buktiDikirim={menunggu.created_at}
           namaBendahara={footerProps.namaBendahara}
           noWaBendahara={footerProps.noWaBendahara}
@@ -184,7 +227,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     )
   }
 
-  // Tiap blok rincian berjumlah sama dengan sisa tagihannya: komponen tagihan_item
+  // Rincian tagihan yang dibayar utuh berjumlah sama dengan sisanya: komponen tagihan_item
   // (dicatat sebelum potongan), lalu potongan beasiswa dan pembayaran yang sudah masuk
   const rincian = (t: TagihanBayar): TagihanItem[] => rincianSisa(
     t.tagihan_item.map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, warna: i.komponen?.kelas_warna ?? '#94A3B8' })),
@@ -192,24 +235,41 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     (nama_komponen, nominal) => ({ nama_komponen, nominal, warna: '#94A3B8' }),
   )
 
-  const items: TagihanItem[] = tertagih.sasaran ? rincian(tertagih.sasaran) : []
-
-  // Tunggakan bulan-bulan sebelumnya, terlama dulu — ikut ditagih dan ikut dilunasi
-  // saat bukti transfernya diverifikasi
-  const tunggakan: TunggakanItem[] = tertagih.daftar
-    .filter(t => t.id !== tagihan.id)
-    .flatMap(t => rincian(t).map(i => ({ ...i, bulan: t.bulan, tahun: t.tahun })))
+  // Bulan-bulan yang masih bersisa: tunggakan terlama dulu, lalu tagihan di tautan ini.
+  // Wali memilih komponen mana yang dibayar sekarang (lib/rincianKomponen).
+  const blok: BlokTagihan[] = tertagih.daftar.map(t => ({
+    tagihan_id: t.id,
+    bulan:      t.bulan,
+    tahun:      t.tahun,
+    diTautan:   t.id === tagihan.id,
+    sisa:       sisaTagihan(t),
+    komponen:   t.rincian.perKomponen
+      ? t.rincian.komponen.map(k => ({
+          kunci:    kunciUnit({ tagihan_id: t.id, tagihan_item_id: k.item.id }),
+          nama:     k.item.nama_komponen,
+          warna:    k.item.komponen?.kelas_warna ?? '#94A3B8',
+          nominal:  k.item.nominal,
+          potongan: k.item.potongan,
+          terbayar: k.terbayar,
+          sisa:     k.sisa,
+        }))
+      : null,
+    kunciUtuh:  kunciUnit({ tagihan_id: t.id, tagihan_item_id: null }),
+    rincian:    t.rincian.perKomponen ? [] : rincian(t),
+  }))
 
   return (
     <PageShell headerProps={headerProps} footerProps={footerProps}>
       <BayarWizard
         paymentToken={token}
-        total={tertagih.total}
         namaSiswa={siswa?.nama ?? ''}
         nis={siswa?.nis ?? ''}
         kelasNama={kelasNama}
-        items={items}
-        tunggakan={tunggakan}
+        blok={blok}
+        units={unitBayar(tertagih.daftar)}
+        lunasDiTautan={tagihan.status === 'lunas' ? { bulan: tagihan.bulan, tahun: tagihan.tahun } : null}
+        // Dihitung di server supaya HTML server dan browser sama, juga menjelang tengah malam
+        rentangRencana={rentangRencana(sekarang)}
         badges={badges}
         rekening={rekening ? { bank: rekening.bank, noRek: rekening.no_rek, atasNama: rekening.atas_nama } : null}
         namaBendahara={footerProps.namaBendahara}

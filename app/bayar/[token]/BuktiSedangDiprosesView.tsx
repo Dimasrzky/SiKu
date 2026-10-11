@@ -1,11 +1,13 @@
 import { PackageSearch, Receipt, PartyPopper, Search, CheckCircle2, Phone } from 'lucide-react'
 import Image from 'next/image'
-import { formatRp, formatTanggalWaktu } from './format'
+import { formatRp, formatTanggalWaktu, formatTanggalWIB } from './format'
 
 interface Props {
   namaSiswa:     string
   kelasNama:     string
   totalNominal:  number
+  /** Bukti ini cicilan: sisa yang dipilih sesudahnya dan rencana pelunasannya */
+  cicilan:       { sisa: number; rencana: string | null } | null
   buktiDikirim:  string
   namaBendahara: string
   noWaBendahara: string
@@ -18,7 +20,7 @@ function toWaHref(raw: string): string {
 }
 
 export default function BuktiSedangDiprosesView({
-  namaSiswa, kelasNama, totalNominal, buktiDikirim, namaBendahara, noWaBendahara,
+  namaSiswa, kelasNama, totalNominal, cicilan, buktiDikirim, namaBendahara, noWaBendahara,
 }: Props) {
   return (
     <div>
@@ -46,6 +48,13 @@ export default function BuktiSedangDiprosesView({
         <div style={{ padding: '1.25rem 1.5rem' }}>
           <InfoRow label="Siswa"        value={`${namaSiswa}${kelasNama ? ` - ${kelasNama}` : ''}`} />
           <InfoRow label="Total dibayar" value={formatRp(totalNominal)} bold />
+          <InfoRow label="Jenis"        value={cicilan ? 'Cicilan' : 'Lunas'} />
+          {cicilan && (
+            <>
+              <InfoRow label="Sisa" value={formatRp(cicilan.sisa)} />
+              {cicilan.rencana && <InfoRow label="Rencana pelunasan" value={formatTanggalWIB(cicilan.rencana)} />}
+            </>
+          )}
           <InfoRow label="Metode"       value="Transfer" />
           <InfoRow label="Bukti dikirim" value={formatTanggalWaktu(buktiDikirim)} uppercase />
           <InfoRow label="Status" value="Menunggu Verifikasi" last badgeBg="#FEF3C7" badgeColor="#D97706" />
@@ -57,7 +66,11 @@ export default function BuktiSedangDiprosesView({
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <Timeline icon={PartyPopper} bg="#1A2C4E" fg="#fff" title="Bukti diterima" desc={formatTanggalWaktu(buktiDikirim)} connector />
             <Timeline icon={Search}      bg="#DC832C" fg="#fff" title="Sedang diverifikasi" desc="Tim sekolah sedang mengecek mutasi rekening" connector />
-            <Timeline icon={CheckCircle2} bg="#E2E8F0" fg="#94A3B8" title="Konfirmasi lunas" desc="Status akan berubah menjadi lunas secara otomatis" />
+            {cicilan ? (
+              <Timeline icon={CheckCircle2} bg="#E2E8F0" fg="#94A3B8" title="Cicilan tercatat" desc="Sisanya bisa dibayar lewat halaman ini setelah verifikasi selesai" />
+            ) : (
+              <Timeline icon={CheckCircle2} bg="#E2E8F0" fg="#94A3B8" title="Konfirmasi lunas" desc="Status akan berubah menjadi lunas secara otomatis" />
+            )}
           </div>
         </div>
 

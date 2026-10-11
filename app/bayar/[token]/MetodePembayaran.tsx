@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Wallet, Building2, CreditCard, QrCode, UploadCloud } from 'lucide-react'
-
-const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+import { Wallet, Building2, CreditCard, QrCode, UploadCloud, CalendarClock } from 'lucide-react'
+import { formatRp, formatTanggalWIB } from './format'
+import type { Pengajuan } from './page'
 
 interface Rekening {
   bank:      string
@@ -13,7 +13,8 @@ interface Rekening {
 
 interface Props {
   paymentToken: string
-  totalNominal: number
+  /** Pilihan wali dari langkah 1 — dikirim bersama bukti transfer */
+  pengajuan:    Pengajuan
   rekening:     Rekening | null
   onBack:       () => void
   onSubmitted:  () => void
@@ -21,13 +22,17 @@ interface Props {
 
 const SOON_BADGE_BG = '#DC832C'
 
-export default function MetodePembayaran({ paymentToken, totalNominal, rekening, onBack, onSubmitted }: Props) {
+export default function MetodePembayaran({ paymentToken, pengajuan, rekening, onBack, onSubmitted }: Props) {
+  const totalNominal = pengajuan.nominal
+  const cicilan      = pengajuan.jenis === 'cicilan'
   const [file, setFile]               = useState<File | null>(null)
   const [previewUrl, setPreviewUrl]   = useState<string | null>(null)
   const [dragOver, setDragOver]       = useState(false)
   const [copied, setCopied]           = useState(false)
   const [copiedNominal, setCopiedNominal] = useState(false)
   const [error, setError]             = useState('')
+  // Rincian tagihan berubah sejak halaman dibuka, atau bukti lain sedang diproses
+  const [perluMuatUlang, setPerluMuatUlang] = useState(false)
   const [loading, setLoading]         = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -77,14 +82,23 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
     if (!file || loading) return
     setLoading(true)
     setError('')
+    setPerluMuatUlang(false)
     try {
       const formData = new FormData()
       formData.append('payment_token', paymentToken)
       formData.append('bukti', file)
+      formData.append('pilihan', JSON.stringify(pengajuan.pilihan))
+      formData.append('jenis', pengajuan.jenis)
+      formData.append('nominal', String(pengajuan.nominal))
+      if (cicilan) {
+        formData.append('rencana_lunas', pengajuan.rencana ?? '')
+        if (pengajuan.catatan) formData.append('catatan_wali', pengajuan.catatan)
+      }
       const res  = await fetch('/api/bayar/konfirmasi', { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Terjadi kesalahan. Silakan coba lagi.')
+        setPerluMuatUlang(res.status === 409)
         return
       }
       onSubmitted()
@@ -106,7 +120,9 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1A2C4E' }}>Metode Pembayaran</div>
-            <div style={{ fontSize: '0.8rem',fontWeight: 600, color: '#6F788A', marginTop: 1 }}>Total: {formatRp(totalNominal)}</div>
+            <div style={{ fontSize: '0.8rem',fontWeight: 600, color: '#6F788A', marginTop: 1 }}>
+              Total: {formatRp(totalNominal)}{cicilan && ' · Cicilan'}
+            </div>
           </div>
         </div>
 
@@ -146,6 +162,17 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
               </div>
             ))}
           </div>
+
+          {cicilan && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#EFF6FF', border: '1.5px solid #BFDBFE', borderRadius: 10, padding: '0.75rem 0.9rem', marginBottom: '1.25rem', fontSize: 'clamp(0.72rem, 2.5vw, 0.82rem)', color: '#1E3A8A', lineHeight: 1.55 }}>
+              <CalendarClock size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                Cicilan <strong>{formatRp(totalNominal)}</strong> dari {formatRp(pengajuan.totalDipilih)} yang dipilih.
+                Sisa <strong>{formatRp(pengajuan.totalDipilih - totalNominal)}</strong>
+                {pengajuan.rencana && <> direncanakan lunas <strong>{formatTanggalWIB(pengajuan.rencana)}</strong></>}.
+              </span>
+            </div>
+          )}
 
           {/* Rekening tujuan transfer */}
           <div style={{ border: '2px solid #BABFC7', borderRadius: 12, padding: '1rem 1.1rem', marginBottom: '1.25rem', boxShadow: '0 2px 8px #4353766d' }}>
@@ -216,6 +243,12 @@ export default function MetodePembayaran({ paymentToken, totalNominal, rekening,
           {error && (
             <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem', fontWeight: 600 }}>
               {error}
+              {perluMuatUlang && (
+                <button onClick={() => window.location.reload()}
+                  style={{ display: 'block', marginTop: 6, padding: 0, background: 'none', border: 'none', color: '#B91C1C', fontWeight: 800, fontSize: '0.8rem', textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Muat ulang halaman
+                </button>
+              )}
             </div>
           )}
 

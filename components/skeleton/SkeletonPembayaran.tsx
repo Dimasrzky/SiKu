@@ -103,7 +103,11 @@ export const SkeletonPembayaran = () => (
                 <td style={sSel}><Blok lebar={46} tinggi={21} sudut={6} /></td>
                 <td style={sSel}><Blok lebar={giliran([88, 96, 80], i)} tinggi={12} /></td>
                 <td style={sSel}><Blok lebar={giliran([64, 72, 58], i)} tinggi={21} sudut={20} /></td>
-                <td style={sSel}><Blok lebar={110} tinggi={11} /></td>
+                {/* Dua baris: "Tagihan <bulan>" dan "Pembayaran ke-n" */}
+                <td style={sSel}>
+                  <Blok lebar={giliran([118, 132, 110], i)} tinggi={12} />
+                  <Blok lebar={96} tinggi={10} style={{ marginTop: 5 }} />
+                </td>
                 <td style={sSel}><Blok lebar={giliran([70, 84, 62], i)} tinggi={23} sudut={20} /></td>
               </tr>
             ))}

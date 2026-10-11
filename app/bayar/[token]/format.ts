@@ -12,6 +12,12 @@ export function formatTanggalWaktu(iso: string): string {
   return `${tgl}, ${jam} WIB`
 }
 
+/** "25 Oktober 2026" menurut kalender WIB — dari 'YYYY-MM-DD' maupun timestamp */
+export function formatTanggalWIB(s: string): string {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00+07:00`) : new Date(s)
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })
+}
+
 export function formatTanggal(iso: string): string {
   return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }

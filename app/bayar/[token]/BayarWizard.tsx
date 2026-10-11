@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import type { UnitBayar } from '@/lib/rincianKomponen'
 import BayarStepper from './BayarStepper'
 import TagihanReview from './TagihanReview'
 import MetodePembayaran from './MetodePembayaran'
 import TerimaKasihView from './TerimaKasihView'
-import type { BeasiswaBadge, TagihanItem, TunggakanItem } from './page'
+import type { BeasiswaBadge, BlokTagihan, Pengajuan } from './page'
 
 interface Rekening {
   bank:     string
@@ -16,13 +17,17 @@ interface Rekening {
 
 interface Props {
   paymentToken:   string
-  /** Sisa tagihan di tautan ini + sisa tunggakan sebelumnya (lib/tagihanTertagih) */
-  total:          number
   namaSiswa:      string
   nis:            string
   kelasNama:      string
-  items:          TagihanItem[]
-  tunggakan:      TunggakanItem[]
+  /** Bulan-bulan yang masih bersisa (lib/tagihanTertagih), terlama dulu */
+  blok:           BlokTagihan[]
+  /** Yang bisa dicentang, dalam urutan pembagian (lib/rincianKomponen) */
+  units:          UnitBayar[]
+  /** Tagihan di tautan ini sudah lunas — yang tersisa tinggal tunggakannya */
+  lunasDiTautan:  { bulan: number; tahun: number } | null
+  /** Tanggal rencana pelunasan cicilan yang boleh dipilih, 'YYYY-MM-DD' */
+  rentangRencana: { awal: string; akhir: string }
   badges:         BeasiswaBadge[]
   rekening:       Rekening | null
   namaBendahara:  string
@@ -30,11 +35,12 @@ interface Props {
 }
 
 export default function BayarWizard({
-  paymentToken, total,
-  namaSiswa, nis, kelasNama, items, tunggakan, badges, rekening, namaBendahara, noWaBendahara,
+  paymentToken, namaSiswa, nis, kelasNama, blok, units, lunasDiTautan, rentangRencana,
+  badges, rekening, namaBendahara, noWaBendahara,
 }: Props) {
   const router = useRouter()
-  const [step, setStep]           = useState<1 | 2 | 3>(1)
+  const [step, setStep]             = useState<1 | 2 | 3>(1)
+  const [pengajuan, setPengajuan]   = useState<Pengajuan | null>(null)
   const [waktuKirim, setWaktuKirim] = useState('')
 
   return (
@@ -46,29 +52,31 @@ export default function BayarWizard({
           namaSiswa={namaSiswa}
           nis={nis}
           kelasNama={kelasNama}
-          items={items}
-          tunggakan={tunggakan}
-          totalNominal={total}
+          blok={blok}
+          units={units}
+          lunasDiTautan={lunasDiTautan}
+          rentangRencana={rentangRencana}
           badges={badges}
-          onLanjut={() => setStep(2)}
+          awal={pengajuan}
+          onLanjut={p => { setPengajuan(p); setStep(2) }}
         />
       )}
 
-      {step === 2 && (
+      {step === 2 && pengajuan && (
         <MetodePembayaran
           paymentToken={paymentToken}
-          totalNominal={total}
+          pengajuan={pengajuan}
           rekening={rekening}
           onBack={() => setStep(1)}
           onSubmitted={() => { setWaktuKirim(new Date().toISOString()); setStep(3) }}
         />
       )}
 
-      {step === 3 && (
+      {step === 3 && pengajuan && (
         <TerimaKasihView
           namaSiswa={namaSiswa}
           kelasNama={kelasNama}
-          totalNominal={total}
+          pengajuan={pengajuan}
           waktuKirim={waktuKirim}
           namaBendahara={namaBendahara}
           noWaBendahara={noWaBendahara}

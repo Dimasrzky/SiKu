@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong } from '../ambilSemua'
 import { gabungPembayaran, selisihHari } from '../metrikLaporan'
+import { tagihanBukti } from '../rincianKomponen'
 import type { KonfigPengingat } from './konfig'
 import { ringkasTunggakan, type RingkasanTunggakan, type TagihanPengingat } from './kelayakan'
 import { normalkanNomorWa } from './nomor'
@@ -81,8 +82,8 @@ export async function muatPenilaian(
       .from('reminder_job').select(SELECT_JOB_RINGKAS)
       .eq('sekolah_id', sekolahId).in('siswa_id', ids).eq('status', 'terkirim').gte('sent_at', sejak)
       .order('id').range(dari, sampai)),
-    ambilPerPotong<{ siswa_id: string; tagihan_id: string }>(siswaIds, (ids, dari, sampai) => db
-      .from('verifikasi_pembayaran').select('id, siswa_id, tagihan_id')
+    ambilPerPotong<{ siswa_id: string; tagihan_id: string; pilihan: unknown }>(siswaIds, (ids, dari, sampai) => db
+      .from('verifikasi_pembayaran').select('id, siswa_id, tagihan_id, pilihan')
       .eq('sekolah_id', sekolahId).in('siswa_id', ids).eq('status', 'menunggu')
       .order('id').range(dari, sampai)),
   ])
@@ -113,9 +114,13 @@ export async function muatPenilaian(
     terkirimPerSiswa.set(j.siswa_id, daftar)
   }
 
-  // Bukti untuk tagihan yang sudah lunas tidak dihitung — sama dengan label "Diproses" di dashboard
+  // Bukti untuk tagihan yang sudah lunas tidak dihitung — sama dengan label "Diproses" di
+  // dashboard dan kunci halaman bayar (muatBuktiMenunggu). Satu bukti bisa memuat komponen
+  // beberapa bulan; tagihan yang dipilih wali ada di salinan pilihannya.
   const belumLunas = new Set(tagihanRes.data.map(t => t.id))
-  const menunggu   = new Set(verifikasiRes.data.filter(v => belumLunas.has(v.tagihan_id)).map(v => v.siswa_id))
+  const menunggu   = new Set(verifikasiRes.data
+    .filter(v => tagihanBukti(v).some(id => belumLunas.has(id)))
+    .map(v => v.siswa_id))
 
   return {
     data: new Map(siswaRes.data.map(s => {

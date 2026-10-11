@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong, ambilSemua } from './ambilSemua'
 import { komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from './komponenTagihan'
+import { potonganPerKomponen, type PotonganBeasiswa } from './hitungUlangTagihan'
 
 // Penerbitan tagihan bulanan: satu tagihan per siswa aktif yang belum punya tagihan pada
 // bulan itu, lengkap dengan rincian komponen, komponen individu, dan potongan beasiswanya.
@@ -79,7 +80,7 @@ export async function runGenerate(
   if (eBeasiswa) return { success: false, error: 'Gagal memuat data beasiswa.' }
   if (eIndividu) return { success: false, error: 'Gagal memuat data komponen individu.' }
 
-  const siswaBeasiswaMap = new Map<string, { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; komponen_ids: Set<string> }[]>()
+  const siswaBeasiswaMap = new Map<string, PotonganBeasiswa[]>()
   for (const row of bsData) {
     if (!row.beasiswa) continue
     const list = siswaBeasiswaMap.get(row.siswa_id) ?? []
@@ -127,7 +128,7 @@ export async function runGenerate(
   const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
 
   const toInsert: { sekolah_id: string; siswa_id: string; bulan: number; tahun: number; total_nominal: number; status: string }[] = []
-  const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; siswa_id: string }[] = []
+  const itemsByTempId: { komponen_id: string; nama_komponen: string; nominal: number; potongan: number; siswa_id: string }[] = []
 
   for (const siswa of (siswaData as SiswaForGenerate[])) {
     if (existingIds.has(siswa.id)) continue
@@ -144,25 +145,18 @@ export async function runGenerate(
     const allKomps = [...filtered, ...individu]
     if (allKomps.length === 0) continue
 
-    const tagihanKompIds = new Set(allKomps.map(k => k.komponen_id))
-    let totalPotongan = 0
-    for (const bs of (siswaBeasiswaMap.get(siswa.id) ?? [])) {
-      for (const kid of bs.komponen_ids) {
-        if (!tagihanKompIds.has(kid)) continue
-        const komp = allKomps.find(k => k.komponen_id === kid)
-        if (!komp) continue
-        totalPotongan += bs.jenis_potongan === 'persen'
-          ? Math.round(komp.nominal * (bs.persen ?? 0) / 100)
-          : bs.nominal ?? 0
-      }
-    }
+    // Potongan juga dicatat per komponen, supaya wali bisa membayar komponen satu per satu
+    // dengan harga sesudah beasiswa
+    const potongan = potonganPerKomponen(allKomps, siswaBeasiswaMap.get(siswa.id) ?? [])
 
-    const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - totalPotongan)
+    const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - potongan.total)
     // kelas_id, tahun_ajaran_id, dan jatuh_tempo sengaja tidak dikirim — trigger
     // database tagihan_isi_snapshot mengisinya dari siswa, rentang tahun ajaran,
     // dan tanggal jatuh tempo paket kelasnya
     toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
-    for (const k of allKomps) itemsByTempId.push({ komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, siswa_id: siswa.id })
+    allKomps.forEach((k, i) => itemsByTempId.push({
+      komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, potongan: potongan.perKomponen[i], siswa_id: siswa.id,
+    }))
   }
 
   if (toInsert.length === 0) return { success: true }
@@ -177,7 +171,7 @@ export async function runGenerate(
 
   const siswaToTagihanId = new Map(((inserted) as { id: string; siswa_id: string }[]).map(t => [t.siswa_id, t.id]))
   const tagItems = itemsByTempId
-    .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal }))
+    .map(item => ({ tagihan_id: siswaToTagihanId.get(item.siswa_id) ?? '', komponen_id: item.komponen_id, nama_komponen: item.nama_komponen, nominal: item.nominal, potongan: item.potongan }))
     .filter(i => i.tagihan_id)
   if (tagItems.length > 0) {
     const { error: e4 } = await db.from('tagihan_item').insert(tagItems)

@@ -33,6 +33,39 @@ export interface PotonganBeasiswa {
   komponen_ids:   Set<string>
 }
 
+/**
+ * Potongan beasiswa tiap komponen rincian, dan jumlahnya — satu-satunya rumus potongan,
+ * dipakai penerbitan (lib/generateTagihan) dan hitung ulang. Potongan berlaku atas komponen
+ * yang dicakup program dan memang ada di rincian (komponen pertama dengan komponen_id itu).
+ *
+ * `total` adalah jumlah apa adanya, dasar total_nominal sejak awal. `perKomponen` dibatasi
+ * nominal komponennya (tagihan_item.potongan): kalau batas itu terpakai — potongan tetap
+ * yang lebih besar dari komponennya — harga bersih komponen tidak lagi menjumlah ke total,
+ * dan tagihan itu dibayar utuh, bukan per komponen (lib/rincianKomponen).
+ */
+export function potonganPerKomponen(
+  rincian: RincianTagihan[],
+  beasiswa: PotonganBeasiswa[],
+): { perKomponen: number[]; total: number } {
+  const perKomponen = rincian.map(() => 0)
+  let total = 0
+  for (const bs of beasiswa) {
+    for (const kid of bs.komponen_ids) {
+      const idx = rincian.findIndex(i => i.komponen_id === kid)
+      if (idx < 0) continue
+      const potongan = bs.jenis_potongan === 'persen'
+        ? Math.round(rincian[idx].nominal * (bs.persen ?? 0) / 100)
+        : (bs.nominal ?? 0)
+      perKomponen[idx] += potongan
+      total += potongan
+    }
+  }
+  return {
+    perKomponen: perKomponen.map((p, i) => Math.min(Math.max(0, p), Math.max(0, rincian[i].nominal))),
+    total,
+  }
+}
+
 /** Tagihan yang boleh dihitung ulang: bulan berjalan dan belum lunas */
 export const bolehDihitungUlang = (
   t: { bulan: number; tahun: number; status: string }, bulanIni: number, tahunIni: number,
@@ -47,6 +80,8 @@ export interface HasilHitungUlang<K extends KomponenIndividu> {
   susulan: K[]
   /** Total sesudah susulan dan potongan beasiswa; null = total yang tersimpan jangan diubah */
   total:   number | null
+  /** Potongan per komponen untuk `[...rincian, ...susulan]`, urutan yang sama (tagihan_item.potongan) */
+  potongan: number[]
 }
 
 export function hitungUlangTagihan<K extends KomponenIndividu>(a: {
@@ -71,32 +106,20 @@ export function hitungUlangTagihan<K extends KomponenIndividu>(a: {
 
   const semua: RincianTagihan[] = [...a.rincian, ...susulan]
   const dasar = semua.reduce((s, i) => s + i.nominal, 0)
-  const nominalKomponen = new Map(
-    semua.filter(i => i.komponen_id).map(i => [i.komponen_id as string, i.nominal])
-  )
 
   // Potongan beasiswa hanya berlaku atas komponen yang ditagihkan pada tagihan ini
-  let potongan = 0
-  for (const bs of a.beasiswa) {
-    for (const kid of bs.komponen_ids) {
-      const nominal = nominalKomponen.get(kid)
-      if (nominal === undefined) continue
-      potongan += bs.jenis_potongan === 'persen'
-        ? Math.round(nominal * (bs.persen ?? 0) / 100)
-        : (bs.nominal ?? 0)
-    }
-  }
+  const potongan = potonganPerKomponen(semua, a.beasiswa)
 
-  const total = Math.max(0, dasar - potongan)
+  const total = Math.max(0, dasar - potongan.total)
 
   // Satu nominal yang hilang membuat seluruh hitungan NaN, dan menulisnya mengosongkan
   // total_nominal (JSON.stringify(NaN) → null) sehingga nilai aslinya hilang
-  if (!Number.isFinite(total)) return { susulan: [], total: null }
+  if (!Number.isFinite(total)) return { susulan: [], total: null, potongan: [] }
 
   // Rincian kosong bukan bukti tagihannya memang nol — bisa jadi rinciannya yang belum
   // ada. Menimpa nominal yang sudah terbit dengan nol menghapus angka yang kuitansinya
   // mungkin sudah dipegang orang tua.
-  if (semua.length === 0 && total === 0 && a.totalTersimpan > 0) return { susulan, total: null }
+  if (semua.length === 0 && total === 0 && a.totalTersimpan > 0) return { susulan, total: null, potongan: [] }
 
-  return { susulan, total }
+  return { susulan, total, potongan: potongan.perKomponen }
 }

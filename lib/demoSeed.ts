@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { komponenDitagihkan, periodeIndex, kunciRiwayat, type KomponenJenis, type RiwayatTagih } from './komponenTagihan'
 import { tanggalWIB } from './metrikLaporan'
 import type { AlasanTindakLanjut } from './catatanTindakLanjut'
+import { bagiKeTagihan, rincianKomponen, unitBayar, type AlokasiKomponen } from './rincianKomponen'
 
 // Rancangan data contoh untuk akun demo (Draft Pengembangan Fitur Laporan, 1.7).
 // Murni tanpa Supabase supaya bisa diuji: acaknya memakai benih tetap sehingga
@@ -96,10 +97,13 @@ export interface TagihanBaru {
   bulan: number; tahun: number; jatuh_tempo: string
   total_nominal: number; status: 'lunas' | 'cicilan' | 'belum_bayar'; created_at: string
 }
-export interface TagihanItemBaru { tagihan_id: string; komponen_id: string; nama_komponen: string; nominal: number }
+/** id diisi di sini supaya pembayaran contoh bisa menyebut komponen yang ditutupnya */
+export interface TagihanItemBaru { id: string; tagihan_id: string; komponen_id: string; nama_komponen: string; nominal: number }
 export interface PembayaranBaru {
   id: string; sekolah_id: string; tagihan_id: string; siswa_id: string
   jumlah: number; metode: Metode; tanggal_bayar: string; catatan: string
+  /** Komponen yang ditutup, dibagi dengan aturan yang sama dengan pembayaran sungguhan */
+  alokasi: AlokasiKomponen[] | null
   status: 'terkonfirmasi'; created_at: string
 }
 
@@ -298,7 +302,7 @@ export function rancangDataDemo(opsi: OpsiDemo): RencanaDemo {
   const riwayat: RiwayatTagih = new Map()
 
   for (const s of daftarSiswa) {
-    const milikSiswa: { t: TagihanBaru }[] = []
+    const milikSiswa: { t: TagihanBaru; items: TagihanItemBaru[] }[] = []
 
     for (const { bulan, tahun, ta } of bulanTagih) {
       const anggota = s.keanggotaan.find(k => k.ta.id === ta.id)
@@ -317,16 +321,17 @@ export function rancangDataDemo(opsi: OpsiDemo): RencanaDemo {
         status:        'belum_bayar',
         created_at:    isoWIB(tahun, bulan, 1, 7),
       }
+      const items = komponen.map(k => ({ id: buatId(), tagihan_id: t.id, komponen_id: k.id, nama_komponen: k.nama, nominal: k.nominal_default }))
       for (const k of komponen) {
-        tagihanItem.push({ tagihan_id: t.id, komponen_id: k.id, nama_komponen: k.nama, nominal: k.nominal_default })
         const kunci = kunciRiwayat(s.siswa.id, k.id)
         riwayat.set(kunci, [...(riwayat.get(kunci) ?? []), periodeIndex(bulan, tahun)])
       }
+      tagihanItem.push(...items)
       tagihan.push(t)
-      milikSiswa.push({ t })
+      milikSiswa.push({ t, items })
     }
 
-    milikSiswa.forEach(({ t }, urutan) => {
+    milikSiswa.forEach(({ t, items }, urutan) => {
       // Rencana cicilan: [porsi nominal, selisih hari dari tanggal jatuh tempo]
       const tepat = () => antara(-(TANGGAL_JATUH_TEMPO_DEMO - 1), 0)
       let rencana: [number, number][] = []
@@ -360,6 +365,9 @@ export function rancangDataDemo(opsi: OpsiDemo): RencanaDemo {
       // terakhir, supaya pembulatan ribuan tidak meninggalkan selisih Rp 1.000
       const melunasi = Math.abs(rencana.reduce((sum, [p]) => sum + p, 0) - 1) < 1e-9
       let terbayar = 0
+      // Pembayaran contoh tagihan ini, untuk membagi cicilan berikutnya ke komponen yang tersisa
+      const bayarTagihan: PembayaranBaru[] = []
+      const rincianItem = items.map(i => ({ ...i, potongan: 0 }))
       rencana.forEach(([porsi, selisih], i) => {
         const tanggal = isoWIB(t.tahun, t.bulan, TANGGAL_JATUH_TEMPO_DEMO + selisih, antara(8, 16), antara(0, 59))
         // Pembayaran yang jatuh setelah hari ini belum terjadi — tagihannya tetap
@@ -369,16 +377,23 @@ export function rancangDataDemo(opsi: OpsiDemo): RencanaDemo {
           ? t.total_nominal - terbayar
           : bulatRibuan(t.total_nominal * porsi)
         if (jumlah <= 0) return
+        const units = unitBayar([{
+          id: t.id, bulan: t.bulan, tahun: t.tahun, total_nominal: t.total_nominal, terbayar,
+          rincian: rincianKomponen(t.total_nominal, rincianItem, bayarTagihan),
+        }])
         terbayar += jumlah
-        pembayaran.push({
+        const p: PembayaranBaru = {
           id: buatId(), sekolah_id, tagihan_id: t.id, siswa_id: s.siswa.id,
           jumlah,
           metode:        acak() < 0.7 ? s.metode : pilih(METODE_TERBOBOT),
           tanggal_bayar: tanggal,
           catatan:       'Data contoh',
+          alokasi:       bagiKeTagihan(units, jumlah)[0]?.alokasi ?? null,
           status:        'terkonfirmasi',
           created_at:    tanggal,
-        })
+        }
+        bayarTagihan.push(p)
+        pembayaran.push(p)
       })
 
       t.status = terbayar >= t.total_nominal ? 'lunas' : terbayar > 0 ? 'cicilan' : 'belum_bayar'

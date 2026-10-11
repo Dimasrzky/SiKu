@@ -6,8 +6,10 @@ import {
   CheckCircle2, Wallet, Building2, QrCode, TrendingUp,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { ambilPerPotong, ambilSemua } from '@/lib/ambilSemua'
 import { TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
+import { bacaAlokasi, bacaPilihanTersimpan, labelUnit } from '@/lib/rincianKomponen'
 import { SkeletonPembayaran } from '@/components/skeleton/SkeletonPembayaran'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,13 +62,37 @@ interface PembayaranRecord {
   metode:       string
   tanggal_bayar: string
   catatan:      string | null
+  /** Komponen yang ditutup (lib/rincianKomponen); null = tanpa rincian */
+  alokasi:      unknown
 }
+
+/** Satu pembayaran yang masuk bulan ini, beserta tagihannya (bulan apa pun) */
+interface RiwayatBayar {
+  pembayaran: PembayaranRecord
+  tagihan:    TagihanRow
+  /** Urutan di antara seluruh pembayaran tagihan itu, termasuk yang masuk bulan lain */
+  ke:         number
+  terakhir:   boolean
+  /** Seluruh pembayaran tagihan itu sampai sekarang */
+  paidTotal:  number
+  count:      number
+}
+
+const SELECT_TAGIHAN = 'id, total_nominal, status, bulan, tahun, siswa:siswa_id(id, nama, nis, no_wa, kelas:kelas_id(id, nama, warna, jenjang))'
+
+/** Awal bulan menurut jam browser (WIB untuk sekolah) — sama dengan ekspor transaksi Laporan */
+const awalBulan = (bulan: number, tahun: number) => new Date(tahun, bulan - 1, 1).toISOString()
 
 interface VerifikasiMenungguRow {
   id:               string
   tagihan_id:       string
   nominal_diajukan: number
   created_at:       string
+  jenis:            string
+  pilihan:          unknown
+  total_dipilih:    number | null
+  rencana_lunas:    string | null
+  catatan_wali:     string | null
   siswa: {
     id:    string
     nama:  string
@@ -93,9 +119,15 @@ interface DisplayRow {
   payment_count:   number
   metode:          string | null
   ke:              number | null
+  /** Bulan tagihan yang dibayar, mis. "Agustus 2026" — "Pembayaran ke-" dihitung per tagihan ini */
+  bulan_tagihan:   string | null
   effectiveStatus: EffectiveStatus
   tanggal:         string | null
   tagihan_status:  TagihanRow['status']
+  /** Komponen yang dibayar, mis. "SPP Oktober 2026, Buku September 2026" */
+  komponen:        string | null
+  /** Bukti cicilan dari wali yang belum diverifikasi */
+  cicilan:         { totalDipilih: number; rencana: string | null; catatan: string | null } | null
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -142,8 +174,10 @@ export default function PembayaranPage() {
   const [bulan,          ]          = useState(now.getMonth() + 1)
   const [tahun,          ]          = useState(now.getFullYear())
   const [tagihan,        setTagihan]        = useState<TagihanRow[]>([])
-  const [pembayaran,     setPembayaran]     = useState<PembayaranRecord[]>([])
+  // Uang yang masuk bulan ini menurut tanggal bayarnya — riwayat transaksi halaman ini
+  const [riwayat,        setRiwayat]        = useState<RiwayatBayar[]>([])
   const [verifMenunggu,  setVerifMenunggu]  = useState<VerifikasiMenungguRow[]>([])
+  const [muatUlang,      setMuatUlang]      = useState(0)
   const [lastMonthTotal, setLastMonthTotal] = useState(0)
   // Seluruh periode (tunggakan sebelumnya + bulan ini) — dasar kartu Tingkat Pelunasan
   const [ringkasanPeriode, setRingkasanPeriode] = useState<RingkasanPeriode>(RINGKASAN_PERIODE_KOSONG)
@@ -194,92 +228,117 @@ export default function PembayaranPage() {
         return muatRingkasanPeriode(sekolahId, (ta ?? null) as PeriodeTahunAjaran | null, bulan, tahun)
       })()
 
-      const { data: tagihanData } = await supabase
-        .from('tagihan')
-        .select('id, total_nominal, status, bulan, tahun, siswa:siswa_id(id, nama, nis, no_wa, kelas:kelas_id(id, nama, warna, jenjang))')
-        .eq('sekolah_id', sekolahId)
-        .eq('bulan', bulan)
-        .eq('tahun', tahun)
-        .limit(500)
+      const lastBulan = bulan === 1 ? 12 : bulan - 1
+      const lastTahun = bulan === 1 ? tahun - 1 : tahun
+      const awalIni   = awalBulan(bulan, tahun)
+      const awalDepan = awalBulan(bulan === 12 ? 1 : bulan + 1, bulan === 12 ? tahun + 1 : tahun)
+
+      const [{ data: tagihanData }, { data: verifData }, masukRes, laluRes] = await Promise.all([
+        supabase
+          .from('tagihan')
+          .select(SELECT_TAGIHAN)
+          .eq('sekolah_id', sekolahId)
+          .eq('bulan', bulan)
+          .eq('tahun', tahun)
+          .limit(500),
+        // Semua bukti yang menunggu, bulan apa pun tagihannya — wali bisa membayar
+        // tunggakan saja, dan bukti itu tetap harus terlihat oleh bendahara bulan ini
+        supabase
+          .from('verifikasi_pembayaran')
+          .select('id, tagihan_id, nominal_diajukan, created_at, jenis, pilihan, total_dipilih, rencana_lunas, catatan_wali, siswa:siswa_id(id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang)), tagihan:tagihan_id(bulan, tahun)')
+          .eq('sekolah_id', sekolahId)
+          .eq('status', 'menunggu')
+          .order('created_at', { ascending: false })
+          .limit(200),
+        // Riwayat = uang yang masuk bulan ini menurut tanggal bayarnya, untuk tagihan bulan
+        // apa pun. Dulu yang tampil hanya pembayaran tagihan bulan ini, sehingga cicilan
+        // tunggakan Agustus yang dibayar Oktober hilang begitu buktinya diverifikasi.
+        ambilSemua<PembayaranRecord>((dari, sampai) => supabase
+          .from('pembayaran')
+          .select('id, tagihan_id, jumlah, metode, tanggal_bayar, catatan, alokasi')
+          .eq('sekolah_id', sekolahId)
+          .gte('tanggal_bayar', awalIni)
+          .lt('tanggal_bayar', awalDepan)
+          .order('id')
+          .range(dari, sampai)),
+        // Pembanding tren: uang yang masuk bulan lalu, dengan cara hitung yang sama
+        ambilSemua<{ jumlah: number }>((dari, sampai) => supabase
+          .from('pembayaran')
+          .select('id, jumlah')
+          .eq('sekolah_id', sekolahId)
+          .gte('tanggal_bayar', awalBulan(lastBulan, lastTahun))
+          .lt('tanggal_bayar', awalIni)
+          .order('id')
+          .range(dari, sampai)),
+      ])
 
       if (cancelled) return
       const tagihanList = (tagihanData ?? []) as unknown as TagihanRow[]
+      const verifList   = (verifData ?? []) as unknown as VerifikasiMenungguRow[]
+      const masuk       = masukRes.data
 
-      const { data: verifData } = await supabase
-        .from('verifikasi_pembayaran')
-        .select('id, tagihan_id, nominal_diajukan, created_at, siswa:siswa_id(id, nama, nis, kelas:kelas_id(id, nama, warna, jenjang)), tagihan:tagihan_id(bulan, tahun)')
-        .eq('sekolah_id', sekolahId)
-        .eq('status', 'menunggu')
-        .limit(200)
-
+      // Tagihan pembayaran-pembayaran itu: yang bulan ini sudah termuat, sisanya dibaca
+      const tagihanPer = new Map(tagihanList.map(t => [t.id, t]))
+      const idTagihan  = [...new Set(masuk.map(p => p.tagihan_id))]
+      const [lainRes, semuaBayarRes] = await Promise.all([
+        ambilPerPotong<TagihanRow>(idTagihan.filter(id => !tagihanPer.has(id)), (ids, dari, sampai) => supabase
+          .from('tagihan')
+          .select(SELECT_TAGIHAN)
+          .in('id', ids)
+          .order('id')
+          .range(dari, sampai)),
+        // Seluruh pembayaran tagihan itu, juga yang masuk bulan lain — untuk "Pembayaran ke-"
+        // dan apakah pembayaran ini yang melunasinya
+        ambilPerPotong<{ id: string; tagihan_id: string; jumlah: number; tanggal_bayar: string }>(idTagihan, (ids, dari, sampai) => supabase
+          .from('pembayaran')
+          .select('id, tagihan_id, jumlah, tanggal_bayar')
+          .in('tagihan_id', ids)
+          .order('id')
+          .range(dari, sampai)),
+      ])
       if (cancelled) return
-      const verifList = ((verifData ?? []) as unknown as VerifikasiMenungguRow[])
-        .filter(v => v.tagihan?.bulan === bulan && v.tagihan?.tahun === tahun)
+      for (const t of lainRes.data) tagihanPer.set(t.id, t)
 
-      const tagihanIds = tagihanList.map(t => t.id)
-      let pembayaranList: PembayaranRecord[] = []
-      if (tagihanIds.length > 0) {
-        const { data: pembData } = await supabase
-          .from('pembayaran')
-          .select('id, tagihan_id, jumlah, metode, tanggal_bayar, catatan')
-          .in('tagihan_id', tagihanIds)
-          .order('tanggal_bayar', { ascending: true })
-          .limit(2000)
-        pembayaranList = (pembData ?? []) as PembayaranRecord[]
-      }
-
-      // Last month total for trend
-      const lastBulan = bulan === 1 ? 12 : bulan - 1
-      const lastTahun = bulan === 1 ? tahun - 1 : tahun
-      const { data: lastTagihanData } = await supabase
-        .from('tagihan')
-        .select('id')
-        .eq('sekolah_id', sekolahId)
-        .eq('bulan', lastBulan)
-        .eq('tahun', lastTahun)
-        .limit(500)
-
-      let prevTotal = 0
-      const lastIds = ((lastTagihanData ?? []) as { id: string }[]).map(t => t.id)
-      if (lastIds.length > 0) {
-        const { data: lastPemb } = await supabase
-          .from('pembayaran')
-          .select('jumlah')
-          .in('tagihan_id', lastIds)
-          .limit(2000)
-        prevTotal = ((lastPemb ?? []) as { jumlah: number }[]).reduce((s, p) => s + p.jumlah, 0)
-      }
+      const bayarPer = new Map<string, { id: string; jumlah: number; tanggal_bayar: string }[]>()
+      for (const p of semuaBayarRes.data) bayarPer.set(p.tagihan_id, [...(bayarPer.get(p.tagihan_id) ?? []), p])
+      const riwayatList: RiwayatBayar[] = masuk.flatMap(p => {
+        const t = tagihanPer.get(p.tagihan_id)
+        if (!t) return []
+        const urut = [...(bayarPer.get(p.tagihan_id) ?? [p])]
+          .sort((a, b) => a.tanggal_bayar.localeCompare(b.tanggal_bayar) || a.id.localeCompare(b.id))
+        const ke = Math.max(1, urut.findIndex(x => x.id === p.id) + 1)
+        return [{
+          pembayaran: p, tagihan: t, ke,
+          terakhir:  ke === urut.length,
+          paidTotal: urut.reduce((s, x) => s + x.jumlah, 0),
+          count:     urut.length,
+        }]
+      })
 
       const ringkasan = await ringkasanPromise
 
       if (cancelled) return
       setTagihan(tagihanList)
-      setPembayaran(pembayaranList)
+      setRiwayat(riwayatList)
       setVerifMenunggu(verifList)
-      setLastMonthTotal(prevTotal)
+      setLastMonthTotal(laluRes.data.reduce((s, p) => s + p.jumlah, 0))
       setRingkasanPeriode(ringkasan)
       setLoading(false)
     }
 
     load()
     return () => { cancelled = true }
-  }, [sekolahId, bulan, tahun])
+  }, [sekolahId, bulan, tahun, muatUlang])
 
   // ── Build display rows ────────────────────────────────────────────────────
 
   const { displayRows, kelasList } = useMemo(() => {
-    const pembByTagihan = new Map<string, PembayaranRecord[]>()
-    for (const p of pembayaran) {
-      const list = pembByTagihan.get(p.tagihan_id) ?? []
-      list.push(p)
-      pembByTagihan.set(p.tagihan_id, list)
-    }
-
     const rows: DisplayRow[] = []
 
     // Baris menunggu verifikasi (bukti transfer dari orang tua, belum diproses admin) — tampil paling atas
     for (const v of verifMenunggu) {
-      const kelas = v.siswa?.kelas
+      const kelas   = v.siswa?.kelas
+      const pilihan = bacaPilihanTersimpan(v.pilihan)
       rows.push({
         key:             `verif_${v.id}`,
         tagihan_id:      v.tagihan_id,
@@ -295,61 +354,64 @@ export default function PembayaranPage() {
         payment_count:   0,
         metode:          'transfer',
         ke:              null,
+        // Satu bukti bisa membayar beberapa bulan sekaligus
+        bulan_tagihan:   [...new Set(
+          (pilihan ?? (v.tagihan ? [v.tagihan] : []))
+            .slice().sort((a, b) => a.tahun * 12 + a.bulan - (b.tahun * 12 + b.bulan))
+            .map(u => `${BULAN_NAMES[u.bulan]} ${u.tahun}`),
+        )].join(', ') || null,
         effectiveStatus: 'menunggu_verifikasi',
         tanggal:         v.created_at,
         tagihan_status:  'belum_bayar',
+        komponen:        pilihan ? pilihan.map(labelUnit).join(', ') : null,
+        cicilan:         v.jenis === 'cicilan'
+          ? { totalDipilih: v.total_dipilih ?? v.nominal_diajukan, rencana: v.rencana_lunas, catatan: v.catatan_wali }
+          : null,
       })
     }
 
-    for (const t of tagihan) {
-      const pembs = pembByTagihan.get(t.id) ?? []
-      if (pembs.length === 0) continue  // tidak ada transaksi = jangan tampilkan
-
-      const kelas        = t.siswa?.kelas
-      const paidTotal    = pembs.reduce((s, p) => s + p.jumlah, 0)
-      const paymentCount = pembs.length
-
-      const common = {
-        tagihan_id:     t.id,
-        siswa_id:       t.siswa?.id ?? '',
-        siswa_nama:     t.siswa?.nama ?? '-',
-        siswa_nis:      t.siswa?.nis ?? null,
-        kelas_id:       kelas?.id ?? '',
-        kelas_nama:     kelas?.nama ?? '-',
-        kelas_warna:    kelas?.warna ?? '#94A3B8',
-        tagihan_total:  t.total_nominal,
-        paid_total:     paidTotal,
-        payment_count:  paymentCount,
-        tagihan_status: t.status,
-      }
-
-      // Satu baris per transaksi pembayaran
-      pembs.forEach((p, idx) => {
-        const isLast: boolean         = idx === pembs.length - 1
-        const effectiveStatus: EffectiveStatus = (isLast && t.status === 'lunas') ? 'lunas' : 'cicilan'
-        rows.push({
-          key: `${t.id}_${p.id}`,
-          ...common,
-          effectiveStatus,
-          nominal: p.jumlah,
-          metode:  p.metode,
-          ke:      idx + 1,
-          tanggal: p.tanggal_bayar,
-        })
+    // Satu baris per transaksi yang masuk bulan ini, terbaru dulu
+    const terbaruDulu = [...riwayat].sort((a, b) => b.pembayaran.tanggal_bayar.localeCompare(a.pembayaran.tanggal_bayar))
+    for (const { pembayaran: p, tagihan: t, ke, terakhir, paidTotal, count } of terbaruDulu) {
+      const kelas = t.siswa?.kelas
+      rows.push({
+        key:             `${t.id}_${p.id}`,
+        tagihan_id:      t.id,
+        siswa_id:        t.siswa?.id ?? '',
+        siswa_nama:      t.siswa?.nama ?? '-',
+        siswa_nis:       t.siswa?.nis ?? null,
+        kelas_id:        kelas?.id ?? '',
+        kelas_nama:      kelas?.nama ?? '-',
+        kelas_warna:     kelas?.warna ?? '#94A3B8',
+        tagihan_total:   t.total_nominal,
+        paid_total:      paidTotal,
+        payment_count:   count,
+        tagihan_status:  t.status,
+        effectiveStatus: terakhir && t.status === 'lunas' ? 'lunas' : 'cicilan',
+        nominal:         p.jumlah,
+        metode:          p.metode,
+        ke,
+        bulan_tagihan:   `${BULAN_NAMES[t.bulan]} ${t.tahun}`,
+        tanggal:         p.tanggal_bayar,
+        komponen:        bacaAlokasi(p.alokasi)?.map(a => a.nama_komponen).join(', ') || null,
+        cicilan:         null,
       })
     }
 
-    const kelasList = Array.from(
-      new Map(
-        tagihan.map(t => t.siswa?.kelas).filter(Boolean).map(k => [k!.id, k!])
-      ).values()
-    ).sort((a, b) =>
-      a.jenjang.localeCompare(b.jenjang, 'id', { numeric: true }) ||
-      a.nama.localeCompare(b.nama, 'id', { numeric: true })
-    )
+    // Kelas dari tagihan bulan ini dan dari setiap baris riwayat
+    const semuaKelas = [
+      ...tagihan.map(t => t.siswa?.kelas),
+      ...riwayat.map(r => r.tagihan.siswa?.kelas),
+      ...verifMenunggu.map(v => v.siswa?.kelas),
+    ].filter((k): k is NonNullable<typeof k> => !!k)
+    const kelasList = Array.from(new Map(semuaKelas.map(k => [k.id, k])).values())
+      .sort((a, b) =>
+        a.jenjang.localeCompare(b.jenjang, 'id', { numeric: true }) ||
+        a.nama.localeCompare(b.nama, 'id', { numeric: true })
+      )
 
     return { displayRows: rows, kelasList }
-  }, [tagihan, pembayaran, verifMenunggu])
+  }, [tagihan, riwayat, verifMenunggu])
 
   // ── Stats ─────────────────────────────────────────────────────────────────
 
@@ -359,6 +421,8 @@ export default function PembayaranPage() {
     // "Total tagihan periode ini" di Tagihan Aktif. Persen = uang masuk ÷ nilai tagihan.
     const pctLunas      = ringkasanPeriode.total > 0 ? Math.round(ringkasanPeriode.masuk / ringkasanPeriode.total * 100) : 0
     const sisBelumMasuk = Math.max(0, ringkasanPeriode.total - ringkasanPeriode.masuk)
+    // Pemasukan = uang yang masuk bulan ini, tagihan bulan apa pun — sama dengan isi tabel
+    const pembayaran    = riwayat.map(r => r.pembayaran)
     const gatewayTotal  = pembayaran.filter(p => ['qris','va','transfer'].includes(p.metode)).reduce((s,p) => s + p.jumlah, 0)
     const manualTotal   = pembayaran.filter(p => p.metode === 'tunai').reduce((s,p) => s + p.jumlah, 0)
     const totalPemasukan = gatewayTotal + manualTotal
@@ -369,7 +433,7 @@ export default function PembayaranPage() {
     const lastBulan = bulan === 1 ? 12 : bulan - 1
     const lastTahun = bulan === 1 ? tahun - 1 : tahun
     return { pctLunas, gatewayTotal, manualTotal, totalPemasukan, sisBelumMasuk, trendPct, trendUp, lastBulan, lastTahun }
-  }, [pembayaran, lastMonthTotal, ringkasanPeriode, bulan, tahun])
+  }, [riwayat, lastMonthTotal, ringkasanPeriode, bulan, tahun])
 
   // ── Filter ────────────────────────────────────────────────────────────────
 
@@ -420,20 +484,9 @@ export default function PembayaranPage() {
     const newStatus: TagihanRow['status'] = newPaidTotal >= modal.tagihan_total ? 'lunas' : 'cicilan'
     await supabase.from('tagihan').update({ status: newStatus }).eq('id', modal.tagihan_id)
 
-    const { data: refreshed } = await supabase
-      .from('pembayaran')
-      .select('id, tagihan_id, jumlah, metode, tanggal_bayar, catatan')
-      .eq('tagihan_id', modal.tagihan_id)
-      .order('tanggal_bayar', { ascending: true })
-
-    setPembayaran(prev => [
-      ...prev.filter(p => p.tagihan_id !== modal.tagihan_id),
-      ...((refreshed ?? []) as PembayaranRecord[]),
-    ])
-    setTagihan(prev => prev.map(t => t.id === modal.tagihan_id ? { ...t, status: newStatus } : t))
-    // Pembayaran ini untuk tagihan bulan berjalan dan tidak melebihi sisanya, jadi
-    // uang masuk periode cukup ditambah tanpa memuat ulang
-    setRingkasanPeriode(prev => ({ ...prev, masuk: prev.masuk + jumlah }))
+    // Riwayat dibaca menurut tanggal bayar, jadi dimuat ulang — tanggal yang dipilih bisa
+    // jatuh di bulan lain
+    setMuatUlang(n => n + 1)
 
     setSaving(false)
     setSavedOk(true)
@@ -444,7 +497,8 @@ export default function PembayaranPage() {
 
   if (loading) return <SkeletonPembayaran />
 
-  const hasData = tagihan.length > 0
+  // Uang bisa masuk untuk tunggakan sebelum tagihan bulan ini terbit
+  const hasData = tagihan.length > 0 || displayRows.length > 0
 
   return (
     <div className="dashboard-content">
@@ -653,8 +707,13 @@ export default function PembayaranPage() {
                             </span>
                           </td>
 
-                          <td style={{ padding:'0.7rem 0.875rem', fontSize:'0.85rem', fontWeight:700, color:'#0F172A', whiteSpace:'nowrap' }}>
-                            {formatRp(row.nominal)}
+                          <td style={{ padding:'0.7rem 0.875rem', fontSize:'0.85rem', fontWeight:700, color:'#0F172A', maxWidth:280 }}>
+                            <div style={{ whiteSpace:'nowrap' }}>{formatRp(row.nominal)}</div>
+                            {row.cicilan && (
+                              <div style={{ fontSize:'0.7rem', fontWeight:700, color:'#1D4ED8', marginTop:2, whiteSpace:'nowrap' }}>
+                                Cicilan dari {formatRp(row.cicilan.totalDipilih)} &middot; sisa {formatRp(row.cicilan.totalDipilih - row.nominal)}
+                              </div>
+                            )}
                           </td>
 
                           <td style={{ padding:'0.7rem 0.875rem' }}>
@@ -664,9 +723,16 @@ export default function PembayaranPage() {
                           </td>
 
                           <td style={{ padding:'0.7rem 0.875rem', fontSize:'0.8rem', color:'#475569', fontWeight:600, whiteSpace:'nowrap' }}>
-                            {row.ke != null
-                              ? `Pembayaran ke-${row.ke}`
-                              : <span style={{ color:'#CBD5E1' }}>—</span>}
+                            {/* "Pembayaran ke-" dihitung per tagihan, jadi bulan tagihannya disebut —
+                                tanpa itu urutan 1, 2, lalu 1 lagi untuk siswa yang sama membingungkan */}
+                            {row.bulan_tagihan ? (
+                              <>
+                                <div style={{ color:'#0F172A', fontWeight:700 }}>Tagihan {row.bulan_tagihan}</div>
+                                <div style={{ fontSize:'0.72rem', color:'#64748B', fontWeight:500, marginTop:1 }}>
+                                  {row.ke != null ? `Pembayaran ke-${row.ke}` : 'Belum tercatat'}
+                                </div>
+                              </>
+                            ) : <span style={{ color:'#CBD5E1' }}>—</span>}
                           </td>
 
                           <td style={{ padding:'0.7rem 0.875rem' }}>

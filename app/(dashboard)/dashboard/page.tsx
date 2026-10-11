@@ -16,6 +16,7 @@ import { lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagi
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { pesanPenahanTerbit, statusPenerbitan } from '@/lib/statusPenerbitan'
 import { sisaTagihan, tunggakanSebelum } from '@/lib/tagihanTertagih'
+import { bacaPilihanTersimpan, bagiPerUnit, tagihanBukti } from '@/lib/rincianKomponen'
 import { usePengingat } from '@/lib/usePengingat'
 import { usePengingatManual } from '@/lib/usePengingatManual'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
@@ -358,7 +359,9 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .select('paket_kelas(kelas_id), paket_komponen(nominal, komponen:komponen_id(nama, kelas_warna))')
       .eq('sekolah_id', sid),
     supabase.from('tahun_ajaran').select(`nama, ${TA_PERIODE_SELECT}`).eq('is_aktif', true).maybeSingle(),
-    supabase.from('verifikasi_pembayaran').select('tagihan_id').eq('sekolah_id', sid).eq('status', 'menunggu').limit(2000),
+    supabase.from('verifikasi_pembayaran')
+      .select('tagihan_id, siswa_id, jenis, nominal_diajukan, rencana_lunas, pilihan')
+      .eq('sekolah_id', sid).eq('status', 'menunggu').limit(2000),
     // Cicilan yang sudah masuk harus dikurangkan dari tunggakan — tanpa ini tagihan
     // yang sudah dibayar sebagian tetap terhitung penuh dan angkanya menggelembung
     supabase.from('pembayaran').select('tagihan_id, jumlah').eq('sekolah_id', sid).limit(5000),
@@ -379,7 +382,29 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     .map(t => (tanpaKewajiban(t.total_nominal) ? { ...t, status: 'lunas' as const } : t))
   const bsProgs    = (beasiswaRaw ?? []) as BeasiswaProgRaw[]
   const pakets     = (paketRaw ?? []) as unknown as PaketKomposisiRaw[]
-  const verifikasiTagihanIds = new Set(((verifikasiRaw ?? []) as { tagihan_id: string }[]).map(v => v.tagihan_id))
+
+  // Bukti transfer yang menunggu verifikasi untuk tagihan yang belum lunas. Satu bukti bisa
+  // memuat komponen beberapa bulan sekaligus (lib/rincianKomponen); bukti yang tagihannya
+  // sudah lunas semua tidak dihitung — sama dengan aturan pengingat.
+  type VerifikasiMenunggu = { tagihan_id: string; siswa_id: string; jenis: string; nominal_diajukan: number; rencana_lunas: string | null; pilihan: unknown }
+  const belumLunasIds = new Set(allTagihan.filter(t => t.status !== 'lunas').map(t => t.id))
+  const verifikasiMenunggu = ((verifikasiRaw ?? []) as VerifikasiMenunggu[])
+    .filter(v => tagihanBukti(v).some(id => belumLunasIds.has(id)))
+  // Siswa yang buktinya sedang diproses tidak diingatkan, lewat tautan mana pun buktinya dikirim
+  const siswaMenungguVerifikasi = new Set(verifikasiMenunggu.map(v => v.siswa_id))
+
+  // tagihan id → uang yang sedang diverifikasi untuk tagihan itu: bagian bukti yang jatuh ke
+  // tagihan tersebut menurut pembagian saat bukti dikirim. Cicilan hanya menutup sebagian,
+  // sisanya tetap terhitung belum dibayar.
+  const menungguPerTagihan = new Map<string, number>()
+  for (const v of verifikasiMenunggu) {
+    const nominal = Number(v.nominal_diajukan)
+    const pilihan = bacaPilihanTersimpan(v.pilihan)
+    const bagian  = pilihan
+      ? bagiPerUnit(pilihan, nominal).map(b => [b.unit.tagihan_id, b.jumlah] as const)
+      : [[v.tagihan_id, nominal] as const]
+    for (const [tagihanId, jumlah] of bagian) menungguPerTagihan.set(tagihanId, (menungguPerTagihan.get(tagihanId) ?? 0) + jumlah)
+  }
 
   // ── Filter per bulan ───────────────────────────────────────────────────────
   const tagihanIni  = allTagihan.filter(t => t.bulan === bulanIni  && t.tahun === tahunIni)
@@ -392,12 +417,11 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
   const siswaBelumBayar = tagihanIni.filter(t => t.status === 'belum_bayar').length
   const terkumpulIni    = lunasIni.reduce((s, t) => s + t.total_nominal, 0)
   const targetIni       = tagihanIni.reduce((s, t) => s + t.total_nominal, 0)
-  const menungguVerifikasiRows = tagihanIni.filter(t => t.status !== 'lunas' && verifikasiTagihanIds.has(t.id))
-  const menungguVerifikasiNominal = menungguVerifikasiRows.reduce((s, t) => s + t.total_nominal, 0)
-  const menungguVerifikasiCount   = menungguVerifikasiRows.length
-  const belumBayarNominal = tagihanIni
-    .filter(t => t.status !== 'lunas' && !verifikasiTagihanIds.has(t.id))
-    .reduce((s, t) => s + t.total_nominal, 0)
+  const belumLunasIni   = tagihanIni.filter(t => t.status !== 'lunas')
+  const menungguIni     = (t: TagihanRaw) => Math.min(t.total_nominal, menungguPerTagihan.get(t.id) ?? 0)
+  const menungguVerifikasiNominal = belumLunasIni.reduce((s, t) => s + menungguIni(t), 0)
+  const menungguVerifikasiCount   = belumLunasIni.filter(t => menungguIni(t) > 0).length
+  const belumBayarNominal = belumLunasIni.reduce((s, t) => s + t.total_nominal - menungguIni(t), 0)
 
   // ── Statistik bulan lalu ───────────────────────────────────────────────────
   const terkumpulLalu   = tagihanLalu.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0)
@@ -611,6 +635,34 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif',
   })
 
+  // Orang tua yang mencicil. Bukti cicilan yang menunggu verifikasi didahulukan — kabar
+  // baru, beserta rencana pelunasan dari wali. Tanpa itu, siswa yang tagihan bulan ini
+  // sudah dibayar sebagian. Ditaruh sebelum beasiswa: Dashboard hanya menampilkan satu
+  // kabar per kategori, dan cicilan lebih perlu ditindaklanjuti.
+  const cicilanMenunggu = verifikasiMenunggu.filter(v => v.jenis === 'cicilan')
+  const sedangMencicil  = tagihanIni.filter(t => t.status === 'cicilan')
+  if (cicilanMenunggu.length > 0) {
+    const rencanaTerdekat = cicilanMenunggu.map(v => v.rencana_lunas).filter((r): r is string => !!r).sort()[0]
+    insights.push({
+      id: 'cicilan-menunggu', level: 'amber',
+      judul: 'Orang tua mencicil',
+      desc: `${cicilanMenunggu.length} orang tua mengirim bukti cicilan yang menunggu verifikasi.`,
+      sub: `Total cicilan ${rpCompact(cicilanMenunggu.reduce((s, v) => s + Number(v.nominal_diajukan), 0))}`
+        + (rencanaTerdekat
+          ? ` · rencana pelunasan terdekat ${new Date(rencanaTerdekat).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' })}.`
+          : '.'),
+      actionLabel: 'Lihat Detail', actionHref: '/pembayaran',
+    })
+  } else if (sedangMencicil.length > 0) {
+    insights.push({
+      id: 'sedang-mencicil', level: 'amber',
+      judul: 'Orang tua mencicil',
+      desc: `${sedangMencicil.length} siswa sedang mencicil tagihan ${bulanNama}.`,
+      sub: `Sisa yang belum dibayar ${rpCompact(sedangMencicil.reduce((s, t) => s + Math.max(0, t.total_nominal - (dibayarPerTagihan.get(t.id) ?? 0)), 0))}.`,
+      actionLabel: 'Lihat Detail', actionHref: '/tagihan/aktif?status=cicilan',
+    })
+  }
+
   if (penerimaBeasiswa > 0) insights.push({
     id: 'beasiswa-aktif', level: 'amber',
     judul: 'Beasiswa sedang berjalan',
@@ -678,7 +730,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       tagihan_bulan_ini:       t.total_nominal,
       status:                  t.status,
       lewat_tempo:             lewatJatuhTempo(t, now),
-      has_verifikasi_menunggu: t.status !== 'lunas' && verifikasiTagihanIds.has(t.id),
+      has_verifikasi_menunggu: t.status !== 'lunas' && siswaMenungguVerifikasi.has(t.siswa_id),
       no_wa:                   t.siswa!.no_wa,
       nama_wali:               t.siswa!.nama_wali,
       payment_token:           t.payment_token,

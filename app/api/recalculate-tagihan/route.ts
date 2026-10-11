@@ -23,8 +23,8 @@ type PaketTotalRaw = {
 // komponen yang dihapus belakangan tetap terbaca di kuitansi lama
 type KompPaket = { komponen_id: string; nominal: number; nama: string; jenis: string }
 type TagihanItemInsert = { tagihan_id: string; komponen_id: string; nama_komponen: string; nominal: number }
-type TagihanItemRaw = { komponen_id: string | null; nominal: number }
-type TagihanItemTersimpan = TagihanItemRaw & { id: string; tagihan_id: string }
+type TagihanItemRaw = { id: string; komponen_id: string | null; nominal: number; potongan: number }
+type TagihanItemTersimpan = TagihanItemRaw & { tagihan_id: string }
 type TagihanRaw = {
   id:            string
   total_nominal: number
@@ -79,7 +79,7 @@ async function rincianSesudahSusulan(
     [...new Set(susulan.map(i => i.tagihan_id))],
     (ids, dari, sampai) => db
       .from('tagihan_item')
-      .select('id, tagihan_id, komponen_id, nominal')
+      .select('id, tagihan_id, komponen_id, nominal, potongan')
       .in('tagihan_id', ids)
       .order('id').range(dari, sampai),
   )
@@ -96,7 +96,7 @@ async function rincianSesudahSusulan(
       if (sudahAda.has(k)) { kembar.push(it.id); continue }
       sudahAda.add(k)
     }
-    rincian.set(it.tagihan_id, [...(rincian.get(it.tagihan_id) ?? []), { komponen_id: it.komponen_id, nominal: it.nominal }])
+    rincian.set(it.tagihan_id, [...(rincian.get(it.tagihan_id) ?? []), { id: it.id, komponen_id: it.komponen_id, nominal: it.nominal, potongan: it.potongan }])
   }
 
   for (let i = 0; i < kembar.length; i += UKURAN_HAPUS) {
@@ -144,7 +144,7 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
     // Bertahap sampai habis: satu permintaan terpotong diam-diam di batas baris PostgREST
     ambilSemua<TagihanRaw>((dari, sampai) => db
       .from('tagihan')
-      .select('id, total_nominal, status, bulan, tahun, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, kelas:kelas_id(id))')
+      .select('id, total_nominal, status, bulan, tahun, tagihan_item(id, komponen_id, nominal, potongan), siswa:siswa_id(id, kelas:kelas_id(id))')
       .eq('sekolah_id', sid)
       .order('id').range(dari, sampai)),
     db
@@ -216,9 +216,6 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
         tagihan_id: r.id, komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal,
       })
     }
-    // Snapshot in-memory ikut diisi supaya rekalkulasi total di bawah memakai
-    // hasil backfill, bukan nol — tanpa ini perbaikannya butuh dua kali panggil
-    r.tagihan_item = komps.map(k => ({ komponen_id: k.komponen_id, nominal: k.nominal }))
     // Riwayat ikut tumbuh supaya komponen sekali-bayar tidak diulang di bulan berikutnya
     const periode = periodeIndex(r.bulan, r.tahun)
     for (const k of komps) {
@@ -228,8 +225,20 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
   }
 
   if (backfillItems.length > 0) {
-    const { error } = await db.from('tagihan_item').insert(backfillItems)
+    const { data: tertulis, error } = await db
+      .from('tagihan_item').insert(backfillItems).select('id, tagihan_id, komponen_id, nominal, potongan')
     if (error) throw galat('Gagal memulihkan rincian tagihan.', error)
+    // Snapshot in-memory ikut diisi supaya rekalkulasi di bawah memakai hasil backfill,
+    // bukan nol — tanpa ini perbaikannya butuh dua kali panggil. Id-nya dibutuhkan untuk
+    // menulis potongan per komponen.
+    const perTagihan = new Map<string, TagihanItemRaw[]>()
+    for (const it of (tertulis ?? []) as TagihanItemTersimpan[]) {
+      perTagihan.set(it.tagihan_id, [...(perTagihan.get(it.tagihan_id) ?? []), { id: it.id, komponen_id: it.komponen_id, nominal: it.nominal, potongan: it.potongan }])
+    }
+    for (const r of perluBackfill) {
+      const baru = perTagihan.get(r.id)
+      if (baru) r.tagihan_item = baru
+    }
   }
 
   // ── Hitung ulang: hanya tagihan bulan berjalan yang belum lunas ─────────────
@@ -308,9 +317,10 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
   }
 
   // Langkah 2 — total dari rincian yang sudah pasti
+  const hasilHitung = new Map(sasaran.map(r => [r.id, hitung(r)]))
   const toUpdate: { id: string; total: number }[] = []
   for (const r of sasaran) {
-    const { total } = hitung(r)
+    const { total } = hasilHitung.get(r.id)!
     if (total !== null && total !== r.total_nominal) toUpdate.push({ id: r.id, total })
   }
 
@@ -326,7 +336,31 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
     if (gagal?.error) throw galat('Gagal menyimpan total tagihan.', gagal.error)
   }
 
-  return toUpdate.length
+  // Langkah 3 — potongan per komponen dari hitungan yang sama. Dasar harga per komponen
+  // di halaman bayar wali: selama belum tertulis, tagihan itu hanya bisa dibayar utuh.
+  const potonganBaru: { id: string; potongan: number }[] = []
+  const tagihanBerubah = new Set(toUpdate.map(u => u.id))
+  for (const r of sasaran) {
+    const { total, potongan } = hasilHitung.get(r.id)!
+    if (total === null) continue
+    ;(r.tagihan_item ?? []).forEach((it, i) => {
+      const p = potongan[i]
+      if (p === undefined || !Number.isFinite(p) || p === it.potongan) return
+      potonganBaru.push({ id: it.id, potongan: p })
+      tagihanBerubah.add(r.id)
+    })
+  }
+  for (let i = 0; i < potonganBaru.length; i += UKURAN_TULIS) {
+    const hasil = await Promise.all(
+      potonganBaru.slice(i, i + UKURAN_TULIS).map(({ id, potongan }) =>
+        db.from('tagihan_item').update({ potongan }).eq('id', id)
+      )
+    )
+    const gagal = hasil.find(h => h.error)
+    if (gagal?.error) throw galat('Gagal menyimpan potongan per komponen.', gagal.error)
+  }
+
+  return tagihanBerubah.size
 }
 
 export async function POST(req: NextRequest) {

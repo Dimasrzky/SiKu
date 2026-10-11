@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from 'next/navigation'
-import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap } from 'lucide-react'
+import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap, CheckCircle2 } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { ambilPerPotong, ambilSemua } from '@/lib/ambilSemua'
@@ -11,6 +11,7 @@ import { bolehDihitungUlang, hitungUlangTagihan, type PotonganBeasiswa } from '@
 import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type BulanTahun, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
 import { pesanPenahanTerbit, statusPenerbitan, type PesanPenahan } from '@/lib/statusPenerbitan'
 import { masihBersisa, rincianSisa, sisaTagihan, tagihanTautan, tagihanTertagih, tunggakanSebelum, type TagihanSisa } from '@/lib/tagihanTertagih'
+import { bagiKeTagihan, rincianKomponen, unitBayar, type ItemRincian } from '@/lib/rincianKomponen'
 import { buildPesanTagihanText, buildPesanTunggakanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
@@ -88,7 +89,7 @@ interface SiswaTagihanRow {
 
 type KelasNestedRaw    = { id: string; nama: string; jenjang: string; warna: string }
 type SiswaNestedRaw    = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; status: string | null; kelas_terakhir: string | null; kelas: KelasNestedRaw | null }
-type TagihanItemRaw    = { komponen_id: string | null; nominal: number }
+type TagihanItemRaw    = { id: string; komponen_id: string | null; nominal: number; potongan: number }
 type TagihanRawRow     = { id: string; total_nominal: number; status: string; jatuh_tempo: string | null; payment_token: string | null; tagihan_item: TagihanItemRaw[]; siswa: SiswaNestedRaw | null }
 type RiwayatRow        = { siswa_id: string; bulan: number; tahun: number; tagihan_item: { komponen_id: string | null }[] }
 type TunggakanRaw      = { id: string; siswa_id: string; status: string; bulan: number; tahun: number; jatuh_tempo: string | null; total_nominal: number; payment_token: string | null; siswa: { status: string | null } | null }
@@ -97,10 +98,29 @@ type TagihanSiswaSisa  = TagihanSisa & { payment_token: string | null }
 type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; beasiswa_komponen: { komponen_id: string }[] } | null }
 type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
 type CatatSiswaResult  = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: { id: string; nama: string; warna: string } | null }
-type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_bayar: string; catatan: string | null }
+type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_bayar: string; catatan: string | null; alokasi: unknown }
+/** Tagihan bulan ini di modal Catat Pembayaran, beserta komponennya */
+type CatatTagihanRow   = { id: string; total_nominal: number; status: string; bulan: number; tahun: number; tagihan_item: ItemRincian[] }
 type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
-type DetailKomponenRow = { nama_komponen: string; nominal: number; jenis: string }
-type TunggakanRow      = { nama_komponen: string; nominal: number; jenis: string; bulan: number; tahun: number }
+type DetailKomponenRow = { id: string; nama_komponen: string; nominal: number; potongan: number; jenis: string }
+/**
+ * Satu baris rincian di modal detail. Untuk tagihan yang berincian per komponen, setiap
+ * baris adalah komponen beserta sisanya; untuk tagihan yang dibayar utuh, komponen apa
+ * adanya lalu baris potongan beasiswa dan yang sudah dibayar (lib/tagihanTertagih rincianSisa).
+ */
+type BarisRincianDetail = {
+  nama_komponen: string
+  jenis:         string
+  /** Nominal di rincian tagihan, sebelum potongan */
+  nominal:       number
+  potongan:      number
+  terbayar:      number
+  /** Yang masih harus dibayar dari baris ini; negatif untuk baris potongan / sudah dibayar */
+  sisa:          number
+  baris:         'komponen' | 'potongan' | 'tambahan' | 'dibayar'
+}
+/** Tunggakan satu bulan di modal detail, terlama dulu */
+type TunggakanDetail = { tagihan_id: string; bulan: number; tahun: number; sisa: number; perKomponen: boolean; baris: BarisRincianDetail[] }
 type TunggakanBulan    = { bulan: number; tahun: number; sisa: number }
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -215,8 +235,11 @@ function TagihanAktifContent() {
   const [catatQuery,     setCatatQuery]     = useState('')
   const [catatResults,   setCatatResults]   = useState<CatatSiswaResult[]>([])
   const [catatSelected,  setCatatSelected]  = useState<CatatSiswaResult | null>(null)
-  const [catatTagihan,   setCatatTagihan]   = useState<{ id: string; total_nominal: number; status: string } | null>(null)
+  const [catatTagihan,   setCatatTagihan]   = useState<CatatTagihanRow | null>(null)
   const [catatRiwayat,   setCatatRiwayat]   = useState<PembayaranRow[]>([])
+  // Komponen (tagihan_item.id) yang dibayar — hanya untuk tagihan yang berincian per komponen
+  const [catatDipilih,   setCatatDipilih]   = useState<Set<string>>(new Set())
+  const [catatGalat,     setCatatGalat]     = useState('')
   const [catatJumlah,    setCatatJumlah]    = useState('')
   const [catatTanggal,   setCatatTanggal]   = useState('')
   const [catatMetode,    setCatatMetode]    = useState<'tunai' | 'transfer' | 'qris'>('tunai')
@@ -227,7 +250,7 @@ function TagihanAktifContent() {
   // Modal 2/3 — Detail extras
   const [detailBeasiswa,   setDetailBeasiswa]   = useState<DetailBeasiswaRow[]>([])
   const [detailKomponen,   setDetailKomponen]   = useState<DetailKomponenRow[]>([])
-  const [detailTunggakan,  setDetailTunggakan]  = useState<TunggakanRow[]>([])
+  const [detailTunggakan,  setDetailTunggakan]  = useState<TunggakanDetail[]>([])
   const [detailPembayaran, setDetailPembayaran] = useState<PembayaranRow[]>([])
   const [detailPaketNama,  setDetailPaketNama]  = useState('')
   const [detailLoading,    setDetailLoading]    = useState(false)
@@ -253,7 +276,7 @@ function TagihanAktifContent() {
         .from('tagihan')
         // kelas_terakhir: alias kolom teks `siswa.kelas` — snapshot kelas terakhir alumni.
         // Perlu di-alias karena `kelas` sudah dipakai sebagai alias relasi kelas_id.
-        .select('id, total_nominal, status, jatuh_tempo, payment_token, tagihan_item(komponen_id, nominal), siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas_terakhir:kelas, kelas:kelas_id(id, nama, jenjang, warna))')
+        .select('id, total_nominal, status, jatuh_tempo, payment_token, tagihan_item(id, komponen_id, nominal, potongan), siswa:siswa_id(id, nama, nis, no_wa, nama_wali, status, kelas_terakhir:kelas, kelas:kelas_id(id, nama, jenjang, warna))')
         .eq('sekolah_id', sid)
         .eq('bulan', bulan)
         .eq('tahun', tahun)
@@ -364,8 +387,11 @@ function TagihanAktifContent() {
         })
         if (hasil.total === null) continue
         totalSeharusnya.set(r.id, hasil.total)
-        if (hasil.total !== r.total_nominal || hasil.susulan.length > 0) {
-          belumSesuai.push(`${r.id}:${hasil.total}:${hasil.susulan.length}`)
+        // Potongan per komponen yang belum tertulis membuat tagihan itu hanya bisa dibayar
+        // utuh di halaman bayar wali — server juga yang menuliskannya
+        const potonganBeda = (r.tagihan_item ?? []).filter((it, i) => hasil.potongan[i] !== undefined && hasil.potongan[i] !== it.potongan).length
+        if (hasil.total !== r.total_nominal || hasil.susulan.length > 0 || potonganBeda > 0) {
+          belumSesuai.push(`${r.id}:${hasil.total}:${hasil.susulan.length}:${potonganBeda}`)
         }
       }
     }
@@ -723,6 +749,15 @@ function TagihanAktifContent() {
   const detailEffStatus: EffectiveStatus = detailSiswa ? getEffStatus(detailSiswa) : 'belum_bayar'
   const detailBadge  = STATUS_CONFIG[detailEffStatus]
   const detailAvatar = detailSiswa?.kelas_warna || '#1A2C4E'
+  // Komponen mana yang sudah dibayar — hanya kalau setiap pembayarannya tercatat per
+  // komponen (lib/rincianKomponen); selain itu yang tampil hanya riwayat pembayarannya
+  const detailRincian = detailSiswa && detailPembayaran.length > 0
+    ? rincianKomponen(detailSiswa.total_nominal, detailKomponen, detailPembayaran)
+    : null
+  const detailPerKomponen = detailRincian?.perKomponen
+    ? new Map(detailRincian.komponen.map(k => [k.item.id, k]))
+    : null
+  const detailTerbayarIni = detailPembayaran.reduce((s, p) => s + p.jumlah, 0)
 
   // ── Modal 1 handlers ─────────────────────────────────────────────────────────
 
@@ -736,40 +771,63 @@ function TagihanAktifContent() {
     setCatatTanggal('')
     setCatatMetode('tunai')
     setCatatCatatan('')
+    setCatatDipilih(new Set())
+    setCatatGalat('')
   }
 
   const selectCatatSiswa = async (siswa: CatatSiswaResult) => {
     setCatatSelected(siswa)
     setCatatResults([])
     setCatatQuery(siswa.nama)
+    setCatatGalat('')
     // Tanggal lokal, bukan UTC — toISOString() memberi tanggal kemarin sebelum pukul 07.00 WIB
     setCatatTanggal(new Date().toLocaleDateString('en-CA'))
     const { data: tRow } = await supabase
       .from('tagihan')
-      .select('id, total_nominal, status')
+      .select('id, total_nominal, status, bulan, tahun, tagihan_item(id, nama_komponen, nominal, potongan)')
       .eq('siswa_id', siswa.id)
       .eq('bulan', bulanIni)
       .eq('tahun', tahunIni)
       .maybeSingle()
     if (tRow) {
-      const t = tRow as { id: string; total_nominal: number; status: string }
+      const t = tRow as unknown as CatatTagihanRow
       setCatatTagihan(t)
       const { data: riwayatData } = await supabase
         .from('pembayaran')
-        .select('id, jumlah, metode, tanggal_bayar, catatan')
+        .select('id, jumlah, metode, tanggal_bayar, catatan, alokasi')
         .eq('tagihan_id', t.id)
         .order('created_at', { ascending: true })
         .limit(20)
       const riwayat = (riwayatData ?? []) as PembayaranRow[]
       setCatatRiwayat(riwayat)
+      // Semua komponen yang masih bersisa tercentang: tanpa mengubah apa pun, nominalnya
+      // melunasi tagihan seperti sebelumnya
+      const rincian = rincianKomponen(t.total_nominal, t.tagihan_item ?? [], riwayat)
+      setCatatDipilih(new Set(rincian.komponen.filter(k => k.sisa > 0).map(k => k.item.id)))
       setCatatJumlah(String(Math.max(0, t.total_nominal - riwayat.reduce((s, r) => s + r.jumlah, 0))))
     }
+  }
+
+  // Centang komponen mengubah nominal menjadi sisa komponen yang tercentang
+  const ubahCatatKomponen = (itemId: string, centang: boolean) => {
+    const baru = new Set(catatDipilih)
+    if (centang) baru.add(itemId)
+    else baru.delete(itemId)
+    setCatatDipilih(baru)
+    setCatatGalat('')
+    setCatatJumlah(String(catatUnits.filter(u => u.tagihan_item_id && baru.has(u.tagihan_item_id)).reduce((s, u) => s + u.sisa, 0)))
   }
 
   const simpanPembayaran = async () => {
     if (!catatSelected || !catatTagihan || !catatJumlah || !catatTanggal || !sekolahId) return
     const jumlah = parseInt(catatJumlah, 10)
     if (!jumlah || jumlah <= 0) return
+    if (catatPerKomponen && catatUnitDipilih.length === 0) { setCatatGalat('Centang komponen yang dibayar.'); return }
+    if (jumlah > catatBatas) {
+      setCatatGalat(`Jumlah melebihi sisa ${catatPerKomponen ? 'komponen yang dicentang' : 'tagihan'} (${formatRp(catatBatas)}).`)
+      return
+    }
+    setCatatGalat('')
     setCatatSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('pembayaran').insert({
@@ -778,6 +836,9 @@ function TagihanAktifContent() {
       tagihan_id:       catatTagihan.id,
       siswa_id:         catatSelected.id,
       jumlah,
+      // Komponen yang ditutup, dengan aturan pembagian yang sama dengan halaman bayar wali —
+      // tanpanya tagihan ini hanya bisa dibayar utuh di sana
+      alokasi:          catatPerKomponen ? (bagiKeTagihan(catatUnitDipilih, jumlah)[0]?.alokasi ?? null) : null,
       metode:           catatMetode,
       tanggal_bayar:    new Date(catatTanggal).toISOString(),
       catatan:          catatCatatan || null,
@@ -813,7 +874,7 @@ function TagihanAktifContent() {
         .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
       supabase
         .from('tagihan_item')
-        .select('komponen_id, nama_komponen, nominal, komponen:komponen_id(jenis)')
+        .select('id, komponen_id, nama_komponen, nominal, potongan, komponen:komponen_id(jenis)')
         .eq('tagihan_id', t.tagihan_id)
         .order('nominal', { ascending: false }),
       supabase
@@ -824,7 +885,7 @@ function TagihanAktifContent() {
       // Tagihan bulan lain yang belum lunas — sumber komponen tunggakan
       supabase
         .from('tagihan')
-        .select('id, status, bulan, tahun, jatuh_tempo, total_nominal, tagihan_item(nama_komponen, nominal, komponen:komponen_id(jenis))')
+        .select('id, status, bulan, tahun, jatuh_tempo, total_nominal, tagihan_item(id, nama_komponen, nominal, potongan, komponen:komponen_id(jenis))')
         .eq('sekolah_id', sekolahId)
         .eq('siswa_id', t.siswa_id)
         .neq('status', 'lunas')
@@ -838,42 +899,57 @@ function TagihanAktifContent() {
     // setelah tagihan terbit dicatat ke snapshot oleh /api/recalculate-tagihan (hanya
     // untuk tagihan yang belum lunas), jadi tidak digabung lagi di sini — menggabungnya
     // menampilkan komponen yang tidak ikut ditagihkan pada tagihan ini.
-    type ItemRaw = { komponen_id: string | null; nama_komponen: string; nominal: number; komponen: { jenis: string } | null }
+    type ItemRaw = { id: string; komponen_id: string | null; nama_komponen: string; nominal: number; potongan: number; komponen: { jenis: string } | null }
     setDetailKomponen(((itemData ?? []) as ItemRaw[])
-      .map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '' })))
+      .map(i => ({ id: i.id, nama_komponen: i.nama_komponen, nominal: i.nominal, potongan: i.potongan, jenis: i.komponen?.jenis ?? '' })))
 
     // Komponen dari tagihan periode sebelumnya yang menunggak — aturannya
     // tunggakanSebelum, sama dengan kolom total di tabel dan halaman bayar wali.
     // Hanya ditampilkan sebagai informasi — tidak ikut dijumlahkan ke total bulan ini.
     type TunggakanRaw = {
       id: string; status: string; bulan: number; tahun: number; jatuh_tempo: string | null; total_nominal: number
-      tagihan_item: { nama_komponen: string; nominal: number; komponen: { jenis: string } | null }[]
+      tagihan_item: { id: string; nama_komponen: string; nominal: number; potongan: number; komponen: { jenis: string } | null }[]
     }
     const tunggakanRaw = (tunggakanData ?? []) as unknown as TunggakanRaw[]
-    // Sisa cicilan lama juga tunggakan, jadi pembayarannya perlu dimuat
+    // Sisa cicilan lama juga tunggakan, jadi pembayarannya perlu dimuat — beserta komponen
+    // yang ditutup tiap pembayaran, supaya nominal per komponen yang tampil adalah sisanya
     const { data: bayarLama } = tunggakanRaw.length > 0
-      ? await supabase.from('pembayaran').select('tagihan_id, jumlah').in('tagihan_id', tunggakanRaw.map(tg => tg.id)).limit(1000)
+      ? await supabase.from('pembayaran').select('tagihan_id, jumlah, alokasi').in('tagihan_id', tunggakanRaw.map(tg => tg.id)).limit(1000)
       : { data: [] }
-    const terbayarLama = new Map<string, number>()
-    for (const p of (bayarLama ?? []) as { tagihan_id: string; jumlah: number }[]) {
-      terbayarLama.set(p.tagihan_id, (terbayarLama.get(p.tagihan_id) ?? 0) + p.jumlah)
+    const bayarPerTagihan = new Map<string, { jumlah: number; alokasi: unknown }[]>()
+    for (const p of (bayarLama ?? []) as { tagihan_id: string; jumlah: number; alokasi: unknown }[]) {
+      bayarPerTagihan.set(p.tagihan_id, [...(bayarPerTagihan.get(p.tagihan_id) ?? []), p])
     }
     const periodeIni = periodeIndex(bulanIni, tahunIni)
     const sekarang   = new Date()
     setDetailTunggakan(
       tunggakanRaw
-        .map(tg => ({ ...tg, is_alumni: t.is_alumni, terbayar: terbayarLama.get(tg.id) ?? 0 }))
+        .map(tg => {
+          const bayar = bayarPerTagihan.get(tg.id) ?? []
+          return { ...tg, is_alumni: t.is_alumni, terbayar: bayar.reduce((s, p) => s + p.jumlah, 0), bayar }
+        })
         .filter(tg => tunggakanSebelum(tg, periodeIni, sekarang))
         .sort((a, b) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun))
-        // jenis boleh kosong: komponen yang sudah dihapus menyisakan snapshot nama dan
-        // nominalnya di tagihan_item, dan itu tetap uang yang terutang. Potongan beasiswa
-        // dan pembayaran yang sudah masuk menjadi baris tersendiri, supaya jumlah blok
-        // ini sama dengan kolom total di tabel.
-        .flatMap(tg => rincianSisa(
-          (tg.tagihan_item ?? []).map(i => ({ nama_komponen: i.nama_komponen, nominal: i.nominal, jenis: i.komponen?.jenis ?? '', bulan: tg.bulan, tahun: tg.tahun })),
-          tg,
-          (nama_komponen, nominal) => ({ nama_komponen, nominal, jenis: '', bulan: tg.bulan, tahun: tg.tahun }),
-        ))
+        .map((tg): TunggakanDetail => {
+          // jenis boleh kosong: komponen yang sudah dihapus menyisakan snapshot nama dan
+          // nominalnya di tagihan_item, dan itu tetap uang yang terutang
+          const items  = (tg.tagihan_item ?? []).map(i => ({ ...i, jenis: i.komponen?.jenis ?? '' }))
+          const rinci  = rincianKomponen(tg.total_nominal, items, tg.bayar)
+          // Berincian per komponen: setiap komponen tampil dengan sisanya, sama dengan
+          // halaman bayar wali. Selain itu potongan beasiswa dan pembayaran yang sudah masuk
+          // menjadi baris tersendiri. Keduanya berjumlah sama dengan kolom total di tabel.
+          const baris: BarisRincianDetail[] = rinci.perKomponen
+            ? rinci.komponen.map(k => ({
+                nama_komponen: k.item.nama_komponen, jenis: k.item.jenis, nominal: k.item.nominal,
+                potongan: k.item.potongan, terbayar: k.terbayar, sisa: k.sisa, baris: 'komponen',
+              }))
+            : rincianSisa<BarisRincianDetail>(
+                items.map(i => ({ nama_komponen: i.nama_komponen, jenis: i.jenis, nominal: i.nominal, potongan: 0, terbayar: 0, sisa: i.nominal, baris: 'komponen' })),
+                tg,
+                (nama_komponen, nominal, jenis) => ({ nama_komponen, jenis: '', nominal, potongan: 0, terbayar: 0, sisa: nominal, baris: jenis }),
+              )
+          return { tagihan_id: tg.id, bulan: tg.bulan, tahun: tg.tahun, sisa: sisaTagihan(tg), perKomponen: rinci.perKomponen, baris }
+        })
     )
 
     type PaketRaw = { nama: string; paket_kelas: { kelas_id: string }[] }
@@ -882,7 +958,7 @@ function TagihanAktifContent() {
     if (t.status === 'cicilan' || t.status === 'lunas') {
       const { data: pembData } = await supabase
         .from('pembayaran')
-        .select('id, jumlah, metode, tanggal_bayar, catatan')
+        .select('id, jumlah, metode, tanggal_bayar, catatan, alokasi')
         .eq('tagihan_id', t.tagihan_id)
         .order('created_at', { ascending: true })
         .limit(20)
@@ -906,6 +982,15 @@ function TagihanAktifContent() {
 
   const catatSudah = catatRiwayat.reduce((s, r) => s + r.jumlah, 0)
   const catatSisa  = catatTagihan ? Math.max(0, catatTagihan.total_nominal - catatSudah) : 0
+  // Rincian per komponen tagihan bulan ini (lib/rincianKomponen). Tagihan yang tidak
+  // berincian per komponen dicatat seperti dulu, utuh.
+  const catatRincian     = catatTagihan ? rincianKomponen(catatTagihan.total_nominal, catatTagihan.tagihan_item ?? [], catatRiwayat) : null
+  const catatPerKomponen = catatRincian?.perKomponen ?? false
+  const catatUnits       = catatTagihan && catatRincian
+    ? unitBayar([{ id: catatTagihan.id, bulan: catatTagihan.bulan, tahun: catatTagihan.tahun, total_nominal: catatTagihan.total_nominal, terbayar: catatSudah, rincian: catatRincian }])
+    : []
+  const catatUnitDipilih = catatPerKomponen ? catatUnits.filter(u => u.tagihan_item_id !== null && catatDipilih.has(u.tagihan_item_id)) : catatUnits
+  const catatBatas       = catatUnitDipilih.reduce((s, u) => s + u.sisa, 0)
 
   // ── Loading ───────────────────────────────────────────────────────────────────
 
@@ -1420,6 +1505,36 @@ function TagihanAktifContent() {
                   </div>
                 </div>
 
+                {/* Komponen yang dibayar — sama dengan pilihan wali di halaman bayar */}
+                {catatPerKomponen && catatRincian && catatSisa > 0 && (
+                  <div style={{ border: '1.5px solid #E2E8F0', borderRadius: 10, marginBottom: '1rem', overflow: 'hidden' }}>
+                    <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid #F1F5F9', fontSize: '0.875rem', fontWeight: 700, color: '#1A2C4E' }}>
+                      Komponen yang dibayar
+                    </div>
+                    {catatRincian.komponen.map((k, i) => {
+                      const lunas = k.sisa <= 0
+                      return (
+                        <label key={k.item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 1rem', borderBottom: i < catatRincian.komponen.length - 1 ? '1px solid #F8FAFC' : 'none', cursor: lunas ? 'default' : 'pointer', fontSize: '0.85rem', color: '#374151' }}>
+                          <input type="checkbox" checked={lunas || catatDipilih.has(k.item.id)} disabled={lunas}
+                            onChange={e => ubahCatatKomponen(k.item.id, e.target.checked)}
+                            style={{ width: 16, height: 16, margin: 0, accentColor: '#1A2C4E', flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, opacity: lunas ? 0.55 : 1 }}>
+                            {k.item.nama_komponen}
+                            {k.item.potongan > 0 && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}> &middot; sesudah potongan {formatRp(k.item.potongan)}</span>
+                            )}
+                          </span>
+                          {lunas ? (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803D', background: '#DCFCE7', borderRadius: 20, padding: '2px 8px' }}>Lunas</span>
+                          ) : (
+                            <span style={{ fontWeight: 700, color: '#1A2C4E', whiteSpace: 'nowrap' }}>{formatRp(k.sisa)}</span>
+                          )}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+
                 {/* Form */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.875rem', marginBottom: '1rem' }}>
                   <div>
@@ -1427,11 +1542,13 @@ function TagihanAktifContent() {
                     <input
                       type="number"
                       value={catatJumlah}
-                      onChange={e => setCatatJumlah(e.target.value)}
+                      onChange={e => { setCatatJumlah(e.target.value); setCatatGalat('') }}
                       placeholder="0"
                       style={{ ...sInput, width: '100%', boxSizing: 'border-box' as const, border: '1.5px solid #E2E8F0', borderRadius: 10 }}
                     />
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>ⓘ Isi jumlah yang dibayar</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      ⓘ Paling banyak {formatRp(catatBatas)}{catatPerKomponen ? ' untuk komponen yang dicentang' : ''}
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.35rem' }}>Tanggal bayar</div>
@@ -1457,6 +1574,12 @@ function TagihanAktifContent() {
                   />
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>ⓘ Catatan tambahan seperti metode pembayaran atau siapa penerima pembayaran</div>
                 </div>
+
+                {catatGalat && (
+                  <div style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.6rem 0.8rem', fontSize: '0.8rem', fontWeight: 600, marginBottom: '1rem' }}>
+                    {catatGalat}
+                  </div>
+                )}
               </>
             )}
 
@@ -1571,18 +1694,23 @@ function TagihanAktifContent() {
                   <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>Belum ada rincian komponen.</div>
                 ) : (
                   <>
-                    {detailKomponen.map((k, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: JENIS_WARNA[k.jenis] ?? '#94A3B8', flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{k.nama_komponen}</span>
-                        {JENIS_LABEL[k.jenis] && (
-                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: JENIS_WARNA[k.jenis], background: JENIS_WARNA[k.jenis] + '1F', padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {JENIS_LABEL[k.jenis]}
-                          </span>
-                        )}
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E' }}>{formatRp(k.nominal)}</span>
-                      </div>
-                    ))}
+                    {detailKomponen.map((k, i) => {
+                      // Komponen yang sudah dibayar tampil dengan sisanya (lib/rincianKomponen)
+                      const bayar = detailPerKomponen?.get(k.id)
+                      return (
+                        <BarisRincianModal key={i} warna="#1A2C4E" garis="1px solid #F8FAFC"
+                          b={{
+                            nama_komponen: k.nama_komponen, jenis: k.jenis, nominal: k.nominal,
+                            potongan: bayar ? k.potongan : 0, terbayar: bayar?.terbayar ?? 0, sisa: bayar ? bayar.sisa : k.nominal,
+                            baris: 'komponen',
+                          }}
+                          label={JENIS_LABEL[k.jenis] && (
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: JENIS_WARNA[k.jenis], background: JENIS_WARNA[k.jenis] + '1F', padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {JENIS_LABEL[k.jenis]}
+                            </span>
+                          )} />
+                      )
+                    })}
                     {detailBeasiswa.map((bs, i) => (
                       <div key={`bs-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
                         <span style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>🎗 {bs.nama}</span>
@@ -1601,37 +1729,54 @@ function TagihanAktifContent() {
             </div>
 
             {/* Total bulan berjalan */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.875rem', borderTop: '1.5px solid #E2E8F0', marginTop: '0.75rem', marginBottom: detailTunggakan.length > 0 ? '1rem' : '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.875rem', borderTop: '1.5px solid #E2E8F0', marginTop: '0.75rem', marginBottom: detailTerbayarIni > 0 ? '0.35rem' : detailTunggakan.length > 0 ? '1rem' : '1.25rem' }}>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#1A2C4E' }}>
                 Total tagihan {detailTunggakan.length > 0 ? BULAN_NAMES[bulanIni] : ''}
               </span>
               <span style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1A2C4E' }}>{formatRp(detailSiswa.total_nominal)}</span>
             </div>
+            {/* Yang sudah masuk untuk tagihan bulan ini, supaya sisanya terbaca tanpa menghitung */}
+            {detailTerbayarIni > 0 && (
+              <div style={{ marginBottom: detailTunggakan.length > 0 ? '1rem' : '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, color: '#15803D' }}>
+                  <span>Sudah dibayar</span>
+                  <span>−{formatRp(detailTerbayarIni)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', fontWeight: 800, color: '#1A2C4E', marginTop: 2 }}>
+                  <span>Sisa {BULAN_NAMES[bulanIni]}</span>
+                  <span>{formatRp(Math.max(0, detailSiswa.total_nominal - detailTerbayarIni))}</span>
+                </div>
+              </div>
+            )}
 
             {/* Tunggakan komponen dari periode sebelumnya (informasi, tidak masuk total di atas) */}
             {!detailLoading && detailTunggakan.length > 0 && (() => {
-              const totalTunggakan = detailTunggakan.reduce((s, k) => s + k.nominal, 0)
+              const totalTunggakan = detailTunggakan.reduce((s, b) => s + b.sisa, 0)
               // Yang belum lunas dari bulan ini = sisanya, bukan nilai tagihannya: siswa
               // yang bulan ini sudah Lunas/Cicilan tetap bisa punya tunggakan lama.
               // detailPembayaran dimuat untuk tagihan berstatus cicilan dan lunas.
-              const sisaBulanIni = Math.max(0, detailSiswa.total_nominal - detailPembayaran.reduce((s, p) => s + p.jumlah, 0))
+              const sisaBulanIni = Math.max(0, detailSiswa.total_nominal - detailTerbayarIni)
               return (
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.5rem' }}>
                     <AlertTriangle size={14} color="#D97706" />
                     <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400E' }}>Tunggakan bulan sebelumnya</span>
                   </div>
-                  <div style={{ border: '1.5px solid #FDE68A', background: '#FFFBEB', borderRadius: 10, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
-                    {detailTunggakan.map((k, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #FEF3C7' }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: JENIS_WARNA[k.jenis] ?? '#94A3B8', flexShrink: 0 }} />
-                        <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{k.nama_komponen}</span>
-                        <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#92400E', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                          {BULAN_NAMES[k.bulan]} {k.tahun}
-                        </span>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#92400E' }}>
-                          {k.nominal < 0 ? `−${formatRp(-k.nominal)}` : formatRp(k.nominal)}
-                        </span>
+                  <div style={{ border: '1.5px solid #FDE68A', background: '#FFFBEB', borderRadius: 10, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
+                    {detailTunggakan.map((bln, i) => (
+                      <div key={bln.tagihan_id} style={{ borderTop: i > 0 ? '1.5px solid #FDE68A' : 'none' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, padding: '0.55rem 1rem 0.2rem' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#92400E' }}>{BULAN_NAMES[bln.bulan]} {bln.tahun}</span>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#92400E' }}>sisa {formatRp(bln.sisa)}</span>
+                        </div>
+                        {bln.baris.map((b, j) => (
+                          <BarisRincianModal key={j} b={b} warna="#92400E" garis="1px solid #FEF3C7" />
+                        ))}
+                        {!bln.perKomponen && bln.baris.some(b => b.baris === 'dibayar') && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', padding: '0 1rem 0.5rem' }}>
+                            Pembayaran tagihan ini belum tercatat per komponen, jadi tampil sebagai satu baris.
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1663,6 +1808,50 @@ function TagihanAktifContent() {
         </div>
       )}
 
+    </div>
+  )
+}
+
+// ── Baris rincian modal detail ────────────────────────────────────────────────
+
+/**
+ * Satu baris rincian di modal detail. Komponen yang sudah dibayar sebagian tampil dengan
+ * sisanya beserta asal angkanya; yang sudah lunas diberi tanda Lunas. Untuk tagihan yang
+ * dibayar utuh, baris "Sudah dibayar" diberi warna sendiri supaya tidak terlewat.
+ */
+function BarisRincianModal({ b, warna, garis, label }: {
+  b: BarisRincianDetail; warna: string; garis: string; label?: React.ReactNode
+}) {
+  const dibayar = b.baris === 'komponen' && b.terbayar > 0
+  const lunas   = dibayar && b.sisa <= 0
+  const hijau   = b.baris === 'dibayar' || b.baris === 'potongan'
+  const catatan = b.baris !== 'komponen' || lunas ? '' : [
+    b.potongan > 0 || dibayar ? `dari ${formatRp(b.nominal)}` : null,
+    b.potongan > 0 ? `potongan beasiswa ${formatRp(b.potongan)}` : null,
+    dibayar ? `sudah dibayar ${formatRp(b.terbayar)}` : null,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: garis, background: b.baris === 'dibayar' ? '#F0FDF4' : undefined }}>
+      {b.baris === 'dibayar'
+        ? <CheckCircle2 size={13} color="#15803D" style={{ flexShrink: 0 }} />
+        : <span style={{ width: 8, height: 8, borderRadius: '50%', background: hijau ? '#22C55E' : (JENIS_WARNA[b.jenis] ?? '#94A3B8'), flexShrink: 0 }} />}
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: '0.82rem', fontWeight: b.baris === 'dibayar' ? 700 : 400, color: hijau ? '#15803D' : lunas ? '#94A3B8' : '#374151' }}>
+          {b.nama_komponen}
+        </span>
+        {catatan && <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>{catatan}</span>}
+      </span>
+      {label}
+      {lunas ? (
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#15803D', background: '#DCFCE7', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          Lunas
+        </span>
+      ) : (
+        <span style={{ fontSize: '0.82rem', fontWeight: dibayar || b.baris === 'dibayar' ? 800 : 600, color: hijau ? '#15803D' : warna, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {b.sisa < 0 ? `−${formatRp(-b.sisa)}` : formatRp(b.sisa)}
+        </span>
+      )}
     </div>
   )
 }

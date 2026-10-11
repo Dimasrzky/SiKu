@@ -1,12 +1,13 @@
 'use client'
 
 import { PartyPopper, Receipt, ListChecks } from 'lucide-react'
-import { formatRp, formatTanggalWaktu } from './format'
+import { formatRp, formatTanggalWaktu, formatTanggalWIB } from './format'
+import type { Pengajuan } from './page'
 
 interface Props {
   namaSiswa:     string
   kelasNama:     string
-  totalNominal:  number
+  pengajuan:     Pengajuan
   waktuKirim:    string
   namaBendahara: string
   noWaBendahara: string
@@ -14,9 +15,10 @@ interface Props {
 }
 
 export default function TerimaKasihView({
-  namaSiswa, kelasNama, totalNominal, waktuKirim, namaBendahara, noWaBendahara, onLihatStatus,
+  namaSiswa, kelasNama, pengajuan, waktuKirim, namaBendahara, noWaBendahara, onLihatStatus,
 }: Props) {
-  const kontak = [namaBendahara, noWaBendahara].filter(Boolean).join(' – ')
+  const kontak  = [namaBendahara, noWaBendahara].filter(Boolean).join(' – ')
+  const cicilan = pengajuan.jenis === 'cicilan'
 
   return (
     <div>
@@ -43,7 +45,14 @@ export default function TerimaKasihView({
 
         <div style={{ padding: '1.25rem 1.5rem' }}>
           <InfoRow label="Siswa"        value={`${namaSiswa}${kelasNama ? ` ${kelasNama}` : ''}`} />
-          <InfoRow label="Total dibayar" value={formatRp(totalNominal)} bold />
+          <InfoRow label="Total dibayar" value={formatRp(pengajuan.nominal)} bold />
+          <InfoRow label="Jenis"        value={cicilan ? 'Cicilan' : 'Lunas'} />
+          {cicilan && (
+            <>
+              <InfoRow label="Sisa" value={formatRp(pengajuan.totalDipilih - pengajuan.nominal)} />
+              {pengajuan.rencana && <InfoRow label="Rencana pelunasan" value={formatTanggalWIB(pengajuan.rencana)} />}
+            </>
+          )}
           <InfoRow label="Metode"       value="Transfer" />
           <InfoRow label="Waktu kirim"  value={formatTanggalWaktu(waktuKirim)} uppercase />
           <InfoRow
@@ -68,7 +77,9 @@ export default function TerimaKasihView({
               Tim sekolah akan melakukan verifikasi pembayaran dalam <strong>1x24 jam</strong> di hari kerja.
             </Langkah>
             <Langkah nomor={2}>
-              Konfirmasi lunas akan diperbarui pada halaman ini secara otomatis.
+              {cicilan
+                ? 'Cicilan akan tercatat setelah diverifikasi. Sisanya bisa dibayar lewat tautan yang sama.'
+                : 'Konfirmasi lunas akan diperbarui pada halaman ini secara otomatis.'}
             </Langkah>
             <Langkah nomor={3}>
               Jika status pembayaran belum diperbarui lebih dari <strong>1x24 jam</strong>,
