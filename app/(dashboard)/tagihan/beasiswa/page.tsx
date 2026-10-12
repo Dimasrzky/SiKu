@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Award, Scissors, X, Plus, Eye, Pencil, Trash2, ChevronDown, Users, AlertTriangle, Bell, Search } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { polaIlike } from '@/lib/polaCari'
 import { SkeletonBeasiswa } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -269,7 +270,7 @@ export default function BeasiswaPage() {
     const { data } = await supabase
       .from('siswa')
       .select('id, nama, kelas:kelas_id(id, nama, jenjang, warna)')
-      .eq('sekolah_id', sid).ilike('nama', `%${q}%`).limit(20)
+      .eq('sekolah_id', sid).ilike('nama', polaIlike(q)).limit(20)
 
     type RS = { id: string; nama: string; kelas: { id: string; nama: string; jenjang: string; warna: string | null } | null }
     setter(((data ?? []) as RS[])

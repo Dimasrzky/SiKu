@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from 'next/n
 import { Search, AlertTriangle, Eye, X, ClipboardList, GraduationCap, CheckCircle2 } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { polaIlike } from '@/lib/polaCari'
 import { ambilPerPotong, ambilSemua } from '@/lib/ambilSemua'
 import { runGenerate } from '@/lib/generateTagihan'
 import { bolehDihitungUlang, hitungUlangTagihan, type PotonganBeasiswa } from '@/lib/hitungUlangTagihan'
@@ -596,14 +597,23 @@ function TagihanAktifContent() {
         return
       }
       setCatatSearching(true)
-      const { data } = await supabase
+      // Nama dan NIS dicari lewat dua .ilike(), bukan satu .or(): string .or() dipakai apa
+      // adanya, jadi koma atau kurung di ketikan bisa menyisipkan kondisi filter lain
+      const pola = polaIlike(catatQuery)
+      const cari = (kolom: 'nama' | 'nis') => supabase
         .from('siswa')
         .select('id, nama, nis, no_wa, nama_wali, kelas:kelas_id(id, nama, warna)')
         .eq('sekolah_id', sekolahId)
         .eq('status', 'aktif')
-        .or(`nama.ilike.%${catatQuery.trim()}%,nis.ilike.%${catatQuery.trim()}%`)
+        .ilike(kolom, pola)
         .limit(5)
-      setCatatResults((data ?? []) as unknown as CatatSiswaResult[])
+      const [perNama, perNis] = await Promise.all([cari('nama'), cari('nis')])
+      // Siswa yang cocok di nama sekaligus NIS cukup tampil sekali
+      const hasil = new Map<string, CatatSiswaResult>()
+      for (const s of [...(perNama.data ?? []), ...(perNis.data ?? [])] as unknown as CatatSiswaResult[]) {
+        if (!hasil.has(s.id)) hasil.set(s.id, s)
+      }
+      setCatatResults([...hasil.values()].slice(0, 5))
       setCatatSearching(false)
     }, 300)
     return () => clearTimeout(timer)

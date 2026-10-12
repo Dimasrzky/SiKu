@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { LayoutList, Puzzle, Pencil, Trash2, X, Plus, Search, Users, AlertTriangle, Eye } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { polaIlike } from '@/lib/polaCari'
 import { SkeletonKomponenIndividu } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ export default function IndividuPage() {
       const { data } = await supabase
         .from('siswa')
         .select('id, nama, kelas:kelas_id(id, nama, jenjang, warna)')
-        .eq('sekolah_id', sekolahId).ilike('nama', `%${q}%`).limit(20)
+        .eq('sekolah_id', sekolahId).ilike('nama', polaIlike(q)).limit(20)
 
       type RS = { id: string; nama: string; kelas: { id: string; nama: string; jenjang: string; warna: string | null } | null }
       setFResults(((data ?? []) as RS[])
