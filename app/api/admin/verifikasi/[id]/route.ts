@@ -156,18 +156,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return gagal('Gagal mencatat pembayaran.', 500)
   }
 
-  // Lunas = seluruh tagihan tertutup, bukan hanya komponen yang dipilih
+  // Status tagihan di database dihitung trigger pembayaran_segarkan_status dari pembayaran
+  // yang baru dicatat. Di sini hanya untuk jawaban ke halaman admin, dengan aturan yang
+  // sama: lunas = seluruh tagihan tertutup, bukan hanya komponen yang dipilih.
   const statusBaru = new Map(bagian.map(b => {
     const t = tertagih.data!.daftar.find(d => d.id === b.tagihan_id)
     return [b.tagihan_id, t && t.terbayar + b.jumlah >= t.total_nominal ? 'lunas' : 'cicilan'] as const
   }))
-
-  const hasilStatus = await Promise.all([...statusBaru].map(([tagihanId, status]) => supabase
-    .from('tagihan')
-    .update({ status })
-    .eq('id', tagihanId)))
-  const statusErr = hasilStatus.find(h => h.error)?.error
-  if (statusErr) console.error(`[verifikasi] status tagihan bukti ${verifikasi.id} gagal diperbarui:`, statusErr)
 
   // Status tagihan yang tautannya dipakai wali. Tidak ada di daftar belum lunas = lunas.
   const tagihanStatus = statusBaru.get(tagihan.id) ?? tertagih.data.sasaran?.status ?? 'lunas'

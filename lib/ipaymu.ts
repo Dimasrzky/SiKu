@@ -163,13 +163,56 @@ export interface IpaymuCallbackPayload {
   buyer_phone?: string
 }
 
-export function isCallbackSuccess(p: IpaymuCallbackPayload): boolean {
-  return p.status_code === '1' || p.status?.toLowerCase() === 'berhasil'
+// Isi notifikasi tidak dipakai untuk menentukan status: route callback publik, jadi
+// siapa pun bisa mengirim notifikasi palsu. Status ditanyakan langsung ke iPaymu.
+
+/** Kode status transaksi iPaymu yang berarti uangnya sudah diterima: berhasil, berhasil belum settle, escrow */
+const KODE_SUKSES = new Set([1, 6, 7])
+/** Dibatalkan, refund, error, gagal */
+const KODE_GAGAL  = new Set([2, 3, 4, 5])
+
+export interface HasilCekTransaksi {
+  /** null = iPaymu tidak bisa dihubungi atau jawabannya tidak terbaca; coba lagi nanti */
+  status:      'sukses' | 'pending' | 'gagal' | 'kedaluwarsa' | null
+  /** ReferenceId yang dicatat iPaymu untuk transaksi ini, kalau ikut dikirim */
+  referenceId: string | null
+  /** Nominal transaksi menurut iPaymu, kalau ikut dikirim */
+  nominal:     number | null
+}
+
+/** Status transaksi menurut iPaymu sendiri, lewat permintaan yang ditandatangani API key kita */
+export async function cekTransaksi(transactionId: string): Promise<HasilCekTransaksi> {
+  try {
+    const json = await postIpaymu('/transaction', { transactionId, account: VA })
+    if (Number(json.Status) !== 200 || !json.Data) return { status: null, referenceId: null, nominal: null }
+
+    const kode   = Number(json.Data.Status)
+    const status = KODE_SUKSES.has(kode) ? 'sukses'
+      : kode === -2           ? 'kedaluwarsa'
+      : KODE_GAGAL.has(kode)  ? 'gagal'
+      : 'pending'
+    // Salah satu kolom nominal bisa berupa angka bersih sesudah fee, jadi yang dipakai
+    // yang terbesar — nominal bruto transaksinya
+    const angka = [json.Data.Amount, json.Data.SubTotal, json.Data.Total]
+      .filter(v => v != null && v !== '')
+      .map(Number)
+      .filter(Number.isFinite)
+    const referenceId = json.Data.ReferenceId != null ? String(json.Data.ReferenceId).trim() : ''
+    return {
+      status,
+      referenceId: referenceId || null,
+      nominal:     angka.length > 0 ? Math.max(...angka) : null,
+    }
+  } catch (err) {
+    console.error('[iPaymu cek transaksi error]', err instanceof Error ? err.message : String(err))
+    return { status: null, referenceId: null, nominal: null }
+  }
 }
 
 export function resolveMetode(channel?: string): string {
   const ch = (channel ?? '').toLowerCase()
   if (ch.includes('qris'))                         return 'qris'
-  if (ch.includes('va') || ch.includes('virtual')) return 'va'
+  // Virtual account = transfer bank; 'va' tidak diterima constraint pembayaran.metode
+  if (ch.includes('va') || ch.includes('virtual')) return 'transfer'
   return 'qris'
 }

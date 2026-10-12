@@ -58,6 +58,8 @@ export const SkeletonPengaturan = () => (
           <BlokTeks lebar={130} ukuran="0.8rem" style={{ marginTop: 2 }} />
         </div>
       </div>
+      {/* "Terakhir diubah oleh … · …" */}
+      <BlokTeks lebar={250} ukuran="0.75rem" style={{ marginTop: '0.9rem' }} />
     </Bagian>
 
     <Bagian judul="Profil Sekolah" keterangan="Informasi dasar sekolah yang ditampilkan di laporan dan tagihan"

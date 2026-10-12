@@ -5,10 +5,10 @@ import {
   MAKS_CATATAN_WALI, bacaPilihan, pilihanPersis, rentangRencana, unitBayar, type PilihanBayar,
 } from '@/lib/rincianKomponen'
 import { muatBuktiMenunggu, muatTertagih } from '@/lib/tagihanTertagih'
+import { jenisGambar } from '@/lib/jenisGambar'
 
 const BUKTI_BUCKET  = 'bukti-transfer'
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
-const ALLOWED_TYPES  = ['image/jpeg', 'image/png']
 
 type TagihanRow = {
   id:                  string
@@ -45,8 +45,12 @@ export async function POST(req: NextRequest) {
 
   if (typeof paymentToken !== 'string' || !paymentToken) return gagal('Parameter tidak lengkap.', 400)
   if (!(bukti instanceof File))                          return gagal('Bukti transfer wajib diunggah.', 400)
-  if (!ALLOWED_TYPES.includes(bukti.type))               return gagal('Format file harus JPG atau PNG.', 400)
   if (bukti.size > MAX_SIZE_BYTES)                       return gagal('Ukuran file maksimal 5MB.', 400)
+
+  // Jenis berkas dari isinya, bukan dari label yang dikirim browser
+  const isiBukti   = new Uint8Array(await bukti.arrayBuffer())
+  const jenisBukti = jenisGambar(isiBukti)
+  if (!jenisBukti)                                       return gagal('Format file harus JPG atau PNG.', 400)
 
   // Pilihan wali (lib/rincianKomponen). Halaman dari sebelum fitur pilih komponen tidak
   // mengirimnya — artinya semua yang ditagih, dibayar lunas, seperti dulu.
@@ -126,12 +130,12 @@ export async function POST(req: NextRequest) {
   // bulan yang sedang dibayar dari kolom ini
   const terbaru = dipilih.reduce((a, b) => (periodeIndex(b.bulan, b.tahun) > periodeIndex(a.bulan, a.tahun) ? b : a))
 
-  const ext  = bukti.type === 'image/png' ? 'png' : 'jpg'
+  const ext  = jenisBukti === 'image/png' ? 'png' : 'jpg'
   const path = `${tagihan.sekolah_id}/${terbaru.tagihan_id}-${Date.now()}.${ext}`
 
   const { error: uploadErr } = await supabase.storage
     .from(BUKTI_BUCKET)
-    .upload(path, bukti, { contentType: bukti.type, upsert: false })
+    .upload(path, isiBukti, { contentType: jenisBukti, upsert: false })
 
   if (uploadErr) return gagal('Gagal mengunggah bukti transfer.', 500)
 

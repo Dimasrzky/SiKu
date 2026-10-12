@@ -480,9 +480,8 @@ export default function PembayaranPage() {
 
     if (e1) { setSaveError(e1.message); setSaving(false); return }
 
-    const newPaidTotal = modal.paid_total + jumlah
-    const newStatus: TagihanRow['status'] = newPaidTotal >= modal.tagihan_total ? 'lunas' : 'cicilan'
-    await supabase.from('tagihan').update({ status: newStatus }).eq('id', modal.tagihan_id)
+    // Status tagihan dihitung database dari pembayaran yang tercatat (trigger
+    // pembayaran_segarkan_status), bukan ditulis dari sini
 
     // Riwayat dibaca menurut tanggal bayar, jadi dimuat ulang — tanggal yang dipilih bisa
     // jatuh di bulan lain

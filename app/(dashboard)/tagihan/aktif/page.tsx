@@ -856,8 +856,8 @@ function TagihanAktifContent() {
       created_by:       user?.id ?? null,
     })
     if (error) { alert('Gagal menyimpan: ' + error.message); setCatatSaving(false); return }
-    const sudah = catatRiwayat.reduce((s, r) => s + r.jumlah, 0) + jumlah
-    await supabase.from('tagihan').update({ status: sudah >= catatTagihan.total_nominal ? 'lunas' : 'cicilan' }).eq('id', catatTagihan.id)
+    // Status tagihan dihitung database dari pembayaran yang tercatat (trigger
+    // pembayaran_segarkan_status), bukan ditulis dari sini
     resetCatatModal()
     setShowCatatModal(false)
     setCatatSaving(false)

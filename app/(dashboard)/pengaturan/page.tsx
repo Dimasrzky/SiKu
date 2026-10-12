@@ -4,9 +4,8 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { BANK_REKENING } from '@/lib/bankRekening'
 import { SkeletonPengaturan } from '@/components/skeleton/SkeletonPengaturan'
-
-const BANK_LIST = ['BCA', 'BNI', 'BPD DIY', 'BRI', 'BSI', 'BTN', 'CIMB', 'MANDIRI'] as const
 
 function bankLogoSrc(bank: string): string {
   return `/image/${encodeURIComponent(bank)}.png`
@@ -19,6 +18,17 @@ function maskRekening(no: string): string {
 }
 
 interface RekeningRow { id: string; bank: string; noRek: string; atasNama: string }
+
+/** Baris terbaru rekening_log: siapa terakhir mengubah rekening, dan kapan */
+interface PerubahanRekening { nama: string | null; waktu: string }
+
+function teksPerubahanRekening(p: PerubahanRekening | null): string {
+  if (!p) return 'Belum ada perubahan tercatat'
+  const waktu = new Date(p.waktu).toLocaleString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
+  })
+  return `Terakhir diubah ${p.nama ? `oleh ${p.nama}` : 'di luar aplikasi'} · ${waktu} WIB`
+}
 
 interface UserData {
   nama:         string
@@ -227,9 +237,10 @@ export default function PengaturanPage() {
   })
   const [rekening,          setRekening]          = useState<RekeningRow | null>(null)
   const [showRekeningModal, setShowRekeningModal] = useState(false)
-  const [rekeningForm,      setRekeningForm]      = useState({ bank: '', noRek: '', atasNama: '' })
+  const [rekeningForm,      setRekeningForm]      = useState({ bank: '', noRek: '', atasNama: '', password: '' })
   const [savingRekening,    setSavingRekening]    = useState(false)
   const [saveRekeningError, setSaveRekeningError] = useState('')
+  const [perubahanRekening, setPerubahanRekening] = useState<PerubahanRekening | null>(null)
 
   useEffect(() => {
     const authRaw = localStorage.getItem('siku_auth')
@@ -252,20 +263,25 @@ export default function PengaturanPage() {
       const p       = pData       as PRow       | null
 
       const sekolahId = profile?.sekolah_id ?? ''
-      const [{ data: sekolahData }, { data: rekeningData }] = sekolahId
+      const [{ data: sekolahData }, { data: rekeningData }, { data: logData }] = sekolahId
         ? await Promise.all([
             supabase.from('sekolah').select('nama, no_wa, alamat, yayasan').eq('id', sekolahId).single(),
             supabase.from('rekening').select('id, bank, no_rek, atas_nama')
               .eq('sekolah_id', sekolahId).eq('jenis', 'transfer').eq('aktif', true)
               .order('urutan', { ascending: true }).limit(1).maybeSingle(),
+            supabase.from('rekening_log').select('nama_pengubah, created_at')
+              .eq('sekolah_id', sekolahId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
           ])
-        : [{ data: null }, { data: null }]
+        : [{ data: null }, { data: null }, { data: null }]
 
       type SekolahRow  = { nama: string; no_wa: string; alamat: string | null; yayasan: string | null }
       type RekeningDb  = { id: string; bank: string; no_rek: string; atas_nama: string }
+      type LogDb       = { nama_pengubah: string | null; created_at: string }
       const sk = sekolahData as SekolahRow | null
       const rk = rekeningData as RekeningDb | null
+      const lg = logData as LogDb | null
       setRekening(rk ? { id: rk.id, bank: rk.bank, noRek: rk.no_rek, atasNama: rk.atas_nama } : null)
+      setPerubahanRekening(lg ? { nama: lg.nama_pengubah, waktu: lg.created_at } : null)
 
       const rawTelepon = (sk?.no_wa ?? '').replace(/^\+?62/, '')
       setTeleponInput(formatWA(rawTelepon))
@@ -402,14 +418,14 @@ export default function PengaturanPage() {
   }
 
   const openTambahRekening = () => {
-    setRekeningForm({ bank: '', noRek: '', atasNama: '' })
+    setRekeningForm({ bank: '', noRek: '', atasNama: '', password: '' })
     setSaveRekeningError('')
     setShowRekeningModal(true)
   }
 
   const openEditRekening = () => {
     if (!rekening) return
-    setRekeningForm({ bank: rekening.bank, noRek: rekening.noRek, atasNama: rekening.atasNama })
+    setRekeningForm({ bank: rekening.bank, noRek: rekening.noRek, atasNama: rekening.atasNama, password: '' })
     setSaveRekeningError('')
     setShowRekeningModal(true)
   }
@@ -431,30 +447,41 @@ export default function PengaturanPage() {
       setSaveRekeningError('Nama pemilik rekening wajib diisi.')
       return
     }
+    if (!rekeningForm.password) {
+      setSaveRekeningError('Masukkan password akun Anda untuk mengonfirmasi.')
+      return
+    }
     setSavingRekening(true)
     setSaveRekeningError('')
 
-    const payload = {
-      bank:      rekeningForm.bank,
-      no_rek:    rekeningForm.noRek.trim(),
-      atas_nama: rekeningForm.atasNama.trim(),
-    }
-
-    const { data, error } = rekening
-      ? await supabase.from('rekening').update(payload).eq('id', rekening.id)
-          .select('id, bank, no_rek, atas_nama').single()
-      : await supabase.from('rekening').insert({ ...payload, sekolah_id: userData.idSekolah, jenis: 'transfer' })
-          .select('id, bank, no_rek, atas_nama').single()
+    // Lewat server: browser tidak punya hak menulis tabel rekening, dan perubahannya
+    // wajib dikonfirmasi password lalu dicatat di rekening_log
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/rekening', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+      body:    JSON.stringify({
+        bank:      rekeningForm.bank,
+        no_rek:    rekeningForm.noRek.trim(),
+        atas_nama: rekeningForm.atasNama.trim(),
+        password:  rekeningForm.password,
+      }),
+    }).catch(() => null)
+    type Jawaban = { data: { id: string; bank: string; no_rek: string; atas_nama: string } | null; error: string | null }
+    const json = res ? await (res.json() as Promise<Jawaban>).catch(() => null) : null
 
     setSavingRekening(false)
-    if (error) {
-      setSaveRekeningError(error.message)
-    } else {
-      const row = data as { id: string; bank: string; no_rek: string; atas_nama: string }
-      setRekening({ id: row.id, bank: row.bank, noRek: row.no_rek, atasNama: row.atas_nama })
-      setShowRekeningModal(false)
-      handleSave()
+    // Password tidak disimpan lebih lama dari yang perlu, berhasil maupun gagal
+    setRekeningForm(f => ({ ...f, password: '' }))
+    if (!res?.ok || !json?.data) {
+      setSaveRekeningError(json?.error ?? 'Gagal menyimpan rekening. Periksa koneksi lalu coba lagi.')
+      return
     }
+    const row = json.data
+    setRekening({ id: row.id, bank: row.bank, noRek: row.no_rek, atasNama: row.atas_nama })
+    setPerubahanRekening({ nama: userData.nama || null, waktu: new Date().toISOString() })
+    setShowRekeningModal(false)
+    handleSave()
   }
 
   if (memuat) return <SkeletonPengaturan />
@@ -560,24 +587,29 @@ export default function PengaturanPage() {
         ) : undefined}
       >
         {rekening ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: 10, padding: 8,
-              border: '1.5px solid var(--border)', background: '#F9FAFB',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Image src={bankLogoSrc(rekening.bank)} alt={rekening.bank} width={48} height={48} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--navy-dark)' }}>{rekening.bank}</div>
-              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-mid)', fontFamily: 'monospace', letterSpacing: '0.04em', marginTop: 2 }}>
-                {maskRekening(rekening.noRek)}
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 10, padding: 8,
+                border: '1.5px solid var(--border)', background: '#F9FAFB',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <Image src={bankLogoSrc(rekening.bank)} alt={rekening.bank} width={48} height={48} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
               </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                a.n. {rekening.atasNama}
+              <div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--navy-dark)' }}>{rekening.bank}</div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-mid)', fontFamily: 'monospace', letterSpacing: '0.04em', marginTop: 2 }}>
+                  {maskRekening(rekening.noRek)}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  a.n. {rekening.atasNama}
+                </div>
               </div>
             </div>
-          </div>
+            <div style={{ marginTop: '0.9rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {teksPerubahanRekening(perubahanRekening)}
+            </div>
+          </>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '1.25rem 1rem' }}>
             <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.75rem' }}>
@@ -634,7 +666,7 @@ export default function PengaturanPage() {
                 Pilih Bank
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                {BANK_LIST.map(bank => (
+                {BANK_REKENING.map(bank => (
                   <button
                     key={bank}
                     onClick={() => setRekeningForm(f => ({ ...f, bank }))}
@@ -665,6 +697,17 @@ export default function PengaturanPage() {
               value={rekeningForm.noRek}
               onChange={v => setRekeningForm(f => ({ ...f, noRek: v.replace(/\D/g, '') }))}
             />
+
+            <FormField
+              label="Password Akun Anda"
+              type="password"
+              value={rekeningForm.password}
+              onChange={v => setRekeningForm(f => ({ ...f, password: v }))}
+            />
+            <div style={{ marginTop: '-0.6rem', marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Rekening ini yang dilihat orang tua saat membayar. Demi keamanan, setiap perubahan
+              dikonfirmasi dengan password dan dicatat.
+            </div>
 
             {saveRekeningError && (
               <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: '#DC2626', padding: '0.5rem 0.75rem', background: '#FEF2F2', borderRadius: 6 }}>
