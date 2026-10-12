@@ -47,7 +47,7 @@ export function renderPesanPengingat(d: DataPesanPengingat): string {
   return [
     `Assalamu’alaikum wr. wb.`,
     ``,
-    `Yth. Bapak/Ibu ${wali},`,
+    `Yth. ${wali},`,
     ``,
     `Kami dari ${sekolah} ingin menyampaikan informasi tagihan pendidikan untuk siswa berikut:`,
     ``,
