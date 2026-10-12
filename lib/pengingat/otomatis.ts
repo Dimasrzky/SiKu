@@ -52,8 +52,6 @@ export interface OpsiOtomatis {
   origin:    string
   sekarang?: Date
   konfig?:   KonfigPengingat
-  /** Pemilih variasi sapaan/penutup — hanya diganti saat pengujian */
-  acak?:     () => number
   /** Penerbit tagihan bulan berjalan — hanya diganti saat pengujian */
   terbitkan?: typeof runGenerate
 }
@@ -108,7 +106,7 @@ async function terbitkanBulanIni(
 
 async function antrekanSekolah(
   db: SupabaseClient, sekolahId: string, kelasPenerima: Set<string> | null,
-  sekarang: Date, konfig: KonfigPengingat, origin: string, acak: (() => number) | undefined,
+  sekarang: Date, konfig: KonfigPengingat, origin: string,
 ): Promise<{ dibuat: number; dilewati: number }> {
   const galat = (apa: string) => new Error(apa)
 
@@ -162,7 +160,7 @@ async function antrekanSekolah(
     if (!ringkasan) continue
     if (!lolosPembatas(c.p, pembatas.data, sekarang, konfig)) continue
     baris.push({
-      ...susunIsiJob(c.p, ringkasan, konteks.data, origin, acak),
+      ...susunIsiJob(c.p, ringkasan, konteks.data, origin),
       // Job otomatis selalu menunjuk tagihan yang diingatkannya, walau tautannya tidak aktif
       tagihan_id:   c.tagihanId,
       wa_sender_id: sender.id,
@@ -189,7 +187,7 @@ async function antrekanSekolah(
 export async function antrekanOtomatis(
   db: SupabaseClient, opsi: OpsiOtomatis,
 ): Promise<{ data: LaporanOtomatis[]; error: null } | { data: null; error: string }> {
-  const { origin, sekarang = new Date(), konfig = KONFIG_PENGINGAT, acak, terbitkan = runGenerate } = opsi
+  const { origin, sekarang = new Date(), konfig = KONFIG_PENGINGAT, terbitkan = runGenerate } = opsi
 
   const sekolah = await sekolahPenerima(db)
   if (!sekolah.data) return { data: null, error: sekolah.error ?? 'Daftar sekolah gagal dimuat.' }
@@ -203,7 +201,7 @@ export async function antrekanOtomatis(
     if (tidakTerbit) console.warn(`[pengingat] tagihan bulan berjalan sekolah ${s.sekolah_id} tidak diterbitkan: ${tidakTerbit}`)
     const catatan = tidakTerbit ? { tidakTerbit } : {}
     try {
-      laporan.push({ sekolahId: s.sekolah_id, ...await antrekanSekolah(db, s.sekolah_id, s.kelas, sekarang, konfig, origin, acak), ...catatan })
+      laporan.push({ sekolahId: s.sekolah_id, ...await antrekanSekolah(db, s.sekolah_id, s.kelas, sekarang, konfig, origin), ...catatan })
     } catch (e) {
       const galat = e instanceof Error ? e.message : 'galat tidak dikenal'
       console.error(`[pengingat] pengingat otomatis sekolah ${s.sekolah_id} gagal: ${galat}`)

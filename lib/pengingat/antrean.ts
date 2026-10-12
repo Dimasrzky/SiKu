@@ -67,8 +67,6 @@ export interface OpsiAntrekanManual extends OpsiStatusPengingat {
   userId: string
   /** Alamat aplikasi tanpa garis miring di akhir, untuk tautan halaman bayar */
   origin: string
-  /** Pemilih variasi sapaan/penutup — hanya diganti saat pengujian */
-  acak?:  () => number
 }
 
 /**
@@ -76,7 +74,7 @@ export interface OpsiAntrekanManual extends OpsiStatusPengingat {
  * tidak dibuatkan job dan cukup dikembalikan tampilan terakhirnya.
  */
 export async function antrekanManual(db: SupabaseClient, opsi: OpsiAntrekanManual): Promise<Hasil> {
-  const { sekolahId, siswaIds, userId, origin, sekarang = new Date(), konfig = KONFIG_PENGINGAT, acak } = opsi
+  const { sekolahId, siswaIds, userId, origin, sekarang = new Date(), konfig = KONFIG_PENGINGAT } = opsi
 
   const sekolah = await sekolahAktif(db, sekolahId)
   if (sekolah.error) return { data: null, error: sekolah.error }
@@ -111,7 +109,7 @@ export async function antrekanManual(db: SupabaseClient, opsi: OpsiAntrekanManua
     // Opt-out, batas bulanan, dan batas per nomor: tidak dibuatkan job, tombol tetap Ingatkan
     if (!lolosPembatas(p, pembatas.data, sekarang, konfig)) continue
     baris.push({
-      ...susunIsiJob(p, p.ringkasan, konteks.data, origin, acak),
+      ...susunIsiJob(p, p.ringkasan, konteks.data, origin),
       wa_sender_id: sender.id,
       sekolah_id:   sekolahId,
       siswa_id:     p.siswa.id,

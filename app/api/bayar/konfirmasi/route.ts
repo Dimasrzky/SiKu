@@ -6,9 +6,17 @@ import {
 } from '@/lib/rincianKomponen'
 import { muatBuktiMenunggu, muatTertagih } from '@/lib/tagihanTertagih'
 import { jenisGambar } from '@/lib/jenisGambar'
+import { catatPercobaan, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
 
 const BUKTI_BUCKET  = 'bukti-transfer'
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
+
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Tautan bayar bersifat publik: kiriman bukti dari satu tautan dibatasi. Wali biasanya
+// cukup sekali, atau mengulang setelah buktinya ditolak.
+const BATAS_KIRIM   = 5
+const JENDELA_MENIT = 60
 
 type TagihanRow = {
   id:                  string
@@ -44,6 +52,7 @@ export async function POST(req: NextRequest) {
   const bukti        = formData.get('bukti')
 
   if (typeof paymentToken !== 'string' || !paymentToken) return gagal('Parameter tidak lengkap.', 400)
+  if (!POLA_UUID.test(paymentToken))                     return gagal('Tagihan tidak ditemukan.', 404)
   if (!(bukti instanceof File))                          return gagal('Bukti transfer wajib diunggah.', 400)
   if (bukti.size > MAX_SIZE_BYTES)                       return gagal('Ukuran file maksimal 5MB.', 400)
 
@@ -85,6 +94,13 @@ export async function POST(req: NextRequest) {
 
   const tagihan = tagihanData as TagihanRow
   if (!tagihan.payment_token_aktif) return gagal('Link pembayaran sudah tidak aktif.', 400)
+
+  // Dihitung hanya untuk tautan yang memang ada, supaya token acak tidak mengisi tabel
+  const kunci   = `bayar-bukti:${paymentToken}`
+  const terlalu = await terlaluBanyakPercobaan(supabase, kunci, BATAS_KIRIM, JENDELA_MENIT)
+  if (terlalu === null) return gagal('Gagal memproses permintaan. Silakan coba lagi.', 503)
+  if (terlalu)          return gagal(`Terlalu banyak kiriman bukti. Coba lagi dalam ${JENDELA_MENIT} menit.`, 429)
+  await catatPercobaan(supabase, kunci)
 
   // Yang bisa dipilih = yang ditagih halaman bayar: sisa tagihan ini + tunggakan
   // sebelumnya. Tagihan di tautan yang sudah lunas masih bisa dipakai membayar tunggakannya.

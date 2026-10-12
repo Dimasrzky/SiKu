@@ -15,6 +15,18 @@ import { formatKelasNama } from './format'
 export const metadata: Metadata = {
   title: 'Pembayaran Tagihan',
   description: 'Lihat rincian tagihan sekolah dan lakukan pembayaran.',
+  // Alamatnya memuat token; kalau link-nya tersebar, jangan sampai masuk hasil pencarian
+  robots: { index: false, follow: false },
+}
+
+// Sesudah semua tagihan di tautan lunas, tanda terimanya tampil selama ini. Lewat dari itu
+// tautan yang terlanjur tersebar (grup WA, screenshot) tidak lagi menampilkan data siswa.
+const MASA_TANDA_TERIMA_MS = 30 * 24 * 60 * 60 * 1000
+
+/** "••••002": orang tua tetap mengenali anaknya, NIS lengkap tidak ikut terkirim ke browser */
+const samarkanNis = (nis: string | null | undefined): string => {
+  const n = (nis ?? '').trim()
+  return n ? '••••' + n.slice(-3) : ''
 }
 
 type SiswaJoin      = { nama: string; nis: string | null; nama_wali: string | null; kelas: { nama: string } | null }
@@ -27,6 +39,7 @@ type TagihanRow      = {
   bulan:               number
   tahun:               number
   payment_token_aktif: boolean
+  created_at:          string
   siswa:               SiswaJoin | null
 }
 
@@ -106,7 +119,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
 
   const { data } = await supabase
     .from('tagihan')
-    .select('id, siswa_id, sekolah_id, total_nominal, status, bulan, tahun, payment_token_aktif, siswa:siswa_id(nama, nis, nama_wali, kelas:kelas_id(nama))')
+    .select('id, siswa_id, sekolah_id, total_nominal, status, bulan, tahun, payment_token_aktif, created_at, siswa:siswa_id(nama, nis, nama_wali, kelas:kelas_id(nama))')
     .eq('payment_token', token)
     .single()
 
@@ -175,6 +188,20 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
       .order('tanggal_bayar', { ascending: false })
       .limit(1)
       .maybeSingle()
+    const tanggalLunas = (pembayaranLunas as { tanggal_bayar: string } | null)?.tanggal_bayar ?? null
+
+    if (sekarang.getTime() - new Date(tanggalLunas ?? tagihan.created_at).getTime() > MASA_TANDA_TERIMA_MS) {
+      return (
+        <PageShell headerProps={headerProps} footerProps={footerProps}>
+          <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 0 6px #21386b7b', padding: '2rem 1.5rem', textAlign: 'center' }}>
+            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#1A2C4E' }}>Tautan pembayaran ini sudah tidak berlaku</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: 6, lineHeight: 1.6 }}>
+              Seluruh tagihan pada tautan ini sudah lunas. Untuk tanda terima atau pertanyaan lain, silakan hubungi bagian TU sekolah.
+            </div>
+          </div>
+        </PageShell>
+      )
+    }
 
     return (
       <PageShell headerProps={headerProps} footerProps={footerProps}>
@@ -182,7 +209,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
           namaSiswa={siswa?.nama ?? ''}
           kelasNama={kelasNama}
           totalNominal={tagihan.total_nominal}
-          waktuLunas={(pembayaranLunas as { tanggal_bayar: string } | null)?.tanggal_bayar ?? new Date().toISOString()}
+          waktuLunas={tanggalLunas ?? new Date().toISOString()}
           bulan={tagihan.bulan}
           tahun={tagihan.tahun}
         />
@@ -263,7 +290,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
       <BayarWizard
         paymentToken={token}
         namaSiswa={siswa?.nama ?? ''}
-        nis={siswa?.nis ?? ''}
+        nis={samarkanNis(siswa?.nis)}
         kelasNama={kelasNama}
         blok={blok}
         units={unitBayar(tertagih.daftar)}

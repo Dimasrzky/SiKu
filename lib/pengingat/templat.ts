@@ -1,54 +1,72 @@
 // Teks pengingat WhatsApp yang dikirim lewat antrean — satu template untuk pengingat
-// otomatis maupun manual (bagian 8 spec). Sapaan dan penutup dipilih acak supaya teksnya
-// tidak 100% identik ke semua wali.
+// otomatis maupun manual. Tanda *…* = huruf tebal di WhatsApp.
 
-/** Diletakkan di depan "Bapak/Ibu {nama wali}," */
-export const SAPAAN_PENGINGAT = [
-  'Yth.',
-  'Kepada Yth.',
-  'Halo',
-  'Salam hormat',
-] as const
-
-export const PENUTUP_PENGINGAT = [
-  'Terima kasih atas perhatian Bapak/Ibu.',
-  'Apabila sudah membayar, mohon abaikan pesan ini. Terima kasih.',
-  'Terima kasih atas perhatian dan kerja samanya.',
-  'Mohon abaikan pesan ini apabila pembayaran sudah dilakukan.',
-] as const
+const BULAN = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 
 export interface DataPesanPengingat {
   namaWali:    string | null
   namaSiswa:   string
   kelasNama:   string | null
   namaSekolah: string
+  /** Bulan tagihan yang dijumlah di `total`, terlama dulu */
+  periode:     { bulan: number; tahun: number }[]
   /** Total tagihan yang diingatkan, rupiah */
   total:       number
   /** Tautan halaman bayar; null kalau tagihannya tidak punya tautan aktif */
   tautan:      string | null
-  /** Nomor TU/bendahara sekolah, ditulis apa adanya */
+  /** Nomor TU/bendahara sekolah */
   kontakTu:    string | null
 }
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
-/** `acak` mengembalikan angka di [0, 1) — bisa diganti supaya hasilnya tetap saat diuji */
-export function renderPesanPengingat(d: DataPesanPengingat, acak: () => number = Math.random): string {
-  const pilih = <T>(daftar: readonly T[]): T => daftar[Math.min(daftar.length - 1, Math.floor(acak() * daftar.length))]
+/** "Oktober 2026", atau rentang kalau total mencakup tunggakan bulan sebelumnya */
+function teksPeriode(periode: DataPesanPengingat['periode']): string {
+  if (periode.length === 0) return '-'
+  const awal  = periode[0]
+  const akhir = periode[periode.length - 1]
+  if (awal.bulan === akhir.bulan && awal.tahun === akhir.tahun) return `${BULAN[akhir.bulan]} ${akhir.tahun}`
+  return awal.tahun === akhir.tahun
+    ? `${BULAN[awal.bulan]} – ${BULAN[akhir.bulan]} ${akhir.tahun}`
+    : `${BULAN[awal.bulan]} ${awal.tahun} – ${BULAN[akhir.bulan]} ${akhir.tahun}`
+}
 
+/** "0812-5664-0452" dari 08…, 62… atau +62… */
+function teksNomor(no: string): string {
+  const angka = no.replace(/\D/g, '')
+  const lokal = angka.startsWith('62') ? '0' + angka.slice(2) : angka
+  return lokal.match(/.{1,4}/g)?.join('-') ?? lokal
+}
+
+export function renderPesanPengingat(d: DataPesanPengingat): string {
   const sekolah = d.namaSekolah.trim() || 'sekolah'
   const wali    = d.namaWali?.trim() || `Orang Tua/Wali ${d.namaSiswa}`
-  const siswa   = `Ananda ${d.namaSiswa}${d.kelasNama?.trim() ? ` (${d.kelasNama.trim()})` : ''}`
   const kontak  = d.kontakTu?.trim()
 
   return [
-    `${pilih(SAPAAN_PENGINGAT)} Bapak/Ibu ${wali},`,
+    `Assalamu’alaikum wr. wb.`,
     ``,
-    `Kami dari ${sekolah} menginformasikan tagihan SPP untuk ${siswa} sebesar ${formatRp(d.total)}.`,
+    `Yth. Bapak/Ibu ${wali},`,
     ``,
-    ...(d.tautan ? [`Rincian: ${d.tautan}`, ``] : []),
-    pilih(PENUTUP_PENGINGAT),
-    kontak ? `Info lebih lanjut hubungi TU ${sekolah}: ${kontak}.` : `Info lebih lanjut hubungi TU ${sekolah}.`,
-    `Balas STOP jika tidak ingin menerima pengingat.`,
+    `Kami dari ${sekolah} ingin menyampaikan informasi tagihan pendidikan untuk siswa berikut:`,
+    ``,
+    `*Nama Siswa*    : ${d.namaSiswa}`,
+    `*Kelas*          : ${d.kelasNama?.trim() || '-'}`,
+    `*Periode*        : ${teksPeriode(d.periode)}`,
+    `*Total Tagihan* : ${formatRp(d.total)}`,
+    `*Status*          : Belum Lunas`,
+    ``,
+    ...(d.tautan
+      ? [`Untuk melihat rincian tagihan dan melakukan pembayaran, silakan akses tautan berikut:`, ``, d.tautan, ``]
+      : []),
+    kontak
+      ? `Jika ada pertanyaan atau kendala terkait tagihan maupun pembayaran, silakan menghubungi bagian TU ${sekolah} melalui WhatsApp di ${teksNomor(kontak)}.`
+      : `Jika ada pertanyaan atau kendala terkait tagihan maupun pembayaran, silakan menghubungi bagian TU ${sekolah}.`,
+    ``,
+    `Terima kasih atas perhatian dan kerja sama Bapak/Ibu.`,
+    ``,
+    `Hormat kami,`,
+    sekolah,
   ].join('\n')
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
 import { bankSah } from '@/lib/bankRekening'
-import { catatPercobaanGagal, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
+import { catatPercobaan, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
 
 // Konfirmasi password yang salah, per akun
 const BATAS_PERCOBAAN = 5
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   const { error: pwError } = await konfirmasi.auth.signInWithPassword({ email: user.email, password })
   if (pwError) {
     if (pwError.status === 429) return gagal('Terlalu banyak percobaan masuk. Coba lagi beberapa saat lagi.', 429)
-    await catatPercobaanGagal(db, kunci)
+    await catatPercobaan(db, kunci)
     return gagal('Password salah.', 401)
   }
   // Sesi konfirmasi ini langsung dicabut; sesi yang sedang dipakai di browser tetap jalan

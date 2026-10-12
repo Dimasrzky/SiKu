@@ -136,7 +136,7 @@ async function periksaUlang(db: SupabaseClient, job: JobAntre, kini: Date, o: Op
   const konteks = await muatKonteksPesan(db, job.sekolah_id, p.siswa.kelas_id ? [p.siswa.kelas_id] : [])
   if (!konteks.data) throw new GalatDatabase(konteks.error ?? 'Data sekolah gagal dimuat.')
 
-  const isi = susunIsiJob(p, ringkasan, konteks.data, o.origin, o.acak)
+  const isi = susunIsiJob(p, ringkasan, konteks.data, o.origin)
   // Job otomatis tetap menunjuk tagihan yang diingatkannya walau tautannya tidak aktif.
   // Jenjang tidak ikut diubah: urutan antrean sudah dihitung dengan jenjang saat job dibuat.
   return { isi: { ...isi, tagihan_id: job.source === 'otomatis' ? job.tagihan_id : isi.tagihan_id, jenjang: job.jenjang } }

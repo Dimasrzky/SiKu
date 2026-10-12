@@ -54,7 +54,6 @@ export function susunIsiJob(
   ringkasan: RingkasanTunggakan<TagihanPengingat>,
   konteks: KonteksPesan,
   origin: string,
-  acak?: () => number,
 ): IsiJob {
   const kelas  = p.siswa.kelas_id ? konteks.kelas.get(p.siswa.kelas_id) : undefined
   const token  = ringkasan.tautan?.payment_token ?? null
@@ -67,10 +66,11 @@ export function susunIsiJob(
       namaSiswa:   p.siswa.nama,
       kelasNama:   kelas?.nama ?? p.siswa.kelas,
       namaSekolah: konteks.namaSekolah,
+      periode:     ringkasan.tertagih.map(t => ({ bulan: t.bulan, tahun: t.tahun })),
       total:       ringkasan.total,
       tautan:      token ? `${origin}/bayar/${token}` : null,
       kontakTu:    konteks.kontakTu,
-    }, acak),
+    }),
     total_tagihan: ringkasan.total,
     link_token:    token,
   }

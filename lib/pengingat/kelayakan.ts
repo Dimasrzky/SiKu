@@ -17,6 +17,8 @@ export interface RingkasanTunggakan<T extends TagihanPengingat> {
   tunggakan: T[]
   /** Yang ditagih halaman bayar lewat tautan pesan ini (lib/tagihanTertagih) */
   total:     number
+  /** Tagihan yang dijumlah di `total`, terlama dulu — untuk baris Periode di pesan */
+  tertagih:  T[]
   /** Tagihan yang tautan bayarnya dikirim; null kalau tautannya tidak ada atau tidak aktif */
   tautan:    T | null
 }
@@ -33,12 +35,14 @@ export function ringkasTunggakan<T extends TagihanPengingat>(tagihan: T[], sekar
   // (keputusan 3 Okt 2026): halaman bayarnya memuat tagihan itu beserta seluruh
   // tunggakan sebelumnya, jadi total pesan = total halaman bayar = kolom Total di
   // Tagihan Aktif. Yang boleh diingatkan tetap hanya siswa yang punya tunggakan.
-  const sasaran = tagihanTautan(tagihan)
+  const sasaran  = tagihanTautan(tagihan)
+  const tertagih = sasaran ? tagihanTertagih(tagihan, sasaran, sekarang) : null
 
   return {
     tunggakan,
-    total:  sasaran ? tagihanTertagih(tagihan, sasaran, sekarang).total : 0,
-    tautan: tautanAktif(sasaran),
+    total:    tertagih?.total ?? 0,
+    tertagih: tertagih?.daftar ?? [],
+    tautan:   tautanAktif(sasaran),
   }
 }
 
@@ -56,5 +60,5 @@ export function ringkasOtomatis<T extends TagihanPengingat>(
   // Kalau pengirimannya tertunda sampai lewat jatuh tempo, sasaran sendiri sudah termasuk
   // tunggakan — tagihanTertagih menghitungnya sekali saja
   const { daftar, total } = tagihanTertagih(tagihan, sasaran, sekarang)
-  return { tunggakan: daftar, total, tautan: tautanAktif(sasaran) }
+  return { tunggakan: daftar, total, tertagih: daftar, tautan: tautanAktif(sasaran) }
 }

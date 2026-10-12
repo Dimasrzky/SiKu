@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkAdminCredentials, createAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import { createServiceClient } from '@/lib/supabase-service'
-import { catatPercobaanGagal, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
+import { catatPercobaan, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
 
 interface LoginBody {
   email:    string
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!checkAdminCredentials(email, password)) {
-    await Promise.all([catatPercobaanGagal(db, `admin:${ip}`), catatPercobaanGagal(db, 'admin:*')])
+    await Promise.all([catatPercobaan(db, `admin:${ip}`), catatPercobaan(db, 'admin:*')])
     return NextResponse.json({ error: 'Email atau password admin salah.' }, { status: 401 })
   }
 

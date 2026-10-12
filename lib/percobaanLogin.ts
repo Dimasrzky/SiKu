@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-// Pembatas percobaan gagal (password salah) untuk login admin verifikasi dan konfirmasi
-// password saat mengubah rekening. Dicatat di tabel percobaan_login, hanya lewat service role.
+// Pembatas percobaan: password salah di login admin verifikasi dan konfirmasi password
+// rekening, juga permintaan dari halaman bayar publik (transaksi, bukti transfer) per
+// tautan. Dicatat di tabel percobaan_login, hanya lewat service role.
 
 /**
  * true = kunci ini sudah mencapai `batas` percobaan gagal dalam `menit` terakhir.
@@ -20,8 +21,8 @@ export async function terlaluBanyakPercobaan(
   return (count ?? 0) >= batas
 }
 
-/** Catat satu percobaan gagal, sekalian buang catatan yang sudah lebih dari sehari */
-export async function catatPercobaanGagal(db: SupabaseClient, kunci: string): Promise<void> {
+/** Catat satu percobaan, sekalian buang catatan yang sudah lebih dari sehari */
+export async function catatPercobaan(db: SupabaseClient, kunci: string): Promise<void> {
   const kemarin = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
   await Promise.all([
     db.from('percobaan_login').insert({ kunci }),

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createQrisPayment, createVAPayment, type VAChannel } from '@/lib/ipaymu'
+import { catatPercobaan, terlaluBanyakPercobaan } from '@/lib/percobaanLogin'
+
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Tautan bayar bersifat publik: transaksi QRIS/VA dari satu tautan dibatasi supaya
+// pemegang link tidak bisa membanjiri iPaymu
+const BATAS_TRANSAKSI = 5
+const JENDELA_MENIT   = 15
 
 type PaymentMethod = 'qris' | VAChannel
 
@@ -43,6 +51,9 @@ export async function POST(req: NextRequest) {
   if (!payment_token || !nominal || !jenis || !method) {
     return NextResponse.json({ error: 'Parameter tidak lengkap.' }, { status: 400 })
   }
+  if (typeof payment_token !== 'string' || !POLA_UUID.test(payment_token)) {
+    return NextResponse.json({ error: 'Tagihan tidak ditemukan.' }, { status: 404 })
+  }
   if (nominal <= 0 || !Number.isInteger(nominal)) {
     return NextResponse.json({ error: 'Nominal tidak valid.' }, { status: 400 })
   }
@@ -70,6 +81,17 @@ export async function POST(req: NextRequest) {
   if (!t.payment_token_aktif) {
     return NextResponse.json({ error: 'Link pembayaran sudah tidak aktif.' }, { status: 400 })
   }
+
+  // Dihitung hanya untuk tautan yang memang ada, supaya token acak tidak mengisi tabel
+  const kunci = `bayar-transaksi:${payment_token}`
+  const terlalu = await terlaluBanyakPercobaan(supabase, kunci, BATAS_TRANSAKSI, JENDELA_MENIT)
+  if (terlalu === null) {
+    return NextResponse.json({ error: 'Gagal memproses permintaan. Silakan coba lagi.' }, { status: 503 })
+  }
+  if (terlalu) {
+    return NextResponse.json({ error: `Terlalu banyak permintaan pembayaran. Coba lagi dalam ${JENDELA_MENIT} menit.` }, { status: 429 })
+  }
+  await catatPercobaan(supabase, kunci)
 
   // Hitung sisa tagihan
   const { data: pembayaranList } = await supabase
