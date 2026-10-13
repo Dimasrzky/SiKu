@@ -435,46 +435,27 @@ export default function NaikKelasPage() {
       // Tahun lulus dari tanggal selesai tahun ajaran
       const tahunLulus = String(new Date(tahunAjaran.tanggal_selesai).getFullYear())
 
-      // Batch update siswa naik kelas (per kelas tujuan)
-      const byKelas = new Map<string, string[]>()
-      for (const [siswaId, kelasId] of siswaToKelas) {
-        if (kelasId === 'alumni') continue
-        const list = byKelas.get(kelasId) ?? []
-        list.push(siswaId)
-        byKelas.set(kelasId, list)
-      }
+      // Keputusan terakhir yang berlaku: siswa yang dipetakan lulus lalu di-reshuffle
+      // "Tinggal Kelas" tetap di kelasnya, bukan ikut dijadikan alumni
+      const pindah = [...siswaToKelas]
+        .filter(([, kelasId]) => kelasId !== 'alumni')
+        .map(([siswa_id, kelas_id]) => ({ siswa_id, kelas_id }))
+      const alumni = [...alumniKelasNama]
+        .filter(([siswaId]) => siswaToKelas.get(siswaId) === 'alumni')
+        .map(([siswa_id, kelas]) => ({ siswa_id, kelas }))
 
-      for (const [kelasId, siswaIds] of byKelas) {
-        const { error } = await supabase.from('siswa')
-          .update({ kelas_id: kelasId })
-          .eq('sekolah_id', sekolahId)
-          .in('id', siswaIds)
-        if (error) throw new Error(`Gagal update kelas: ${error.message}`)
-      }
-
-      // Update siswa → alumni (set status, kelas snapshot, tahun_lulus, clear kelas_id)
-      const byKelasNamaAlumni = new Map<string, string[]>()
-      for (const [siswaId, kelasNama] of alumniKelasNama) {
-        const list = byKelasNamaAlumni.get(kelasNama) ?? []
-        list.push(siswaId)
-        byKelasNamaAlumni.set(kelasNama, list)
-      }
-
-      for (const [kelasNama, ids] of byKelasNamaAlumni) {
-        const { error } = await supabase.from('siswa')
-          .update({ status: 'alumni', jenis_alumni: 'lulus', kelas: kelasNama, tahun_lulus: tahunLulus, kelas_id: null })
-          .eq('sekolah_id', sekolahId)
-          .in('id', ids)
-        if (error) throw new Error(`Gagal update alumni: ${error.message}`)
-      }
-
-      // Tandai kenaikan kelas sudah dijalankan. Tahun ajaran sengaja TIDAK diarsipkan
-      // di sini — pengarsipan terjadi saat tahun ajaran baru diaktifkan, supaya sistem
-      // tidak pernah berada dalam kondisi tanpa tahun ajaran aktif.
-      const { error: taError } = await supabase.from('tahun_ajaran')
-        .update({ kenaikan_kelas_pada: new Date().toISOString() })
-        .eq('id', tahunAjaran.id)
-      if (taError) throw new Error(`Gagal menandai kenaikan kelas: ${taError.message}`)
+      // Satu transaksi di database: pindah kelas, jadikan alumni, lalu tandai tahun ajaran.
+      // Gagal di tengah = tidak ada yang berubah; dijalankan kedua kali (diulang atau dua
+      // admin berbarengan) = ditolak, jadi siswa tidak bisa naik dua tingkat. Tahun ajaran
+      // sengaja TIDAK diarsipkan di sini — pengarsipan terjadi saat tahun ajaran baru
+      // diaktifkan, supaya sistem tidak pernah tanpa tahun ajaran aktif.
+      const { error } = await supabase.rpc('jalankan_naik_kelas', {
+        p_tahun_ajaran_id: tahunAjaran.id,
+        p_pindah:          pindah,
+        p_alumni:          alumni,
+        p_tahun_lulus:     tahunLulus,
+      })
+      if (error) throw new Error(error.message)
 
       setExecuteDone(true)
     } catch (err) {

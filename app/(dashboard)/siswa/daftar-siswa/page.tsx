@@ -14,8 +14,6 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { SkeletonDaftarSiswa } from '@/components/skeleton/SkeletonSiswa'
 
-const SekolahId = ''
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
@@ -691,6 +689,7 @@ export default function DaftarSiswaPage() {
     </div>
 
     {showModal && <ModalContent
+      sekolahId={sekolahId}
       kelasList={kelasList}
       mNama={mNama} setMNama={setMNama}
       mNis={mNis} setMNis={setMNis}
@@ -946,6 +945,7 @@ export default function DaftarSiswaPage() {
     </div>
 
     {showModal && <ModalContent
+      sekolahId={sekolahId}
       kelasList={kelasList}
       mNama={mNama} setMNama={setMNama}
       mNis={mNis} setMNis={setMNis}
@@ -1239,6 +1239,8 @@ function SuccessModal({ savedInSetupMode, onAddMore, onExit }: {
 // ── Modal component ───────────────────────────────────────────────────────────
 
 interface ModalProps {
+  /** Sekolah yang sedang login — untuk cek NIS ganda */
+  sekolahId:    string
   kelasList:    KelasOption[]
   mNama:        string; setMNama:    (v: string) => void
   mNis:         string; setMNis:     (v: string) => void
@@ -1253,7 +1255,7 @@ interface ModalProps {
   onClose:      () => void
 }
 
-function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mNoWaError, setMNoWaError, mNisError, setMNisError, mSaving, mError, onSave, onClose }: ModalProps) {
+function ModalContent({ sekolahId, kelasList, mNama, setMNama, mNis, setMNis, mKelasId, setMKelasId, mNamaWali, setMNamaWali, mNoWa, setMNoWa, mNoWaError, setMNoWaError, mNisError, setMNisError, mSaving, mError, onSave, onClose }: ModalProps) {
   const [kelasOpen, setKelasOpen] = useState(false)
   const nisTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1261,9 +1263,9 @@ function ModalContent({ kelasList, mNama, setMNama, mNis, setMNis, mKelasId, set
     setMNis(val)
     setMNisError('')
     if (nisTimer.current) clearTimeout(nisTimer.current)
-    if (!val.trim()) return
+    if (!val.trim() || !sekolahId) return
     nisTimer.current = setTimeout(async () => {
-      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).eq('sekolah_id', SekolahId).maybeSingle()
+      const { data } = await supabase.from('siswa').select('id').eq('nis', val.trim()).eq('sekolah_id', sekolahId).maybeSingle()
       if (data) setMNisError('NIS sudah digunakan')
     }, 400)
   }

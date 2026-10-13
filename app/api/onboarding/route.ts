@@ -106,7 +106,21 @@ export async function POST(req: NextRequest) {
   }
 
   // ── TRIAL FLOW ─────────────────────────────────────────────────────────────
-  const kode            = `TRIAL-${Date.now().toString(36).toUpperCase()}`
+  // Hanya untuk akun yang belum punya sekolah. Tanpa pengecekan ini akun lama bisa membuat
+  // sekolah trial baru berulang kali dan memindahkan dirinya ke sana sebagai admin.
+  const { data: profilLama, error: profilLamaError } = await supabaseAdmin
+    .from('profiles')
+    .select('sekolah_id')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (profilLamaError) {
+    return NextResponse.json({ error: 'Gagal memeriksa profil' }, { status: 500 })
+  }
+  if (profilLama?.sekolah_id) {
+    return NextResponse.json({ error: 'Akun ini sudah terdaftar di sebuah sekolah' }, { status: 409 })
+  }
+
+  const kode           = `TRIAL-${Date.now().toString(36).toUpperCase()}`
   const trialExpiresAt  = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: sekolah, error: sekolahError } = await supabaseAdmin

@@ -39,6 +39,8 @@ interface UserData {
   telepon:      string
   jenjang:      string
   idSekolah:    string
+  /** Akun yang sedang login — penyimpanan profil hanya menyasar baris ini */
+  idUser:       string
 }
 
 function formatWA(raw: string): string {
@@ -233,7 +235,7 @@ export default function PengaturanPage() {
   const [saveAkunError,  setSaveAkunError]  = useState('')
   const [userData,       setUserData]       = useState<UserData>({
     nama: '', jabatan: '', sekolah: '', email: '',
-    namaSekolah: '', telepon: '', jenjang: '', idSekolah: '',
+    namaSekolah: '', telepon: '', jenjang: '', idSekolah: '', idUser: '',
   })
   const [rekening,          setRekening]          = useState<RekeningRow | null>(null)
   const [showRekeningModal, setShowRekeningModal] = useState(false)
@@ -307,6 +309,7 @@ export default function PengaturanPage() {
         telepon:     sk?.no_wa           ?? '',
         jenjang:     p?.jenjang_sekolah  ?? '',
         idSekolah:   sekolahId,
+        idUser:      user?.id ?? '',
       })
     }
     // Kerangka dilepas juga saat pemuatan gagal — isian kosong lebih berguna daripada
@@ -354,7 +357,7 @@ export default function PengaturanPage() {
       supabase
         .from('profiles')
         .update({ sekolah: profilForm.namaSekolah })
-        .eq('sekolah_id', userData.idSekolah),
+        .eq('id', userData.idUser),
     ])
 
     setSaving(false)
@@ -391,7 +394,8 @@ export default function PengaturanPage() {
         npsn:    akunForm.npsn.trim(),
         avatar,
       })
-      .eq('sekolah_id', userData.idSekolah)
+      // Profil milik sendiri saja — RLS juga hanya mengizinkan baris ini
+      .eq('id', userData.idUser)
     setSavingAkun(false)
     if (error) {
       setSaveAkunError(error.message)

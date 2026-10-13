@@ -53,9 +53,10 @@ export function potonganPerKomponen(
     for (const kid of bs.komponen_ids) {
       const idx = rincian.findIndex(i => i.komponen_id === kid)
       if (idx < 0) continue
-      const potongan = bs.jenis_potongan === 'persen'
+      // Potongan negatif (data lama atau isian yang lolos) akan menaikkan total — dianggap 0
+      const potongan = Math.max(0, bs.jenis_potongan === 'persen'
         ? Math.round(rincian[idx].nominal * (bs.persen ?? 0) / 100)
-        : (bs.nominal ?? 0)
+        : (bs.nominal ?? 0))
       perKomponen[idx] += potongan
       total += potongan
     }

@@ -6,6 +6,7 @@ import { Award, Scissors, X, Plus, Eye, Pencil, Trash2, ChevronDown, Users, Aler
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { polaIlike } from '@/lib/polaCari'
+import { galatBesaran } from '@/lib/besaranPotongan'
 import { SkeletonBeasiswa } from '@/components/skeleton/SkeletonTagihan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -291,7 +292,7 @@ export default function BeasiswaPage() {
   }
 
   const saveProgram = async () => {
-    if (!fNama.trim()) return
+    if (!fNama.trim() || galatBesaran(fJenis, fBesaran)) return
     setFormSaving(true)
     try {
       const { data: prog, error } = await supabase.from('beasiswa').insert({
@@ -327,7 +328,7 @@ export default function BeasiswaPage() {
   }
 
   const saveEditProg = async () => {
-    if (!editProg || !editNama.trim()) return
+    if (!editProg || !editNama.trim() || galatBesaran(editJenis, editBesaran)) return
     setEditSaving(true)
     try {
       const newJenis   = editJenis
@@ -408,7 +409,7 @@ export default function BeasiswaPage() {
   }
 
   const saveEditPot = async () => {
-    if (!editPot) return
+    if (!editPot || galatBesaran(editPotJenis, editPotBesaran)) return
     setEditPotSaving(true)
     try {
       await supabase.from('beasiswa').update({
@@ -498,7 +499,7 @@ export default function BeasiswaPage() {
   }
 
   const savePt = async () => {
-    if (ptRows.length === 0) return
+    if (ptRows.length === 0 || galatBesaran(ptJenis, ptBesaran)) return
     setPtSaving(true)
     try {
       const { data: prog, error } = await supabase.from('beasiswa').insert({
@@ -1323,9 +1324,13 @@ function JenisRow({ jenis, besaran, onJenis, onBesaran }: { jenis: 'persen' | 'n
       <div>
         <label style={sLbl}>Besaran default</label>
         <div style={{ position: 'relative' }}>
-          <input type="number" value={besaran} onChange={e => onBesaran(e.target.value)} placeholder="0" style={{ ...sInp, paddingRight: '2.5rem' }} />
+          <input type="number" min={0} max={jenis === 'persen' ? 100 : undefined} value={besaran} onChange={e => onBesaran(e.target.value)} placeholder="0" style={{ ...sInp, paddingRight: '2.5rem' }} />
           <span style={{ position: 'absolute', right: '0.85rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.85rem', color: '#64748B', fontWeight: 600 }}>{jenis === 'persen' ? '%' : 'Rp'}</span>
         </div>
+        {/* Isian kosong cukup diberi tahu; yang terisi tapi tidak sah ditandai merah */}
+        {besaran.trim() === ''
+          ? <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 4 }}>Wajib diisi</div>
+          : galatBesaran(jenis, besaran) && <div style={{ fontSize: '0.72rem', color: '#DC2626', marginTop: 4 }}>{galatBesaran(jenis, besaran)}</div>}
       </div>
     </div>
   )
