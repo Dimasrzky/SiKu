@@ -892,17 +892,19 @@ function TagihanAktifContent() {
     // urutan komponen. Satu baris per tagihan beserta komponen yang ditutupnya (null untuk
     // tagihan yang dibayar utuh), disisipkan dalam satu perintah supaya tidak tercatat separuh.
     const { error } = await supabase.from('pembayaran').insert(bagiKeTagihan(catatUnitDipilih, jumlah).map(b => ({
-      sekolah_id:       sekolahId,
-      tagihan_siswa_id: b.tagihan_id,
-      tagihan_id:       b.tagihan_id,
-      siswa_id:         catatSelected.id,
-      jumlah:           b.jumlah,
-      alokasi:          b.alokasi,
-      metode:           catatMetode,
-      tanggal_bayar:    tanggalBayar,
-      catatan:          catatCatatan || null,
-      status:           'terkonfirmasi',
-      created_by:       user?.id ?? null,
+      // Tanpa tagihan_siswa_id: kolom lama itu ber-FK ke tabel tagihan_siswa yang sudah
+      // tidak dipakai (kosong), jadi id tagihan apa pun ditolak. Sama dengan halaman
+      // Pembayaran dan verifikasi bukti, yang hanya mengisi tagihan_id.
+      sekolah_id:    sekolahId,
+      tagihan_id:    b.tagihan_id,
+      siswa_id:      catatSelected.id,
+      jumlah:        b.jumlah,
+      alokasi:       b.alokasi,
+      metode:        catatMetode,
+      tanggal_bayar: tanggalBayar,
+      catatan:       catatCatatan || null,
+      status:        'terkonfirmasi',
+      created_by:    user?.id ?? null,
     })))
     if (error) { alert('Gagal menyimpan: ' + error.message); setCatatSaving(false); return }
     // Status tagihan dihitung database dari pembayaran yang tercatat (trigger
