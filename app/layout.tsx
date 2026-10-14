@@ -21,7 +21,7 @@ const dmSans = DM_Sans({
 })
 
 // Metadata di sini berlaku untuk SEMUA route, jadi isinya harus netral.
-// Metadata khusus halaman login ada di app/page.tsx; route lain mengisi title
+// Metadata khusus halaman login ada di app/(auth)/page.tsx; route lain mengisi title
 // sendiri lewat page.tsx (server) atau layout.tsx di foldernya (page client).
 export const metadata: Metadata = {
   metadataBase: new URL('https://app.pakaisiku.id'),

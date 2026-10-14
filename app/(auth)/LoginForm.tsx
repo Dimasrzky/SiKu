@@ -1,16 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { IsiPanel } from '@/components/auth/IsiPanel'
+import { JudulPanel } from '@/components/auth/JudulPanel'
+import { KolomSandi } from '@/components/auth/KolomSandi'
+import { ukuranIkon } from '@/components/auth/satuan'
 
 const LoginForm = () => {
   const router = useRouter()
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError]           = useState('')
   const [loading, setLoading]       = useState(false)
 
@@ -75,92 +78,51 @@ const LoginForm = () => {
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card">
+    <IsiPanel className="auth-isi--login">
+      <JudulPanel judul="Masuk ke Dashboard" />
 
-        <div
-          className="login-card-item"
-          style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem', animationDelay: '0.35s' }}
-        >
-          <Image src="/image/LogoSiKu.png" alt="Logo SiKu" width={80} height={80} priority />
-        </div>
+      <div className="auth-form auth-form--tanpa-sub">
+        {error && <div className="auth-galat" role="alert">{error}</div>}
 
-        <h1 className="login-title login-card-item" style={{ animationDelay: '0.44s' }}>Masuk ke Dashboard</h1>
-
-        {error && <div className="login-error login-card-item">{error}</div>}
-
-        <div className="form-group login-card-item" style={{ animationDelay: '0.53s' }}>
-          <label className="form-label" htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            className="form-input"
-            placeholder="Masukkan email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-          />
-        </div>
-
-        <div className="form-group login-card-item" style={{ animationDelay: '0.62s' }}>
-          <label className="form-label" htmlFor="password">Password</label>
-          <div style={{ position: 'relative' }}>
+        {/* Label "Username" mengikuti mockup; isinya tetap email (juga dipakai login admin) */}
+        <div className="auth-bidang">
+          <label className="auth-label" htmlFor="email">Email</label>
+          <div className="auth-kotak">
             <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              className="form-input"
-              placeholder="Masukkan password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              id="email"
+              type="email"
+              className="auth-input"
+              placeholder="Masukkan alamat email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              style={{ paddingRight: '2.5rem' }}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              style={{
-                position: 'absolute', right: '0.75rem', top: '50%',
-                transform: 'translateY(-50%)', background: 'none',
-                border: 'none', cursor: 'pointer', padding: 0,
-                color: '#94a3b8', display: 'flex', alignItems: 'center',
-              }}
-              tabIndex={-1}
-              aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-            >
-              {showPassword ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                  <line x1="1" y1="1" x2="23" y2="23"/>
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              )}
-            </button>
+            <UserRound className="auth-ikon auth-ikon--pengguna" style={ukuranIkon(29)} strokeWidth={1.5} aria-hidden="true" />
           </div>
         </div>
 
-        <button
-          className="submit-btn login-card-item"
-          onClick={handleLogin}
-          disabled={loading}
-          style={{ marginTop: '0.5rem', animationDelay: '0.71s' }}
-        >
-          {loading ? 'Memverifikasi...' : 'Masuk ke Dashboard'}
-        </button>
-
-        <p className="login-card-item" style={{ textAlign:'center', marginTop:'1rem', fontSize:'0.8rem', color:'var(--text-muted)', animationDelay:'0.8s' }}>
-          Belum punya akun?{' '}
-          <Link href="/daftar" style={{ color:'var(--navy)', fontWeight:600, textDecoration:'none' }}>
-            Daftar sekarang
-          </Link>
-        </p>
-
+        <div className="auth-bidang">
+          <label className="auth-label" htmlFor="password">Password</label>
+          <KolomSandi
+            id="password"
+            value={password}
+            onChange={setPassword}
+            onEnter={handleLogin}
+            placeholder="Masukkan password"
+            autoComplete="current-password"
+          />
+        </div>
       </div>
-    </div>
+
+      <button className="auth-tombol" onClick={handleLogin} disabled={loading}>
+        {loading ? 'Memverifikasi...' : 'Masuk Dashboard'}
+      </button>
+
+      <p className="auth-kaki">
+        Belum punya akun? <Link href="/daftar">Daftar sekarang</Link>
+      </p>
+    </IsiPanel>
   )
 }
 

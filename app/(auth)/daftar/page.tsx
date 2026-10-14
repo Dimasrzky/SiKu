@@ -1,10 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { IsiPanel } from '@/components/auth/IsiPanel'
+import { JudulPanel } from '@/components/auth/JudulPanel'
+import { KolomSandi } from '@/components/auth/KolomSandi'
+import { LangkahDaftar } from '@/components/auth/LangkahDaftar'
+import { ukuranIkon } from '@/components/auth/satuan'
 
 type Step = 1 | 2 | 3
 
@@ -14,9 +19,20 @@ const JABATAN_OPTIONS = [
   'Tata Usaha', 'Staff Administrasi', 'Operator',
 ]
 
+const PanahPilih = () => (
+  <ChevronDown className="auth-ikon auth-panah" style={ukuranIkon(24.7)} strokeWidth={1.5} aria-hidden="true" />
+)
+
+const PanahTombol = ({ arah }: { arah: 'kiri' | 'kanan' }) => {
+  const Ikon = arah === 'kiri' ? ChevronLeft : ChevronRight
+  return <Ikon style={ukuranIkon(19)} strokeWidth={2} aria-hidden="true" />
+}
+
 export default function DaftarPage() {
   const router = useRouter()
   const [step, setStep]         = useState<Step>(1)
+  // Arah geser isi panel: maju saat lanjut, mundur saat Kembali
+  const [arah, setArah]         = useState<'maju' | 'mundur'>('maju')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
 
@@ -26,7 +42,6 @@ export default function DaftarPage() {
   const [jabatanCustom, setJabatanCustom] = useState('')
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
-  const [showPassword, setShowPassword] = useState(false)
 
   // Step 2
   const [namaSekolah,    setNamaSekolah]    = useState('')
@@ -34,11 +49,18 @@ export default function DaftarPage() {
   const [noWaError,      setNoWaError]      = useState('')
   const [emailError,     setEmailError]     = useState('')
   const [jenjangSekolah, setJenjangSekolah] = useState('SMP/MTs')
+  // Pilihan bawaan tampil samar seperti placeholder di mockup sampai diganti user
+  const [jenjangDiubah,  setJenjangDiubah]  = useState(false)
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
   const [isDemo, setIsDemo] = useState(false)
   // Email yang sudah berhasil di-signUp di sesi ini (untuk handle navigasi kembali ke step 1)
   const [step1Email, setStep1Email] = useState('')
+
+  const lanjutKe = (s: Step) => {
+    setArah('maju')
+    setStep(s)
+  }
 
   // Jika sudah login, arahkan ke dashboard (onboarding selesai) atau biarkan isi form dari awal
   useEffect(() => {
@@ -79,7 +101,7 @@ export default function DaftarPage() {
         setError('Semua field wajib diisi.')
         return
       }
-      setStep(2)
+      lanjutKe(2)
       return
     }
 
@@ -122,7 +144,7 @@ export default function DaftarPage() {
           .eq('id', userId!)
           .single()
         if (profile?.role === 'super_admin') setIsDemo(true)
-        setStep(2)
+        lanjutKe(2)
         setLoading(false)
         return
       }
@@ -138,7 +160,7 @@ export default function DaftarPage() {
         if (!profile?.sekolah_id) {
           // Onboarding belum selesai — lanjut ke step 2
           setStep1Email(email.trim())
-          setStep(2)
+          lanjutKe(2)
           setLoading(false)
           return
         }
@@ -157,7 +179,7 @@ export default function DaftarPage() {
 
     // signUp berhasil → trial baru
     setStep1Email(email.trim())
-    setStep(2)
+    lanjutKe(2)
     setLoading(false)
   }
 
@@ -210,229 +232,168 @@ export default function DaftarPage() {
       role:     json.data?.role ?? 'admin',
     }))
 
-    setStep(3)
+    lanjutKe(3)
     setLoading(false)
   }
 
   // ── Step 3: Konfirmasi ─────────────────────────────────────────────────────
   if (step === 3) {
     return (
-      <div className="login-page">
-        <div className="login-card">
-          <div style={{ textAlign:'center', padding:'1rem 0' }}>
-            <div style={{ fontSize:'3.5rem', marginBottom:'1rem' }}>🎉</div>
-            <h2 style={{
-              fontFamily:'var(--font-serif,Georgia,serif)', fontSize:'1.3rem',
-              fontWeight:700, color:'var(--navy-dark)', marginBottom:'0.5rem',
-            }}>
-              {isDemo ? 'Demo siap digunakan!' : 'Sekolah berhasil didaftarkan!'}
-            </h2>
-            <p style={{ fontSize:'0.875rem', color:'var(--text-muted)', lineHeight:1.7, marginBottom:'0.5rem' }}>
-              Selamat datang, <strong>{nama}</strong>.
-            </p>
-            <p style={{ fontSize:'0.875rem', color:'var(--text-muted)', lineHeight:1.7, marginBottom:'1.75rem' }}>
-              {isDemo
-                ? <>Dashboard <strong>{namaSekolah}</strong> siap untuk presentasi.</>
-                : <><strong>{namaSekolah}</strong> aktif dengan trial gratis <strong>30 hari</strong>.</>
-              }
-            </p>
-
-            <button className="submit-btn" onClick={() => router.push('/dashboard')}>
-              Masuk ke Dashboard →
-            </button>
-          </div>
-        </div>
-      </div>
+      <IsiPanel key={3} arah="maju">
+        <LangkahDaftar langkah={3} />
+        <JudulPanel judul={isDemo ? 'Demo siap digunakan!' : 'Sekolah berhasil didaftarkan!'} panjang />
+        <p className="auth-teks">Selamat datang, <strong>{nama}</strong>.</p>
+        <p className="auth-teks">
+          {isDemo
+            ? <>Dashboard <strong>{namaSekolah}</strong> siap untuk presentasi.</>
+            : <><strong>{namaSekolah}</strong> aktif dengan trial gratis <strong>30 hari</strong>.</>
+          }
+        </p>
+        <button className="auth-tombol" onClick={() => router.push('/dashboard')}>
+          Masuk ke Dashboard <PanahTombol arah="kanan" />
+        </button>
+      </IsiPanel>
     )
   }
 
   // ── Step 1 & 2 ─────────────────────────────────────────────────────────────
   return (
-    <div className="login-page">
-      <div className="login-card">
+    <IsiPanel key={step} arah={arah} className={step === 1 ? 'auth-isi--daftar1' : undefined}>
+      <LangkahDaftar langkah={step} />
+      <JudulPanel
+        judul={step === 1 ? 'Buat Akun' : 'Profil Sekolah'}
+        sub={step === 1
+          ? 'Data pribadi pengelola keuangan sekolah'
+          : 'Informasi sekolah yang akan menggunakan SiKu'}
+      />
 
-        <div style={{ display:'flex', justifyContent:'center', marginBottom:'1rem' }}>
-          <Image src="/image/LogoSiKu.png" alt="Logo SiKu" width={64} height={64} priority />
-        </div>
-
-        {/* Step indicator */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', marginBottom:'1.5rem' }}>
-          {([1, 2] as const).map((s) => (
-            <div key={s} style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
-              <div style={{
-                width:28, height:28, borderRadius:'50%',
-                display:'flex', alignItems:'center', justifyContent:'center',
-                fontSize:'0.75rem', fontWeight:700,
-                background: step >= s ? 'var(--navy)' : '#E2E8F0',
-                color:      step >= s ? '#fff'        : '#94A3B8',
-                transition: 'background 0.2s',
-              }}>
-                {step > s ? '✓' : s}
-              </div>
-              {s < 2 && (
-                <div style={{
-                  width:40, height:2,
-                  background: step > s ? 'var(--navy)' : '#E2E8F0',
-                  transition: 'background 0.2s',
-                }} />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <h1 className="login-title" style={{ marginBottom:'0.25rem' }}>
-          {step === 1 ? 'Buat Akun' : 'Profil Sekolah'}
-        </h1>
-        <p style={{ fontSize:'0.8rem', color:'var(--text-muted)', textAlign:'center', marginBottom:'1.25rem' }}>
-          {step === 1
-            ? 'Data pribadi pengelola keuangan sekolah'
-            : 'Informasi sekolah yang akan menggunakan SiKu'}
-        </p>
-
-        {error && <div className="login-error">{error}</div>}
+      <div className="auth-form">
+        {error && <div className="auth-galat" role="alert">{error}</div>}
 
         {/* ── STEP 1 ── */}
         {step === 1 && (
           <>
-            <div className="form-group">
-              <label className="form-label" htmlFor="nama">Nama Lengkap</label>
-              <input
-                id="nama" type="text" className="form-input"
-                placeholder="cth: Sri Rahayu, S.Pd"
-                value={nama} onChange={(e) => setNama(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
-              />
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="nama">Nama Lengkap</label>
+              <div className="auth-kotak">
+                <input
+                  id="nama" type="text" className="auth-input"
+                  placeholder="cth: Sri Wahyuni, S. Pd" autoComplete="name"
+                  value={nama} onChange={(e) => setNama(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="jabatan">Jabatan</label>
-              <select
-                id="jabatan" className="form-input"
-                value={jabatan} onChange={(e) => setJabatan(e.target.value)}
-                style={{ appearance:'auto' }}
-              >
-                <option value="">-- Pilih Jabatan --</option>
-                {JABATAN_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
-                <option value="lainnya">Lainnya...</option>
-              </select>
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="jabatan">Jabatan</label>
+              <div className="auth-kotak">
+                <select
+                  id="jabatan"
+                  className={`auth-input auth-pilih${jabatan ? '' : ' auth-pilih--samar'}`}
+                  value={jabatan} onChange={(e) => setJabatan(e.target.value)}
+                >
+                  <option value="">-- Pilih Jabatan --</option>
+                  {JABATAN_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
+                  <option value="lainnya">Lainnya...</option>
+                </select>
+                <PanahPilih />
+              </div>
             </div>
 
             {jabatan === 'lainnya' && (
-              <div className="form-group">
-                <label className="form-label" htmlFor="jabatanCustom">Jabatan (isi manual)</label>
-                <input
-                  id="jabatanCustom" type="text" className="form-input"
-                  placeholder="Tulis jabatan kamu"
-                  value={jabatanCustom} onChange={(e) => setJabatanCustom(e.target.value)}
-                />
+              <div className="auth-bidang">
+                <label className="auth-label" htmlFor="jabatanCustom">Jabatan (isi manual)</label>
+                <div className="auth-kotak">
+                  <input
+                    id="jabatanCustom" type="text" className="auth-input"
+                    placeholder="Tulis jabatan kamu"
+                    value={jabatanCustom} onChange={(e) => setJabatanCustom(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
+                  />
+                </div>
               </div>
             )}
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="email">Email Sekolah</label>
-              <input
-                id="email" type="email" className="form-input"
-                placeholder="email@sekolah.sch.id"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value)
-                  if (emailError) setEmailError('')
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
-                style={emailError ? { borderColor: '#EF4444' } : undefined}
-              />
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="email">Email Sekolah</label>
+              <div className={`auth-kotak${emailError ? ' auth-kotak--galat' : ''}`}>
+                <input
+                  id="email" type="email" className="auth-input"
+                  placeholder="email@sekolah.sch.id" autoComplete="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    if (emailError) setEmailError('')
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
+                />
+              </div>
               {emailError && (
-                <p style={{ color: '#EF4444', fontSize: '0.78rem', marginTop: 4 }}>
-                  {emailError}{' '}
-                  <Link href="/" style={{ color: '#EF4444', fontWeight: 600 }}>Masuk di sini</Link>
+                <p className="auth-galat-isian">
+                  {emailError} <Link href="/">Masuk di sini</Link>
                 </p>
               )}
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="password">Password</label>
-              <div style={{ position:'relative' }}>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  className="form-input"
-                  placeholder="Minimal 6 karakter"
-                  value={password} onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
-                  style={{ paddingRight:'2.5rem' }}
-                />
-                <button
-                  type="button" tabIndex={-1}
-                  onClick={() => setShowPassword(v => !v)}
-                  style={{
-                    position:'absolute', right:'0.75rem', top:'50%',
-                    transform:'translateY(-50%)', background:'none',
-                    border:'none', cursor:'pointer', padding:0,
-                    color:'#94a3b8', display:'flex', alignItems:'center',
-                  }}
-                  aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-                >
-                  {showPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  )}
-                </button>
-              </div>
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="password">Password</label>
+              <KolomSandi
+                id="password"
+                value={password}
+                onChange={setPassword}
+                onEnter={handleStep1}
+                placeholder="Minimal 6 karakter"
+                autoComplete="new-password"
+              />
             </div>
-
-            <button
-              className="submit-btn"
-              onClick={handleStep1}
-              disabled={loading}
-              style={{ marginTop:'0.5rem' }}
-            >
-              {loading ? 'Memproses...' : 'Lanjut →'}
-            </button>
           </>
         )}
 
         {/* ── STEP 2 ── */}
         {step === 2 && (
           <>
-            <div className="form-group">
-              <label className="form-label" htmlFor="namaSekolah">Nama Sekolah</label>
-              <input
-                id="namaSekolah" type="text" className="form-input"
-                placeholder="cth: SDIT Al-Hikmah Yogyakarta"
-                value={namaSekolah} onChange={(e) => setNamaSekolah(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="jenjangSekolah">Jenjang Sekolah</label>
-              <select
-                id="jenjangSekolah" className="form-input"
-                value={jenjangSekolah} onChange={(e) => setJenjangSekolah(e.target.value)}
-                style={{ appearance: 'auto' }}
-              >
-                <option value="TK/PAUD">TK/PAUD</option>
-                <option value="SD/MI">SD/MI</option>
-                <option value="SMP/MTs">SMP/MTs</option>
-                <option value="SMA/MA">SMA/MA</option>
-                <option value="SMK">SMK</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="noWa">Nomor WhatsApp Sekolah</label>
-              <div style={{ display: 'flex', alignItems: 'stretch', border: `1.5px solid ${noWaError ? '#EF4444' : 'var(--border)'}`, borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-                <span style={{ padding: '0 0.75rem', background: '#F1F5F9', color: '#475569', fontWeight: 600, fontSize: '0.875rem', display: 'flex', alignItems: 'center', borderRight: `1.5px solid ${noWaError ? '#EF4444' : 'var(--border)'}`, whiteSpace: 'nowrap', userSelect: 'none' }}>
-                  +62
-                </span>
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="namaSekolah">Nama Sekolah</label>
+              <div className="auth-kotak">
                 <input
-                  id="noWa" type="tel"
+                  id="namaSekolah" type="text" className="auth-input"
+                  placeholder="cth: SDIT Al-Hikmah Yogyakarta" autoComplete="organization"
+                  value={namaSekolah} onChange={(e) => setNamaSekolah(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
+                />
+              </div>
+            </div>
+
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="jenjangSekolah">Jenjang Sekolah</label>
+              <div className="auth-kotak">
+                <select
+                  id="jenjangSekolah"
+                  className={`auth-input auth-pilih${jenjangDiubah ? '' : ' auth-pilih--samar'}`}
+                  value={jenjangSekolah}
+                  onChange={(e) => {
+                    setJenjangSekolah(e.target.value)
+                    setJenjangDiubah(true)
+                  }}
+                >
+                  <option value="TK/PAUD">TK/PAUD</option>
+                  <option value="SD/MI">SD/MI</option>
+                  <option value="SMP/MTs">SMP/MTs</option>
+                  <option value="SMA/MA">SMA/MA</option>
+                  <option value="SMK">SMK</option>
+                </select>
+                <PanahPilih />
+              </div>
+            </div>
+
+            <div className="auth-bidang">
+              <label className="auth-label" htmlFor="noWa">Nomor WhatsApp Sekolah</label>
+              <div className={`auth-kotak${noWaError ? ' auth-kotak--galat' : ''}`}>
+                <span className="auth-awalan">+62</span>
+                <input
+                  id="noWa" type="tel" inputMode="numeric"
+                  className="auth-input auth-input--awalan"
                   placeholder="8xxxxxxxxxx"
                   value={noWaSekolah}
                   onChange={(e) => {
@@ -441,46 +402,35 @@ export default function DaftarPage() {
                     if (noWaError) setNoWaError('')
                   }}
                   onKeyDown={(e) => e.key === 'Enter' && handleStep2()}
-                  style={{ flex: 1, border: 'none', outline: 'none', padding: '0.65rem 0.85rem', fontFamily: 'inherit', fontSize: '0.875rem', color: 'var(--text-dark)', background: 'transparent' }}
                 />
               </div>
-              {noWaError && (
-                <p style={{ color: '#EF4444', fontSize: '0.78rem', marginTop: 4 }}>{noWaError}</p>
-              )}
-            </div>
-
-            <div style={{ display:'flex', gap:'0.75rem' }}>
-              <button
-                onClick={() => { setStep(1); setError('') }}
-                style={{
-                  background:'transparent', color:'var(--navy)',
-                  border:'1.5px solid var(--navy)', padding:'0.65rem 1rem',
-                  borderRadius:8, fontWeight:600, fontSize:'0.875rem',
-                  cursor:'pointer', fontFamily:'inherit', flexShrink:0,
-                }}
-              >
-                ← Kembali
-              </button>
-              <button
-                className="submit-btn"
-                onClick={handleStep2}
-                disabled={loading}
-                style={{ flex:1 }}
-              >
-                {loading ? 'Menyimpan...' : 'Simpan & Lanjut →'}
-              </button>
+              {noWaError && <p className="auth-galat-isian">{noWaError}</p>}
             </div>
           </>
         )}
-
-        <p style={{ textAlign:'center', marginTop:'1.25rem', fontSize:'0.8rem', color:'var(--text-muted)' }}>
-          Sudah punya akun?{' '}
-          <Link href="/" style={{ color:'var(--navy)', fontWeight:600, textDecoration:'none' }}>
-            Masuk
-          </Link>
-        </p>
-
       </div>
-    </div>
+
+      {step === 1 ? (
+        <button className="auth-tombol" onClick={handleStep1} disabled={loading}>
+          {loading ? 'Memproses...' : <>Lanjut <PanahTombol arah="kanan" /></>}
+        </button>
+      ) : (
+        <div className="auth-baris-tombol">
+          <button
+            className="auth-tombol auth-tombol--garis"
+            onClick={() => { setArah('mundur'); setStep(1); setError('') }}
+          >
+            <PanahTombol arah="kiri" /> Kembali
+          </button>
+          <button className="auth-tombol" onClick={handleStep2} disabled={loading}>
+            {loading ? 'Menyimpan...' : <>Simpan &amp; Lanjut <PanahTombol arah="kanan" /></>}
+          </button>
+        </div>
+      )}
+
+      <p className="auth-kaki">
+        Sudah punya akun? <Link href="/">Masuk sekarang</Link>
+      </p>
+    </IsiPanel>
   )
 }

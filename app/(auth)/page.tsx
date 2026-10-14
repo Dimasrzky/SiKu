@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import LoginForm from './LoginForm'
 
-// Template '%s | SiKu' dari root layout tidak berlaku untuk page di segment
-// yang sama dengan layout tersebut, jadi judul login ditulis lengkap
+// Halaman ini ada di grup route (auth), segmen anak root layout, jadi template
+// '%s | SiKu' berlaku: judul tab menjadi "Login | SiKu"
 export const metadata: Metadata = {
-  title: 'Login | SiKu',
+  title: 'Login',
   description: 'Masuk ke akun SiKu untuk mengelola SPP, tagihan, dan laporan keuangan sekolah Anda. Bagian dari Siku.',
   keywords: 'login siku, masuk akun pakaisiku, sistem keuangan sekolah, aplikasi SPP',
   alternates: {
