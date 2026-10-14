@@ -145,6 +145,42 @@
 /* Logo khusus layar sempit — di desktop logo ada di pojok kiri bawah */
 .auth-logo-hp { display: none; }
 
+/* ── Tautan kembali ke landing page ──
+   Desktop: pil di ruang kosong di atas judul sambutan, rata kiri dengan judul */
+.auth-beranda {
+  position: absolute;
+  left: calc(100 * var(--u));
+  top: calc(44 * var(--u));
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(7 * var(--u));
+  height: calc(36 * var(--u));
+  padding: 0 calc(16 * var(--u)) 0 calc(12 * var(--u));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 calc(2 * var(--u)) calc(8 * var(--u)) rgba(26, 44, 78, 0.12);
+  color: var(--auth-navy);
+  font-size: calc(15 * var(--u));
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.2s, transform 0.2s;
+  animation: auth-pudar 0.6s 0.4s ease both;
+}
+
+.auth-beranda:hover {
+  background: #fff;
+  transform: translateX(calc(-2 * var(--u)));
+}
+
+.auth-beranda:focus-visible,
+.auth-beranda-hp:focus-visible {
+  outline: 2px solid var(--auth-navy);
+  outline-offset: 2px;
+}
+
+.auth-beranda-hp { display: none; }
+
 /* ── Judul panel + titik kuning ── */
 /* Judul + titik di mockup sedikit lebih lebar dari kolom form: dibiarkan satu baris */
 .auth-judul {
@@ -1224,7 +1260,21 @@
     background: #fff;
   }
 
-  .auth-ilustrasi { display: none; }
+  .auth-ilustrasi,
+  .auth-beranda { display: none; }
+
+  .auth-beranda-hp {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: calc(24 * var(--u));
+    color: var(--auth-redup);
+    font-size: calc(15 * var(--u));
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .auth-beranda-hp:hover { color: var(--auth-navy); }
 
   .auth-panel {
     position: static;
