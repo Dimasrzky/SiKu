@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, type StatusKemitraan } from '@/lib/kemitraan'
+import { JABATAN } from '@/lib/jabatan'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
 import { KolomSandi } from '@/components/auth/KolomSandi'
@@ -13,12 +14,6 @@ import { LangkahDaftar } from '@/components/auth/LangkahDaftar'
 import { ukuranIkon } from '@/components/auth/satuan'
 
 type Step = 1 | 2 | 3
-
-
-const JABATAN_OPTIONS = [
-  'Bendahara', 'Kepala Sekolah',
-  'Tata Usaha', 'Staff Administrasi', 'Operator',
-]
 
 const PanahPilih = () => (
   <ChevronDown className="auth-ikon auth-panah" style={ukuranIkon(24.7)} strokeWidth={1.5} aria-hidden="true" />
@@ -39,8 +34,6 @@ export default function DaftarPage() {
 
   // Step 1
   const [nama, setNama]             = useState('')
-  const [jabatan, setJabatan]       = useState('')
-  const [jabatanCustom, setJabatanCustom] = useState('')
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
 
@@ -53,7 +46,6 @@ export default function DaftarPage() {
   // Pilihan bawaan tampil samar seperti placeholder di mockup sampai diganti user
   const [jenjangDiubah,  setJenjangDiubah]  = useState(false)
 
-  const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
   // Email yang sudah berhasil di-signUp di sesi ini (untuk handle navigasi kembali ke step 1)
   const [step1Email, setStep1Email] = useState('')
 
@@ -70,7 +62,7 @@ export default function DaftarPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('email, nama, jabatan, sekolah, sekolah_id, avatar, role')
+        .select('email, nama, sekolah, sekolah_id, avatar, role')
         .eq('id', session.user.id)
         .maybeSingle()
 
@@ -79,7 +71,6 @@ export default function DaftarPage() {
         localStorage.setItem('siku_auth', JSON.stringify({
           email:   profile.email   ?? session.user.email ?? '',
           nama:    profile.nama    ?? session.user.email ?? '',
-          jabatan: profile.jabatan ?? 'Admin',
           sekolah: profile.sekolah ?? '',
           avatar:  profile.avatar  ?? '',
           role:    profile.role    ?? 'admin',
@@ -99,7 +90,7 @@ export default function DaftarPage() {
 
     // Navigasi kembali ke step 1 dengan email yang sama di sesi ini — skip signUp
     if (step1Email && step1Email === email.trim()) {
-      if (!nama.trim() || !jabatanFinal.trim()) {
+      if (!nama.trim()) {
         setError('Semua field wajib diisi.')
         return
       }
@@ -107,7 +98,7 @@ export default function DaftarPage() {
       return
     }
 
-    if (!nama.trim() || !jabatanFinal.trim() || !email.trim() || !password) {
+    if (!nama.trim() || !email.trim() || !password) {
       setError('Semua field wajib diisi.')
       return
     }
@@ -121,7 +112,8 @@ export default function DaftarPage() {
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { nama: nama.trim(), jabatan: jabatanFinal.trim() } },
+      // Profil awal dibuat dari metadata ini (sebelum langkah 2), jadi jabatannya ikut ditetapkan
+      options: { data: { nama: nama.trim(), jabatan: JABATAN } },
     })
 
     // Email sudah terdaftar: Supabase mengembalikan user.identities = []
@@ -205,7 +197,6 @@ export default function DaftarPage() {
       },
       body: JSON.stringify({
         nama:          nama.trim(),
-        jabatan:       jabatanFinal.trim(),
         namaSekolah:   namaSekolah.trim(),
         noWaSekolah:   '62' + noWaSekolah.trim(),
         jenjangSekolah,
@@ -222,7 +213,6 @@ export default function DaftarPage() {
     localStorage.setItem('siku_auth', JSON.stringify({
       email:     email.trim(),
       nama:      nama.trim(),
-      jabatan:   jabatanFinal.trim(),
       sekolah:   namaSekolah.trim(),
       avatar:    nama.trim().charAt(0).toUpperCase(),
       role:      json.data?.role ?? 'admin',
@@ -283,36 +273,6 @@ export default function DaftarPage() {
                 />
               </div>
             </div>
-
-            <div className="auth-bidang">
-              <label className="auth-label" htmlFor="jabatan">Jabatan</label>
-              <div className="auth-kotak">
-                <select
-                  id="jabatan"
-                  className={`auth-input auth-pilih${jabatan ? '' : ' auth-pilih--samar'}`}
-                  value={jabatan} onChange={(e) => setJabatan(e.target.value)}
-                >
-                  <option value="">-- Pilih Jabatan --</option>
-                  {JABATAN_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
-                  <option value="lainnya">Lainnya...</option>
-                </select>
-                <PanahPilih />
-              </div>
-            </div>
-
-            {jabatan === 'lainnya' && (
-              <div className="auth-bidang">
-                <label className="auth-label" htmlFor="jabatanCustom">Jabatan (isi manual)</label>
-                <div className="auth-kotak">
-                  <input
-                    id="jabatanCustom" type="text" className="auth-input"
-                    placeholder="Tulis jabatan kamu"
-                    value={jabatanCustom} onChange={(e) => setJabatanCustom(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
-                  />
-                </div>
-              </div>
-            )}
 
             <div className="auth-bidang">
               <label className="auth-label" htmlFor="email">Email Sekolah</label>

@@ -25,7 +25,6 @@ const dmSansOpsz = DM_Sans({
 type Profil = {
   email:      string | null
   nama:       string
-  jabatan:    string | null
   sekolah:    string | null
   sekolah_id: string | null
   avatar:     string | null
@@ -46,7 +45,7 @@ export default async function KemitraanPage() {
 
   const { data: profilData } = await supabase
     .from('profiles')
-    .select('email, nama, jabatan, sekolah, sekolah_id, avatar, role')
+    .select('email, nama, sekolah, sekolah_id, avatar, role')
     .eq('id', user.id)
     .maybeSingle()
   const profil = profilData as Profil | null
@@ -85,7 +84,6 @@ export default async function KemitraanPage() {
         sesiLokal={{
           email:   profil.email ?? user.email ?? '',
           nama:    profil.nama,
-          jabatan: profil.jabatan ?? 'Admin',
           sekolah: profil.sekolah ?? sekolah.nama,
           avatar:  profil.avatar ?? '',
           role:    profil.role ?? 'admin',

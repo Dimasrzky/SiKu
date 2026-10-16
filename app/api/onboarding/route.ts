@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { JABATAN } from '@/lib/jabatan'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,11 +27,11 @@ export async function POST(req: NextRequest) {
   if (authError || !user) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 })
 
   const body = await req.json() as {
-    nama: string; jabatan: string; namaSekolah: string; noWaSekolah: string; jenjangSekolah?: string
+    nama: string; namaSekolah: string; noWaSekolah: string; jenjangSekolah?: string
   }
-  const { nama, jabatan, namaSekolah, noWaSekolah, jenjangSekolah = 'SMP/MTs' } = body
+  const { nama, namaSekolah, noWaSekolah, jenjangSekolah = 'SMP/MTs' } = body
 
-  if (!nama?.trim() || !jabatan?.trim() || !namaSekolah?.trim() || !noWaSekolah?.trim()) {
+  if (!nama?.trim() || !namaSekolah?.trim() || !noWaSekolah?.trim()) {
     return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
   }
 
@@ -73,10 +74,10 @@ export async function POST(req: NextRequest) {
       if (delError) console.error(`Reset ${table} error:`, delError.message)
     }
 
-    // Update profiles (nama + jabatan sesuai sekolah yg dikunjungi)
+    // Update profiles (nama sesuai sekolah yg dikunjungi)
     await supabaseAdmin.from('profiles').update({
       nama,
-      jabatan,
+      jabatan: JABATAN,
       sekolah: namaSekolah,
       avatar:  nama.trim().charAt(0).toUpperCase(),
     }).eq('id', user.id)
@@ -140,7 +141,7 @@ export async function POST(req: NextRequest) {
 
   const { error: profileError } = await supabaseAdmin.from('profiles').update({
     nama,
-    jabatan,
+    jabatan: JABATAN,
     sekolah:    namaSekolah,
     avatar:     nama.trim().charAt(0).toUpperCase(),
     sekolah_id: sekolah.id,

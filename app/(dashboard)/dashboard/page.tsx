@@ -19,6 +19,7 @@ import { sisaTagihan, tunggakanSebelum } from '@/lib/tagihanTertagih'
 import { bacaPilihanTersimpan, bagiPerUnit, tagihanBukti } from '@/lib/rincianKomponen'
 import { usePengingat } from '@/lib/usePengingat'
 import { usePengingatManual } from '@/lib/usePengingatManual'
+import { JABATAN } from '@/lib/jabatan'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
 import { SetupChecklist, SkeletonSetupChecklist } from '@/components/SetupChecklist'
@@ -77,7 +78,7 @@ function daysLeftInMonth(): number {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface AuthUser { nama: string; jabatan: string; sekolah: string }
+interface AuthUser { nama: string; sekolah: string }
 
 interface TagihanRaw {
   id:            string
@@ -1266,7 +1267,7 @@ export default function DashboardPage() {
   const kerangka = (
     <SkeletonDashboard
       nama={user?.nama}
-      keterangan={`${user?.jabatan ?? ''}${user?.jabatan && user?.sekolah ? ' – ' : ''}${user?.sekolah ?? ''}`}
+      keterangan={`${JABATAN}${user?.sekolah ? ` – ${user.sekolah}` : ''}`}
       tanggal={dateStr}
       periode={`${mName} ${yyyy}`}
     />
@@ -1454,7 +1455,7 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', flexShrink: 0, boxShadow: '0 0 6px #22C55E' }} />
             <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.65)' }}>
-              {user?.jabatan ?? ''}{user?.jabatan && user?.sekolah ? ' – ' : ''}{user?.sekolah ?? ''}
+              {JABATAN}{user?.sekolah ? ` – ${user.sekolah}` : ''}
             </span>
           </div>
         </div>

@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { BANK_REKENING } from '@/lib/bankRekening'
+import { JABATAN } from '@/lib/jabatan'
 import { SkeletonPengaturan } from '@/components/skeleton/SkeletonPengaturan'
 
 function bankLogoSrc(bank: string): string {
@@ -32,7 +33,6 @@ function teksPerubahanRekening(p: PerubahanRekening | null): string {
 
 interface UserData {
   nama:         string
-  jabatan:      string
   sekolah:      string
   email:        string
   namaSekolah:  string
@@ -108,33 +108,6 @@ function FormField({ label, value, onChange, defaultValue='', type='text', disab
           fontFamily:'inherit', outline:'none',
         }}
       />
-    </div>
-  )
-}
-
-const JABATAN_OPTIONS = ['Bendahara', 'Kepala Sekolah', 'Tata Usaha', 'Staff Administrasi', 'Operator']
-
-function SelectField({ label, value, onChange, options }: {
-  label: string; value: string; onChange: (v: string) => void; options: string[]
-}) {
-  const isCustom = value && !options.includes(value)
-  return (
-    <div style={{ marginBottom:'1rem' }}>
-      <label style={{ display:'block', fontSize:'0.78rem', fontWeight:600, color:'var(--text-mid)', marginBottom:4 }}>{label}</label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width:'100%', padding:'0.65rem 0.9rem',
-          border:'1.5px solid var(--border)', borderRadius:8,
-          fontSize:'0.875rem', color:'var(--text-dark)',
-          fontWeight:500, background:'#fff',
-          fontFamily:'inherit', outline:'none', appearance:'auto',
-        }}
-      >
-        {isCustom && <option value={value}>{value}</option>}
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
     </div>
   )
 }
@@ -230,11 +203,11 @@ export default function PengaturanPage() {
   const [profilForm,     setProfilForm]     = useState({ namaSekolah: '', jenjang: '', alamat: '', yayasan: '' })
   const [teleponInput,   setTeleponInput]   = useState('')
   const [editingAkun,    setEditingAkun]    = useState(false)
-  const [akunForm,       setAkunForm]       = useState({ nama: '', jabatan: '', noWa: '', npsn: '' })
+  const [akunForm,       setAkunForm]       = useState({ nama: '', noWa: '', npsn: '' })
   const [savingAkun,     setSavingAkun]     = useState(false)
   const [saveAkunError,  setSaveAkunError]  = useState('')
   const [userData,       setUserData]       = useState<UserData>({
-    nama: '', jabatan: '', sekolah: '', email: '',
+    nama: '', sekolah: '', email: '',
     namaSekolah: '', telepon: '', jenjang: '', idSekolah: '', idUser: '',
   })
   const [rekening,          setRekening]          = useState<RekeningRow | null>(null)
@@ -247,19 +220,19 @@ export default function PengaturanPage() {
   useEffect(() => {
     const authRaw = localStorage.getItem('siku_auth')
     const auth = authRaw
-      ? (JSON.parse(authRaw) as { nama: string; jabatan: string; sekolah: string })
-      : { nama: '', jabatan: '', sekolah: '' }
+      ? (JSON.parse(authRaw) as { nama: string; sekolah: string })
+      : { nama: '', sekolah: '' }
 
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       const user = session?.user ?? null
 
       const [{ data: profileData }, { data: pData }] = await Promise.all([
-        user ? supabase.from('profiles').select('sekolah_id, nama, jabatan, no_wa, npsn').eq('id', user.id).single() : Promise.resolve({ data: null }),
+        user ? supabase.from('profiles').select('sekolah_id, nama, no_wa, npsn').eq('id', user.id).single() : Promise.resolve({ data: null }),
         supabase.from('pengaturan').select('jenjang_sekolah').maybeSingle(),
       ])
 
-      type ProfileRow = { sekolah_id: string; nama: string; jabatan: string; no_wa: string; npsn: string }
+      type ProfileRow = { sekolah_id: string; nama: string; no_wa: string; npsn: string }
       type PRow       = { jenjang_sekolah: string }
       const profile = profileData as ProfileRow | null
       const p       = pData       as PRow       | null
@@ -295,14 +268,12 @@ export default function PengaturanPage() {
       })
       setAkunForm({
         nama:    profile?.nama    ?? auth.nama    ?? '',
-        jabatan: profile?.jabatan ?? auth.jabatan ?? '',
         noWa:    profile?.no_wa   ?? '',
         npsn:    profile?.npsn    ?? '',
       })
 
       setUserData({
         nama:        auth.nama           ?? '',
-        jabatan:     auth.jabatan        ?? '',
         sekolah:     auth.sekolah        ?? '',
         email:       user?.email         ?? '',
         namaSekolah: sk?.nama            ?? auth.sekolah ?? '',
@@ -389,7 +360,6 @@ export default function PengaturanPage() {
       .from('profiles')
       .update({
         nama:    akunForm.nama.trim(),
-        jabatan: akunForm.jabatan.trim(),
         no_wa:   akunForm.noWa.trim(),
         npsn:    akunForm.npsn.trim(),
         avatar,
@@ -405,7 +375,6 @@ export default function PengaturanPage() {
         const newValue = JSON.stringify({
           ...JSON.parse(authRaw),
           nama:    akunForm.nama.trim(),
-          jabatan: akunForm.jabatan.trim(),
           avatar,
         })
         localStorage.setItem('siku_auth', newValue)
@@ -867,13 +836,9 @@ export default function PengaturanPage() {
             <ViewField label="Nama Lengkap" value={akunForm.nama} />
           )}
 
-          {editingAkun ? (
-            <SelectField label="Jabatan" value={akunForm.jabatan}
-              onChange={v => setAkunForm(f => ({ ...f, jabatan: v }))}
-              options={JABATAN_OPTIONS} />
-          ) : (
-            <ViewField label="Jabatan" value={akunForm.jabatan} />
-          )}
+          {/* SiKu khusus bendahara: jabatan tetap, tidak ikut diedit */}
+          <ViewField label="Jabatan" value={JABATAN} muted />
+
 
           <ViewField label="Email" value={userData.email} muted />
 

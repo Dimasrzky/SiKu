@@ -32,7 +32,7 @@ import {
 import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
-interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string; kemitraan?: StatusKemitraan }
+interface AuthUser { nama: string; sekolah: string; avatar: string; role?: string; kemitraan?: StatusKemitraan }
 
 function getAuthRaw() { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }

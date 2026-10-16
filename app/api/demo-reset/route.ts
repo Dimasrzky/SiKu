@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { cekAksesDemo, hapusDataDemo, hapusRekeningDemo } from '@/lib/demoServer'
+import { JABATAN } from '@/lib/jabatan'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
   // ── Kembalikan ke keadaan awal ────────────────────────────────────────────
   await supabaseAdmin.from('profiles').update({
     nama:    'Tim SiKu',
-    jabatan: 'Super Admin',
+    jabatan: JABATAN,
     sekolah: 'Demo SiKu',
     avatar:  'T',
   }).eq('id', akses.userId)

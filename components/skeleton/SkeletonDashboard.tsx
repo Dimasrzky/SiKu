@@ -19,7 +19,7 @@ const sSel: CSSProperties = { padding: '0.875rem 1.25rem' }
 export const SkeletonDashboard = ({ nama, keterangan, tanggal, periode }: {
   /** Diisi halaman Dashboard (data login sudah terbaca); kosong saat dirender layout */
   nama?:       string
-  /** "Jabatan – Sekolah" */
+  /** "Bendahara – Sekolah" */
   keterangan?: string
   tanggal?:    string
   /** "Oktober 2026" untuk judul Target Pembayaran */

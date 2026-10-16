@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { JABATAN } from '@/lib/jabatan'
 import { Blok, BlokTeks, KepalaHalaman, KerangkaHalaman } from './Blok'
 
 // Kerangka Pengaturan — meniru app/(dashboard)/pengaturan/page.tsx: rekening, profil
@@ -34,6 +35,14 @@ const Isian = ({ label, lebar, penuh = false }: { label: string; lebar: number |
   <div style={{ marginBottom: '1rem', gridColumn: penuh ? '1 / -1' : undefined }}>
     <span style={sLabel}>{label}</span>
     <div style={sKotak}><BlokTeks lebar={lebar} ukuran="0.875rem" /></div>
+  </div>
+)
+
+/** Isian yang nilainya sudah pasti sebelum data dimuat — tampil seperti ViewField `muted` */
+const IsianTetap = ({ label, nilai }: { label: string; nilai: string }) => (
+  <div style={{ marginBottom: '1rem' }}>
+    <span style={sLabel}>{label}</span>
+    <div style={{ ...sKotak, fontSize: '0.875rem', fontWeight: 500, color: '#9CA3AF' }}>{nilai}</div>
   </div>
 )
 
@@ -84,7 +93,7 @@ export const SkeletonPengaturan = () => (
       aksi={<Blok lebar={110} tinggi={38} sudut={8} />}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1.5rem' }}>
         <Isian label="Nama Lengkap" lebar="55%" />
-        <Isian label="Jabatan" lebar={90} />
+        <IsianTetap label="Jabatan" nilai={JABATAN} />
         <Isian label="Email" lebar="60%" />
         <Isian label="No. WhatsApp" lebar={130} />
         <Isian label="NPSN" lebar={90} />

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong } from '../ambilSemua'
+import { JABATAN } from '../jabatan'
 import type { RingkasanTunggakan, TagihanPengingat } from './kelayakan'
 import type { PenilaianSiswa } from './penilaian'
 import { renderPesanPengingat } from './templat'
@@ -32,7 +33,7 @@ export async function muatKonteksPesan(
   return {
     data: {
       namaSekolah: sekolah?.nama ?? '',
-      kontakTu:    (staf.find(s => s.jabatan === 'Bendahara') ?? staf[0])?.no_wa?.trim() || sekolah?.no_wa?.trim() || null,
+      kontakTu:    (staf.find(s => s.jabatan === JABATAN) ?? staf[0])?.no_wa?.trim() || sekolah?.no_wa?.trim() || null,
       kelas:       new Map(kelasRes.data.map(k => [k.id, k])),
     },
     error: null,

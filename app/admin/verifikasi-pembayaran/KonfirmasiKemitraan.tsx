@@ -11,7 +11,6 @@ export interface PendaftaranSekolah {
   /** Nomor WhatsApp sekolah dengan awalan 62, tanpa tanda + */
   noWa:          string | null
   namaBendahara: string | null
-  jabatan:       string | null
   email:         string | null
   /** Waktu daftar, sudah diformat (WIB) */
   terdaftar:     string
@@ -95,7 +94,6 @@ export default function KonfirmasiKemitraan({ daftar }: { daftar: PendaftaranSek
                   </td>
                   <td style={{ padding: '0.75rem 1rem' }}>
                     <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#0F172A' }}>{p.namaBendahara ?? '-'}</div>
-                    {p.jabatan && <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 2 }}>{p.jabatan}</div>}
                     {p.email && <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 2, wordBreak: 'break-all' }}>{p.email}</div>}
                   </td>
                   <td style={{ padding: '0.75rem 1rem', fontSize: '0.83rem', whiteSpace: 'nowrap' }}>

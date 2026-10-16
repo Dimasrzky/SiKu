@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 type SekolahJoin = { id: string; nama: string } | null
 type VerifRow    = { sekolah: SekolahJoin }
 
-type ProfilJoin     = { nama: string | null; jabatan: string | null; email: string | null }
+type ProfilJoin     = { nama: string | null; email: string | null }
 type PengaturanJoin = { jenjang_sekolah: string | null }
 type PendaftaranRow = {
   id:         string
@@ -59,7 +59,7 @@ export default async function VerifikasiPembayaranPage() {
       .limit(2000),
     supabase
       .from('sekolah')
-      .select('id, nama, no_wa, created_at, profiles(nama, jabatan, email), pengaturan(jenjang_sekolah)')
+      .select('id, nama, no_wa, created_at, profiles(nama, email), pengaturan(jenjang_sekolah)')
       .eq('status_kemitraan', 'menunggu')
       .order('created_at', { ascending: true })
       .limit(200),
@@ -74,7 +74,6 @@ export default async function VerifikasiPembayaranPage() {
       jenjang:       pertama(s.pengaturan)?.jenjang_sekolah ?? null,
       noWa,
       namaBendahara: profil?.nama ?? null,
-      jabatan:       profil?.jabatan ?? null,
       email:         profil?.email ?? null,
       terdaftar:     formatTerdaftar(s.created_at),
     }

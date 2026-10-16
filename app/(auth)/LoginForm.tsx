@@ -50,7 +50,7 @@ const LoginForm = () => {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email, nama, jabatan, sekolah, sekolah_id, avatar, role')
+      .select('email, nama, sekolah, sekolah_id, avatar, role')
       .eq('id', data.user.id)
       .single()
 
@@ -71,7 +71,6 @@ const LoginForm = () => {
       JSON.stringify({
         email:   profile?.email   ?? data.user.email ?? '',
         nama:    profile?.nama    ?? data.user.email ?? '',
-        jabatan: profile?.jabatan ?? 'Admin',
         sekolah: profile?.sekolah ?? '',
         avatar:  profile?.avatar  ?? '',
         role:    profile?.role    ?? 'admin',

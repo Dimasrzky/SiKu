@@ -13,7 +13,6 @@ import { IkonDiproses, IkonPapanJam, IkonTerompet, IkonWhatsApp } from './IkonKe
 export interface SesiLokal {
   email:   string
   nama:    string
-  jabatan: string
   sekolah: string
   avatar:  string
   role:    string

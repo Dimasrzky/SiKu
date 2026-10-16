@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase-service'
 import { kunciUnit, rentangRencana, unitBayar, type PilihanBayar } from '@/lib/rincianKomponen'
 import { muatBuktiMenunggu, muatTertagih, rincianSisa, sisaTagihan, type TagihanBayar } from '@/lib/tagihanTertagih'
+import { JABATAN } from '@/lib/jabatan'
 import BayarWizard from './BayarWizard'
 import BayarHeader from './BayarHeader'
 import BayarFooter from './BayarFooter'
@@ -151,7 +152,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
   const rekening = rekeningData as RekeningRow | null
 
   const staffList = (staffAll ?? []) as StaffRow[]
-  const staff = staffList.find(s => s.jabatan === 'Bendahara') ?? staffList[0] ?? null
+  const staff = staffList.find(s => s.jabatan === JABATAN) ?? staffList[0] ?? null
 
   const badges: BeasiswaBadge[] = ((beasiswaRaw ?? []) as unknown as BeasiswaRaw[])
     .filter(r => r.beasiswa)
