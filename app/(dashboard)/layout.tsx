@@ -26,10 +26,13 @@ import {
   Database,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, simpanStatusLokal, statusLokal, type StatusKemitraan,
+} from '@/lib/kemitraan'
 import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
-interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string }
+interface AuthUser { nama: string; jabatan: string; sekolah: string; avatar: string; role?: string; kemitraan?: StatusKemitraan }
 
 function getAuthRaw() { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
@@ -450,6 +453,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!localStorage.getItem('siku_auth')) router.replace('/')
   }, [router])
 
+  // Sekolah yang belum dikonfirmasi tim Equanusa, atau baru dikonfirmasi dan belum melihat
+  // halaman aktivasinya, diarahkan ke /kemitraan. Diperiksa sekali per muat halaman.
+  useEffect(() => {
+    let batal = false
+    const periksa = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session || batal) return
+      const kemitraan = await bacaKemitraan(supabase, session.user.id)
+      if (batal) return
+      if (!kemitraan.data) {
+        // Gagal dibaca (atau akun tanpa sekolah): dashboard tetap terbuka, kecuali status
+        // terakhirnya masih menunggu — biar halaman kemitraan yang memutuskan
+        if (statusLokal() === 'menunggu') router.replace(RUTE_KEMITRAAN)
+        return
+      }
+      if (perluHalamanKemitraan(kemitraan.data)) {
+        router.replace(RUTE_KEMITRAAN)
+        return
+      }
+      simpanStatusLokal(kemitraan.data.status)
+    }
+    periksa()
+    return () => { batal = true }
+  }, [router])
+
   useEffect(() => {
     const load = async () => {
       // Render optimistis dari cache, lalu selalu fetch DB untuk pastikan data fresh
@@ -476,8 +504,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   // Data login dibaca dari localStorage, jadi di server dan sesaat sebelum hydrate
-  // belum ada: tampilkan kerangka sidebar + kerangka halaman sesuai URL
-  if (!user) return <SkeletonShell pathname={pathname} />
+  // belum ada: tampilkan kerangka sidebar + kerangka halaman sesuai URL. Sekolah yang
+  // terakhir diketahui masih menunggu konfirmasi juga melihat kerangka sampai dialihkan.
+  if (!user || user.kemitraan === 'menunggu') return <SkeletonShell pathname={pathname} />
 
   const schoolInitial   = user?.sekolah?.charAt(0)?.toUpperCase() || 'S'
   const tahunAjaranDone = setupSteps['tahun_ajaran']     === true

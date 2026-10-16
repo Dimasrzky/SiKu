@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, type StatusKemitraan } from '@/lib/kemitraan'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
 import { KolomSandi } from '@/components/auth/KolomSandi'
@@ -53,7 +54,6 @@ export default function DaftarPage() {
   const [jenjangDiubah,  setJenjangDiubah]  = useState(false)
 
   const jabatanFinal = jabatan === 'lainnya' ? jabatanCustom : jabatan
-  const [isDemo, setIsDemo] = useState(false)
   // Email yang sudah berhasil di-signUp di sesi ini (untuk handle navigasi kembali ke step 1)
   const [step1Email, setStep1Email] = useState('')
 
@@ -62,7 +62,7 @@ export default function DaftarPage() {
     setStep(s)
   }
 
-  // Jika sudah login, arahkan ke dashboard (onboarding selesai) atau biarkan isi form dari awal
+  // Jika sudah login, arahkan ke dashboard atau halaman kemitraan (onboarding selesai), atau biarkan isi form dari awal
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -75,6 +75,7 @@ export default function DaftarPage() {
         .maybeSingle()
 
       if (profile?.sekolah_id) {
+        const kemitraan = await bacaKemitraan(supabase, session.user.id)
         localStorage.setItem('siku_auth', JSON.stringify({
           email:   profile.email   ?? session.user.email ?? '',
           nama:    profile.nama    ?? session.user.email ?? '',
@@ -82,8 +83,9 @@ export default function DaftarPage() {
           sekolah: profile.sekolah ?? '',
           avatar:  profile.avatar  ?? '',
           role:    profile.role    ?? 'admin',
+          ...(kemitraan.data ? { kemitraan: kemitraan.data.status } : {}),
         }))
-        router.replace('/dashboard')
+        router.replace(kemitraan.data && perluHalamanKemitraan(kemitraan.data) ? RUTE_KEMITRAAN : '/dashboard')
       }
       // Onboarding belum selesai — form tetap kosong, user isi sendiri
     }
@@ -128,7 +130,7 @@ export default function DaftarPage() {
 
     if (emailSudahAda || signUpError?.message === 'User already registered') {
       if (email.trim() === 'demosiku@gmail.com') {
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
         })
@@ -137,13 +139,7 @@ export default function DaftarPage() {
           setLoading(false)
           return
         }
-        const userId = signInData.user?.id
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('sekolah_id, role')
-          .eq('id', userId!)
-          .single()
-        if (profile?.role === 'super_admin') setIsDemo(true)
+        // Peran super_admin diperiksa /api/onboarding; jawabannya menentukan langkah 3
         lanjutKe(2)
         setLoading(false)
         return
@@ -216,7 +212,7 @@ export default function DaftarPage() {
       }),
     })
 
-    const json = await res.json() as { data?: { role: string }; error?: string }
+    const json = await res.json() as { data?: { role: string; kemitraan?: StatusKemitraan }; error?: string }
     if (!res.ok) {
       setError(json.error ?? 'Gagal menyimpan data sekolah.')
       setLoading(false)
@@ -224,31 +220,34 @@ export default function DaftarPage() {
     }
 
     localStorage.setItem('siku_auth', JSON.stringify({
-      email:    email.trim(),
-      nama:     nama.trim(),
-      jabatan:  jabatanFinal.trim(),
-      sekolah:  namaSekolah.trim(),
-      avatar:   nama.trim().charAt(0).toUpperCase(),
-      role:     json.data?.role ?? 'admin',
+      email:     email.trim(),
+      nama:      nama.trim(),
+      jabatan:   jabatanFinal.trim(),
+      sekolah:   namaSekolah.trim(),
+      avatar:    nama.trim().charAt(0).toUpperCase(),
+      role:      json.data?.role ?? 'admin',
+      kemitraan: json.data?.kemitraan ?? 'menunggu',
     }))
+
+    // Sekolah baru menunggu konfirmasi kemitraan dari tim Equanusa; tombol tetap
+    // "Menyimpan..." sampai halamannya terbuka
+    if (json.data?.role !== 'super_admin') {
+      router.push(RUTE_KEMITRAAN)
+      return
+    }
 
     lanjutKe(3)
     setLoading(false)
   }
 
-  // ── Step 3: Konfirmasi ─────────────────────────────────────────────────────
+  // ── Step 3: Konfirmasi (hanya akun demo) ───────────────────────────────────
   if (step === 3) {
     return (
       <IsiPanel key={3} arah="maju">
         <LangkahDaftar langkah={3} />
-        <JudulPanel judul={isDemo ? 'Demo siap digunakan!' : 'Sekolah berhasil didaftarkan!'} panjang />
+        <JudulPanel judul="Demo siap digunakan!" panjang />
         <p className="auth-teks">Selamat datang, <strong>{nama}</strong>.</p>
-        <p className="auth-teks">
-          {isDemo
-            ? <>Dashboard <strong>{namaSekolah}</strong> siap untuk presentasi.</>
-            : <><strong>{namaSekolah}</strong> aktif dengan trial gratis <strong>30 hari</strong>.</>
-          }
-        </p>
+        <p className="auth-teks">Dashboard <strong>{namaSekolah}</strong> siap untuk presentasi.</p>
         <button className="auth-tombol" onClick={() => router.push('/dashboard')}>
           Masuk ke Dashboard <PanahTombol arah="kanan" />
         </button>

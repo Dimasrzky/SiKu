@@ -14,6 +14,7 @@ export default function robots(): MetadataRoute.Robots {
         '/pembayaran',
         '/laporan',
         '/pengaturan',
+        '/kemitraan',
       ],
     },
     sitemap: `${baseUrl}/sitemap.xml`,

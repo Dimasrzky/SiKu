@@ -10,10 +10,15 @@ interface PendingSekolah {
   count: number
 }
 
-export default function NotificationBell({ pending }: { pending: PendingSekolah[] }) {
+interface Pendaftaran {
+  id:   string
+  nama: string
+}
+
+export default function NotificationBell({ pending, pendaftaran }: { pending: PendingSekolah[]; pendaftaran: Pendaftaran[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const total = pending.reduce((s, p) => s + p.count, 0)
+  const total = pending.reduce((s, p) => s + p.count, 0) + pendaftaran.length
 
   useEffect(() => {
     function onOutsideClick(e: MouseEvent) {
@@ -52,6 +57,28 @@ export default function NotificationBell({ pending }: { pending: PendingSekolah[
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #F1F5F9', fontWeight: 700, fontSize: '0.85rem', color: '#1A2C4E' }}>
             Notifikasi
           </div>
+          {pendaftaran.map(p => (
+            <a
+              key={p.id}
+              href="#kemitraan"
+              onClick={() => setOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                padding: '0.75rem 1rem', borderBottom: '1px solid #F8FAFC', textDecoration: 'none',
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: '0.83rem', fontWeight: 600, color: '#0F172A' }}>{p.nama}</span>
+                <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748B' }}>Pendaftaran baru, menunggu konfirmasi kemitraan</span>
+              </span>
+              <span style={{
+                padding: '2px 8px', background: '#DCE9FF', color: '#1A2C4E', borderRadius: 20,
+                fontSize: '0.68rem', fontWeight: 800, flexShrink: 0,
+              }}>
+                Baru
+              </span>
+            </a>
+          ))}
           {pending.length === 0 ? (
             <div style={{ padding: '1.5rem 1rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.82rem' }}>
               Tidak ada bukti transfer yang menunggu.

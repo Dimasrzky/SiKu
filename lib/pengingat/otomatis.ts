@@ -11,8 +11,9 @@ import { awalHariWIB, bulanTahunWIB } from './waktu'
 
 // Pengingat otomatis: tiap pagi, tagihan yang jatuh tempo 7, 3, dan 1 hari lagi
 // dibuatkan job prioritas 1 (keputusan 1 Okt 2026 — spec aslinya mengingatkan pada hari
-// jatuh tempo). Hanya untuk sekolah yang saklarnya menyala dan kelas yang dipilih di
-// modal "Ingatkan orang tua". Tidak ada pesan yang dikirim dari sini.
+// jatuh tempo). Hanya untuk sekolah yang saklarnya menyala dan kemitraannya sudah
+// dikonfirmasi, dan kelas yang dipilih di modal "Ingatkan orang tua". Tidak ada pesan
+// yang dikirim dari sini.
 //
 // Sebelum menilai, tagihan bulan berjalan diterbitkan lebih dulu dengan fungsi yang sama
 // dengan halaman Tagihan Aktif — tanpa itu pengingat bergantung pada admin membuka
@@ -68,9 +69,15 @@ async function sekolahPenerima(db: SupabaseClient): Promise<{ data: { sekolah_id
     ({ data, error } = await db.from('pengaturan').select('sekolah_id').eq('pengingat_wa_aktif', true).limit(1000))
   }
   if (error) return { data: null, error: 'Daftar sekolah gagal dimuat.' }
+
+  // Pesan dikirim lewat nomor WhatsApp platform: hanya sekolah mitra yang sudah dikonfirmasi
+  const { data: aktif, error: aktifErr } = await db.from('sekolah').select('id').eq('status_kemitraan', 'aktif').limit(1000)
+  if (aktifErr) return { data: null, error: 'Daftar sekolah gagal dimuat.' }
+  const terkonfirmasi = new Set(((aktif ?? []) as { id: string }[]).map(s => s.id))
+
   return {
     // null = belum pernah diatur di modal → semua kelas; daftar kosong = sengaja tidak ada
-    data: ((data ?? []) as Baris[]).map(b => ({
+    data: ((data ?? []) as Baris[]).filter(b => terkonfirmasi.has(b.sekolah_id)).map(b => ({
       sekolah_id: b.sekolah_id,
       kelas:      b.pengingat_kelas_ids ? new Set(b.pengingat_kelas_ids) : null,
     })),

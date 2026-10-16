@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import AdminLogoutButton from '../AdminLogoutButton'
 import NotificationBell from './NotificationBell'
+import KonfirmasiKemitraan, { type PendaftaranSekolah } from './KonfirmasiKemitraan'
 
 export const metadata: Metadata = {
   title: 'Verifikasi Pembayaran',
@@ -15,11 +16,30 @@ export const metadata: Metadata = {
 type SekolahJoin = { id: string; nama: string } | null
 type VerifRow    = { sekolah: SekolahJoin }
 
+type ProfilJoin     = { nama: string | null; jabatan: string | null; email: string | null }
+type PengaturanJoin = { jenjang_sekolah: string | null }
+type PendaftaranRow = {
+  id:         string
+  nama:       string
+  no_wa:      string | null
+  created_at: string
+  // Relasi balik: profiles selalu daftar; pengaturan bisa objek kalau sekolah_id-nya unik
+  profiles:   ProfilJoin[] | ProfilJoin | null
+  pengaturan: PengaturanJoin[] | PengaturanJoin | null
+}
+
 interface SekolahFolder {
   id:    string
   nama:  string
   count: number
 }
+
+const pertama = <T,>(v: T[] | T | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
+
+const formatTerdaftar = (iso: string) =>
+  new Date(iso).toLocaleString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
+  }) + ' WIB'
 
 export default async function VerifikasiPembayaranPage() {
   const cookieStore = await cookies()
@@ -29,14 +49,36 @@ export default async function VerifikasiPembayaranPage() {
 
   const supabase = createServiceClient()
 
-  const [{ data: sekolahData }, { data }] = await Promise.all([
-    supabase.from('sekolah').select('id, nama').order('nama').limit(2000),
+  // Sekolah yang belum dikonfirmasi tidak bisa membuat tagihan, jadi tidak punya folder bukti
+  const [{ data: sekolahData }, { data }, { data: pendaftaranData }] = await Promise.all([
+    supabase.from('sekolah').select('id, nama').eq('status_kemitraan', 'aktif').order('nama').limit(2000),
     supabase
       .from('verifikasi_pembayaran')
       .select('sekolah:sekolah_id(id, nama)')
       .eq('status', 'menunggu')
       .limit(2000),
+    supabase
+      .from('sekolah')
+      .select('id, nama, no_wa, created_at, profiles(nama, jabatan, email), pengaturan(jenjang_sekolah)')
+      .eq('status_kemitraan', 'menunggu')
+      .order('created_at', { ascending: true })
+      .limit(200),
   ])
+
+  const pendaftaran: PendaftaranSekolah[] = ((pendaftaranData ?? []) as unknown as PendaftaranRow[]).map(s => {
+    const profil = pertama(s.profiles)
+    const noWa   = s.no_wa?.replace(/\D/g, '') || null
+    return {
+      id:            s.id,
+      namaSekolah:   s.nama,
+      jenjang:       pertama(s.pengaturan)?.jenjang_sekolah ?? null,
+      noWa,
+      namaBendahara: profil?.nama ?? null,
+      jabatan:       profil?.jabatan ?? null,
+      email:         profil?.email ?? null,
+      terdaftar:     formatTerdaftar(s.created_at),
+    }
+  })
 
   const sekolahList = (sekolahData ?? []) as { id: string; nama: string }[]
   const rows = (data ?? []) as unknown as VerifRow[]
@@ -76,10 +118,15 @@ export default async function VerifikasiPembayaranPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <NotificationBell pending={folders.filter(f => f.count > 0)} />
+            <NotificationBell
+              pending={folders.filter(f => f.count > 0)}
+              pendaftaran={pendaftaran.map(p => ({ id: p.id, nama: p.namaSekolah }))}
+            />
             <AdminLogoutButton />
           </div>
         </div>
+
+        <KonfirmasiKemitraan daftar={pendaftaran} />
 
         {/* Folder grid */}
         {folders.length === 0 ? (

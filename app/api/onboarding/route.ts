@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     }, { onConflict: 'sekolah_id' })
 
     return NextResponse.json({
-      data: { sekolahId: DEMO_SEKOLAH_ID, role: 'super_admin' },
+      data: { sekolahId: DEMO_SEKOLAH_ID, role: 'super_admin', kemitraan: 'aktif' },
       error: null,
     })
   }
@@ -123,9 +123,14 @@ export async function POST(req: NextRequest) {
   const kode           = `TRIAL-${Date.now().toString(36).toUpperCase()}`
   const trialExpiresAt  = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
+  // Sekolah baru belum bisa memakai dashboard sampai tim Equanusa mengonfirmasi kemitraannya
+  // di dasbor admin. Masa trial dihitung ulang saat dikonfirmasi.
   const { data: sekolah, error: sekolahError } = await supabaseAdmin
     .from('sekolah')
-    .insert({ nama: namaSekolah, kode, jenis: 'trial', trial_expires_at: trialExpiresAt, no_wa: noWaSekolah })
+    .insert({
+      nama: namaSekolah, kode, jenis: 'trial', trial_expires_at: trialExpiresAt, no_wa: noWaSekolah,
+      status_kemitraan: 'menunggu',
+    })
     .select('id')
     .single()
 
@@ -163,7 +168,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    data: { sekolahId: sekolah.id, role: 'admin' },
+    data: { sekolahId: sekolah.id, role: 'admin', kemitraan: 'menunggu' },
     error: null,
   })
 }

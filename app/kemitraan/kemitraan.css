@@ -1,0 +1,523 @@
+/* ═══════════════════════════════════════════
+   HALAMAN KONFIRMASI KEMITRAAN — /kemitraan
+   Ukuran memakai satuan desain --u: 1 px pada frame Figma selebar 1440. Skalanya sama
+   dengan halaman Login & Daftar (app/(auth)/auth.css), jadi ukurannya tidak melompat
+   saat bendahara berpindah dari daftar ke halaman ini.
+   Angka-angkanya hasil ukur piksel dari kedua mockup, jadi sengaja tidak dibulatkan.
+═══════════════════════════════════════════ */
+
+.km {
+  --u: clamp(0.72px, min(calc(100vw / 1440), calc(100vh / 1024)), 1.25px);
+  --km-navy: #21396B;
+  --km-navy-tombol: #1A2C4E;
+  --km-biru: #A3CDFE;
+  --km-oranye: #DC832C;
+  --km-hijau: #69C183;
+  --km-abu: #A6AFC3;
+  --km-redup: #5C6E92;
+  --km-samar: #5B6882;
+  --km-krem: #F7F6F3;
+  --km-merah: #D35E5E;
+  --km-wa: #25D366;
+  /* Bayangan kartu di mockup kebiruan, bukan hitam */
+  --km-bayangan: 0 calc(2 * var(--u)) calc(16 * var(--u)) rgba(0, 42, 119, 0.42);
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--km-biru);
+  color: var(--km-navy);
+  /* DM Sans optical size 40 + jarak huruf -2%: sama dengan gaya teks di Figma */
+  font-family: var(--font-kemitraan), var(--font-dm-sans), system-ui, sans-serif;
+  font-variation-settings: 'opsz' 40;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+/* Area di luar halaman (gulir berlebih) ikut biru */
+body:has(.km) { background: #A3CDFE; }
+
+/* :where() = spesifisitas nol, jadi kelas di bawah tetap menang */
+:where(.km) :where(button, a) {
+  font: inherit;
+  letter-spacing: inherit;
+  font-variation-settings: inherit;
+}
+
+:where(.km) :where(p, h1, h2, ol) { margin: 0; }
+
+/* ── Header ── */
+.km-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(24 * var(--u));
+  height: calc(118.3 * var(--u));
+  padding: 0 calc(36.7 * var(--u)) 0 calc(40.7 * var(--u));
+  background: var(--km-navy);
+}
+
+.km-identitas {
+  display: flex;
+  align-items: center;
+  gap: calc(19.3 * var(--u));
+  min-width: 0;
+}
+
+.km-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(69.4 * var(--u));
+  height: calc(69.4 * var(--u));
+  border-radius: 50%;
+  background: #fff;
+  color: var(--km-navy);
+  font-size: calc(28 * var(--u));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.km-identitas-teks { min-width: 0; }
+
+.km-sekolah,
+.km-bendahara {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.km-sekolah {
+  color: #fff;
+  font-size: calc(32 * var(--u));
+  font-weight: 600;
+  line-height: calc(39.6 * var(--u));
+}
+
+.km-bendahara {
+  position: relative;
+  top: calc(2.3 * var(--u));
+  color: #B9BEC8;
+  font-size: calc(22 * var(--u));
+  line-height: calc(29.25 * var(--u));
+}
+
+/* Lebar pil tetap seperti mockup; isinya rata kiri */
+.km-keluar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(13.8 * var(--u));
+  width: calc(134.2 * var(--u));
+  height: calc(39.3 * var(--u));
+  padding: 0 0 0 calc(20.9 * var(--u));
+  border: 0;
+  border-radius: 999px;
+  background: var(--km-merah);
+  color: #fff;
+  font-size: calc(18.3 * var(--u));
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.km-keluar:hover { filter: brightness(1.06); }
+.km-keluar:disabled { opacity: 0.7; cursor: default; }
+
+.km-keluar svg {
+  flex: none;
+  width: calc(24.2 * var(--u));
+  height: calc(24.2 * var(--u));
+  stroke-width: 2.4;
+}
+
+/* ── Kolom isi ── */
+.km-isi {
+  width: calc(815 * var(--u));
+  margin: 0 auto;
+  padding: calc(54 * var(--u)) 0 calc(58 * var(--u));
+}
+
+.km-hero,
+.km-kartu {
+  border-radius: calc(16 * var(--u));
+  box-shadow: var(--km-bayangan);
+}
+
+/* ── Kartu atas (navy saat aktif, oranye saat menunggu) ── */
+.km-hero {
+  padding: calc(38.2 * var(--u)) calc(62 * var(--u)) calc(38 * var(--u));
+  background: var(--km-oranye);
+  color: #fff;
+  text-align: center;
+}
+
+.km--aktif .km-hero { background: var(--km-navy); }
+
+.km-hero-ikon {
+  display: grid;
+  place-items: center;
+  width: calc(92.5 * var(--u));
+  height: calc(92.5 * var(--u));
+  margin: 0 auto;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--km-oranye);
+}
+
+.km--aktif .km-hero-ikon { color: var(--km-navy); }
+
+.km-hero-ikon svg {
+  width: calc(59 * var(--u));
+  height: calc(59 * var(--u));
+  stroke-width: 2.2;
+}
+
+.km--aktif .km-hero-ikon svg { width: calc(58 * var(--u)); height: calc(58 * var(--u)); }
+
+.km-hero-judul {
+  margin: calc(37.8 * var(--u)) 0 0;
+  font-size: calc(36 * var(--u));
+  font-weight: 600;
+  line-height: calc(43.2 * var(--u));
+}
+
+.km-hero-teks {
+  margin-top: calc(12.9 * var(--u));
+  font-size: calc(26 * var(--u));
+  line-height: calc(34.7 * var(--u));
+}
+
+.km-hero-teks strong { font-weight: 600; }
+
+/* ── Kartu tahapan ── */
+.km-kartu {
+  margin-top: calc(35 * var(--u));
+  overflow: hidden;
+}
+
+.km-kartu-langkah { background: #fff; }
+
+.km-langkah {
+  margin: 0;
+  padding: calc(38.5 * var(--u)) calc(40 * var(--u)) 0 calc(45.2 * var(--u));
+  list-style: none;
+}
+
+.km-langkah-item {
+  display: flex;
+  gap: calc(25.9 * var(--u));
+}
+
+/* Jarak ke judul tahap berikutnya, di dalam kolom teks supaya kolom kiri (dan garis
+   penghubungnya) ikut memanjang sampai lingkaran berikutnya. Di mockup menunggu
+   jaraknya berbeda tiap tahap. */
+.km-langkah-item:not(:last-child) .km-langkah-isi { padding-bottom: calc(84 * var(--u)); }
+.km--menunggu .km-langkah-item:nth-child(1) .km-langkah-isi { padding-bottom: calc(67.4 * var(--u)); }
+.km--menunggu .km-langkah-item:nth-child(2) .km-langkah-isi { padding-bottom: calc(51.9 * var(--u)); }
+
+.km-langkah-kiri {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: calc(71 * var(--u));
+}
+
+/* Lingkaran: cincin luar + celah putih + isi */
+.km-bulat {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(71 * var(--u));
+  height: calc(71 * var(--u));
+  box-sizing: border-box;
+  padding: calc(4.2 * var(--u));
+  border: calc(5.3 * var(--u)) solid var(--km-navy);
+  border-radius: 50%;
+  background: var(--km-navy) content-box;
+  color: #fff;
+}
+
+.km-bulat svg {
+  width: calc(37 * var(--u));
+  height: calc(37 * var(--u));
+  stroke-width: 2.3;
+}
+
+.km-bulat--proses {
+  border-color: var(--km-oranye);
+  background-color: var(--km-oranye);
+}
+
+.km-bulat--proses svg { width: calc(22.7 * var(--u)); height: calc(22.7 * var(--u)); stroke-width: 2.2; }
+
+/* Tahap terkunci: lingkaran abu lebih kecil tanpa cincin */
+.km-bulat--kunci {
+  width: calc(53.7 * var(--u));
+  height: calc(53.7 * var(--u));
+  padding: 0;
+  border: calc(1.5 * var(--u)) solid #959DAD;
+  background: var(--km-abu);
+}
+
+.km-bulat--kunci svg { width: calc(25 * var(--u)); height: calc(25 * var(--u)); stroke-width: 2.2; }
+
+.km-penghubung {
+  flex: 1;
+  width: calc(5 * var(--u));
+  margin: calc(22.7 * var(--u)) 0 calc(21.8 * var(--u));
+  border-radius: 999px;
+  background: var(--km-abu);
+}
+
+.km-langkah-isi {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.km-langkah-judul {
+  color: var(--km-navy);
+  font-size: calc(26.25 * var(--u));
+  font-weight: 500;
+  line-height: calc(34.45 * var(--u));
+}
+
+.km-langkah-judul--samar { color: var(--km-samar); }
+
+.km-langkah-teks {
+  max-width: calc(480 * var(--u));
+  margin-top: calc(8 * var(--u));
+  color: var(--km-redup);
+  font-size: calc(20 * var(--u));
+  line-height: calc(27.8 * var(--u));
+}
+
+.km-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(12.2 * var(--u));
+  height: calc(32.8 * var(--u));
+  margin-top: calc(10 * var(--u));
+  padding: 0 calc(22.3 * var(--u)) 0 calc(17.6 * var(--u));
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-size: calc(21 * var(--u));
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.km-badge svg {
+  flex: none;
+  width: calc(22.7 * var(--u));
+  height: calc(22.7 * var(--u));
+}
+
+.km-badge--hijau { background: var(--km-hijau); color: #fff; }
+
+.km-badge--oranye {
+  gap: calc(13.7 * var(--u));
+  height: calc(35.9 * var(--u));
+  padding-right: calc(36.4 * var(--u));
+  padding-left: calc(12.6 * var(--u));
+  border: calc(1.5 * var(--u)) solid var(--km-oranye);
+  background: #FFE0C1;
+  color: var(--km-oranye);
+}
+
+.km-badge--abu {
+  height: calc(34 * var(--u));
+  border: calc(1.5 * var(--u)) solid #9AA3B6;
+  background: var(--km-abu);
+  color: #fff;
+}
+
+.km-badge--abu svg { width: calc(21 * var(--u)); height: calc(21 * var(--u)); }
+
+/* ── Tombol ── */
+.km-tombol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: calc(8 * var(--u));
+  font-size: calc(27 * var(--u));
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.15s;
+}
+
+.km-tombol:disabled { cursor: default; }
+
+/* Menunggu: area krem di bawah kartu */
+.km-aksi {
+  display: flex;
+  flex-direction: column;
+  gap: calc(15.4 * var(--u));
+  margin-top: calc(28.8 * var(--u));
+  padding: calc(40 * var(--u)) calc(52.5 * var(--u));
+  background: var(--km-krem);
+}
+
+/* Isinya di mockup sedikit ke kiri dari tengah tombol */
+.km-tombol--wa {
+  gap: calc(18.8 * var(--u));
+  height: calc(80.2 * var(--u));
+  padding-right: calc(10 * var(--u));
+  background: var(--km-wa);
+  color: #fff;
+  font-size: calc(27.3 * var(--u));
+  font-weight: 400;
+  box-shadow: 0 calc(4 * var(--u)) calc(6 * var(--u)) rgba(0, 42, 119, 0.22);
+}
+
+.km-tombol--wa:hover { filter: brightness(1.04); }
+
+.km-tombol--wa svg { width: calc(41 * var(--u)); height: calc(41 * var(--u)); flex: none; }
+
+.km-tombol--garis {
+  gap: calc(16.5 * var(--u));
+  height: calc(68.6 * var(--u));
+  border: calc(2 * var(--u)) solid #C0C5D1;
+  background: var(--km-krem);
+  color: var(--km-navy);
+  font-size: calc(25.2 * var(--u));
+  font-weight: 700;
+}
+
+.km-tombol--garis:hover:not(:disabled) { background: #EFEEEA; }
+
+.km-tombol--garis svg { width: calc(40 * var(--u)); height: calc(40 * var(--u)); flex: none; stroke-width: 2.2; }
+
+@keyframes km-putar { to { transform: rotate(-360deg); } }
+
+.km-putar { animation: km-putar 0.8s linear infinite; }
+
+/* Aktif: tombol navy di dalam kartu putih */
+.km-aksi-aktif {
+  padding: calc(53.6 * var(--u)) calc(52.5 * var(--u)) calc(48.8 * var(--u));
+}
+
+.km-tombol--navy {
+  gap: calc(19 * var(--u));
+  height: calc(67.2 * var(--u));
+  border: 0;
+  background: var(--km-navy-tombol);
+  color: #fff;
+  font-size: calc(27 * var(--u));
+  font-weight: 500;
+  box-shadow: 0 calc(4 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, 0.25);
+}
+
+.km-tombol--navy:hover:not(:disabled) { transform: translateY(calc(-1 * var(--u))); }
+.km-tombol--navy:disabled { opacity: 0.85; }
+
+.km-tombol--navy svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); flex: none; stroke-width: 2.4; }
+
+/* ── Kartu "Mulai Dari Mana?" ── */
+.km-mulai {
+  padding: calc(35.95 * var(--u)) 0 calc(34.4 * var(--u));
+  background: var(--km-krem);
+}
+
+.km-mulai-judul {
+  margin: 0;
+  padding-left: calc(44.6 * var(--u));
+  color: var(--km-navy);
+  font-size: calc(25.5 * var(--u));
+  font-weight: 700;
+  line-height: calc(34.3 * var(--u));
+}
+
+.km-mulai-daftar {
+  margin: calc(34.2 * var(--u)) calc(25 * var(--u)) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.km-mulai-item {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(29.1 * var(--u));
+  padding: calc(20.6 * var(--u)) calc(20 * var(--u)) calc(17.3 * var(--u)) calc(20.7 * var(--u));
+  border-top: calc(2 * var(--u)) solid #E6E8EC;
+}
+
+.km-mulai-item:first-child { padding-top: 0; border-top: 0; }
+.km-mulai-item:last-child { padding-bottom: 0; }
+
+/* Jarak antarbaris di mockup tidak seragam */
+.km-mulai-item:nth-child(1) { padding-bottom: calc(19.6 * var(--u)); }
+.km-mulai-item:nth-child(2) { padding-top: calc(22.9 * var(--u)); padding-bottom: calc(15 * var(--u)); }
+.km-mulai-item:nth-child(3) { padding-top: calc(18.3 * var(--u)); }
+
+.km-nomor {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(60.1 * var(--u));
+  height: calc(60.1 * var(--u));
+  margin-top: calc(2.8 * var(--u));
+  border-radius: 50%;
+  background: var(--km-biru);
+  box-shadow: calc(2 * var(--u)) calc(3 * var(--u)) calc(6 * var(--u)) rgba(0, 42, 119, 0.3);
+  color: var(--km-navy);
+  font-size: calc(24.5 * var(--u));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.km-mulai-nama {
+  color: var(--km-samar);
+  font-size: calc(26 * var(--u));
+  font-weight: 500;
+  line-height: calc(35.5 * var(--u));
+}
+
+.km-mulai-teks {
+  margin-top: calc(5.5 * var(--u));
+  color: var(--km-redup);
+  font-size: calc(20 * var(--u));
+  line-height: calc(27.8 * var(--u));
+}
+
+/* ── Gagal dimuat ── */
+.km--galat {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.km-galat {
+  padding: 18px 22px;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 15px;
+  text-align: center;
+}
+
+.km-galat a { color: var(--km-navy); font-weight: 700; }
+
+/* ── Layar sempit: kolom mengikuti lebar layar dengan tepi 16 px ── */
+@media (max-width: 640px) {
+  .km { --u: 0.62px; }
+  .km-header { padding: 0 16px; }
+  .km-isi { width: auto; margin: 0 16px; }
+  .km-hero { padding-inline: calc(40 * var(--u)); }
+  .km-langkah { padding-right: calc(30 * var(--u)); padding-left: calc(32 * var(--u)); }
+  .km-langkah-item { gap: calc(20 * var(--u)); }
+  .km-badge { white-space: normal; height: auto; min-height: calc(32.8 * var(--u)); padding-block: calc(5 * var(--u)); line-height: 1.2; }
+  .km-aksi, .km-aksi-aktif { padding-inline: calc(32 * var(--u)); }
+  .km-tombol { padding-inline: calc(16 * var(--u)); text-align: center; line-height: 1.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-putar { animation: none; }
+  .km-tombol, .km-keluar { transition: none; }
+}

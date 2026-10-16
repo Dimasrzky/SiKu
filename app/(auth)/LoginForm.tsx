@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN } from '@/lib/kemitraan'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
 import { KolomSandi } from '@/components/auth/KolomSandi'
@@ -60,6 +61,9 @@ const LoginForm = () => {
       return
     }
 
+    // Gagal dibaca: tetap ke dashboard, layout dashboard memeriksanya lagi
+    const kemitraan = await bacaKemitraan(supabase, data.user.id)
+
     localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
     localStorage.setItem(
@@ -71,10 +75,12 @@ const LoginForm = () => {
         sekolah: profile?.sekolah ?? '',
         avatar:  profile?.avatar  ?? '',
         role:    profile?.role    ?? 'admin',
+        ...(kemitraan.data ? { kemitraan: kemitraan.data.status } : {}),
       })
     )
 
-    router.push('/dashboard')
+    // Sekolah yang masih menunggu konfirmasi, atau baru dikonfirmasi, membuka halaman kemitraan dulu
+    router.push(kemitraan.data && perluHalamanKemitraan(kemitraan.data) ? RUTE_KEMITRAAN : '/dashboard')
   }
 
   return (
