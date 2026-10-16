@@ -146,10 +146,11 @@ const HalamanKemitraan = ({
             {aktif ? <IkonTerompet /> : <Clock />}
           </div>
           <h1 className="km-hero-judul">{aktif ? 'Akun Anda Telah Diaktifkan!' : 'Menunggu Konfirmasi Kemitraan'}</h1>
+          {/* Baris dipatahkan di titik yang sama dengan mockup; di layar sempit <br> disembunyikan */}
           <p className="km-hero-teks">
             {aktif
-              ? 'Kemitraan sekolah Anda telah dikonfirmasi. Selamat datang di SiKu, dashboard keuangan sekolah Anda siap digunakan.'
-              : <>Kami sedang memverifikasi bahwa sekolah Anda telah terdaftar sebagai mitra Equanusa. Proses ini selesai dalam <strong>1x24 jam kerja.</strong></>}
+              ? <>Kemitraan sekolah Anda telah dikonfirmasi. Selamat datang di{' '}<br />SiKu, dashboard keuangan sekolah Anda siap digunakan.</>
+              : <>Kami sedang memverifikasi bahwa sekolah Anda telah terdaftar{' '}<br />sebagai mitra Equanusa. Proses ini selesai dalam <strong>1x24 jam kerja.</strong></>}
           </p>
         </section>
 
@@ -178,7 +179,7 @@ const HalamanKemitraan = ({
                 <p className={`km-langkah-judul${aktif ? '' : ' km-langkah-judul--samar'}`}>Konfirmasi kemitraan sekolah</p>
                 {!aktif && (
                   <p className="km-langkah-teks">
-                    Tim Equanusa sedang melakukan pengecekan apakah sekolah Anda terdaftar sebagai mitra kami.
+                    Tim Equanusa sedang melakukan pengecekan apakah{' '}<br />sekolah Anda terdaftar sebagai mitra kami.
                   </p>
                 )}
                 {aktif
@@ -197,7 +198,7 @@ const HalamanKemitraan = ({
                 {/* Abu di kedua keadaan, mengikuti mockup */}
                 <p className="km-langkah-judul km-langkah-judul--samar">Akses dashboard diaktifkan</p>
                 {!aktif && (
-                  <p className="km-langkah-teks">Setelah dikonfirmasi, Anda langsung bisa menggunakan semua fitur SiKu.</p>
+                  <p className="km-langkah-teks">Setelah dikonfirmasi, Anda langsung bisa menggunakan{' '}<br />semua fitur SiKu.</p>
                 )}
                 {aktif
                   ? <span className="km-badge km-badge--hijau"><LayoutPanelLeft aria-hidden="true" />Siap digunakan</span>

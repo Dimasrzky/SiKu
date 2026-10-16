@@ -1,14 +1,24 @@
 /* ═══════════════════════════════════════════
    HALAMAN KONFIRMASI KEMITRAAN — /kemitraan
-   Ukuran memakai satuan desain --u: 1 px pada frame Figma 1440×1430 (mockup menunggu).
-   Seluruh frame diskalakan supaya muat lebar DAN tinggi layar, jadi halaman menunggu
-   terlihat utuh tanpa digulir seperti di gambar. Halaman aktif memakai skala yang sama
-   (frame-nya lebih tinggi), supaya ukurannya tidak melompat saat statusnya berganti.
+   Ukuran memakai satuan desain --u: 1 px pada frame Figma selebar 1440. Tiap keadaan
+   diskalakan supaya frame mockup-nya muat lebar DAN tinggi layar, jadi terlihat utuh
+   tanpa digulir seperti di gambar: menunggu 1440×1430, aktif 1440×1670 (lebih tinggi
+   karena ada kartu "Mulai Dari Mana?", jadi skalanya lebih kecil). Saat status berganti
+   skalanya beralih halus, tidak melompat.
    Angka-angkanya hasil ukur piksel dari kedua mockup, jadi sengaja tidak dibulatkan.
 ═══════════════════════════════════════════ */
 
+/* Didaftarkan sebagai panjang supaya bisa dianimasikan lewat transition */
+@property --km-skala {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 1px;
+}
+
 .km {
-  --u: clamp(0.6px, min(calc(100vw / 1440), calc(100vh / 1430)), 1.25px);
+  --km-skala: clamp(0.58px, min(calc(100vw / 1440), calc(100vh / 1430)), 1.25px);
+  --u: var(--km-skala);
+  transition: --km-skala 0.5s cubic-bezier(0.22, 1, 0.36, 1);
   --km-navy: #21396B;
   --km-navy-tombol: #1A2C4E;
   --km-biru: #A3CDFE;
@@ -32,6 +42,8 @@
   letter-spacing: -0.02em;
   line-height: 1.3;
 }
+
+.km--aktif { --km-skala: clamp(0.58px, min(calc(100vw / 1440), calc(100vh / 1670)), 1.25px); }
 
 /* Area di luar halaman (gulir berlebih) ikut biru */
 body:has(.km) { background: #A3CDFE; }
@@ -145,10 +157,11 @@ body:has(.km) { background: #A3CDFE; }
 }
 
 /* ── Kartu atas (navy saat aktif, oranye saat menunggu) ── */
-/* Lebar teks 680: di skala kecil teks dirender ±3% lebih sempit, jadi wadah yang lebih
-   lebar membuat "SiKu," naik ke baris pertama, berbeda dengan mockup */
+/* Baris teks dipatahkan dengan <br> di titik yang sama dengan mockup: lebar teks hasil
+   render berubah beberapa persen tergantung ukuran huruf di layar, jadi lebar wadah saja
+   tidak bisa menjamin pemenggalannya. Wadahnya dibuat cukup lebar untuk baris terpanjang. */
 .km-hero {
-  padding: calc(38.2 * var(--u)) calc(67.5 * var(--u)) calc(38 * var(--u));
+  padding: calc(38.2 * var(--u)) calc(52 * var(--u)) calc(38 * var(--u));
   background: var(--km-oranye);
   color: #fff;
   text-align: center;
@@ -291,7 +304,7 @@ body:has(.km) { background: #A3CDFE; }
 .km-langkah-judul--samar { color: var(--km-samar); }
 
 .km-langkah-teks {
-  max-width: calc(480 * var(--u));
+  max-width: calc(560 * var(--u));
   margin-top: calc(8 * var(--u));
   color: var(--km-redup);
   font-size: calc(20 * var(--u));
@@ -510,6 +523,7 @@ body:has(.km) { background: #A3CDFE; }
 /* ── Layar sempit: kolom mengikuti lebar layar dengan tepi 16 px ── */
 @media (max-width: 640px) {
   .km { --u: 0.62px; }
+  .km-hero-teks br, .km-langkah-teks br { display: none; }
   .km-header { padding: 0 16px; }
   .km-isi { width: auto; margin: 0 16px; }
   .km-hero { padding-inline: calc(40 * var(--u)); }
@@ -521,6 +535,7 @@ body:has(.km) { background: #A3CDFE; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .km { transition: none; }
   .km-putar { animation: none; }
   .km-tombol, .km-keluar { transition: none; }
 }
