@@ -1,13 +1,14 @@
 /* ═══════════════════════════════════════════
    HALAMAN KONFIRMASI KEMITRAAN — /kemitraan
-   Ukuran memakai satuan desain --u: 1 px pada frame Figma selebar 1440. Skalanya sama
-   dengan halaman Login & Daftar (app/(auth)/auth.css), jadi ukurannya tidak melompat
-   saat bendahara berpindah dari daftar ke halaman ini.
+   Ukuran memakai satuan desain --u: 1 px pada frame Figma 1440×1430 (mockup menunggu).
+   Seluruh frame diskalakan supaya muat lebar DAN tinggi layar, jadi halaman menunggu
+   terlihat utuh tanpa digulir seperti di gambar. Halaman aktif memakai skala yang sama
+   (frame-nya lebih tinggi), supaya ukurannya tidak melompat saat statusnya berganti.
    Angka-angkanya hasil ukur piksel dari kedua mockup, jadi sengaja tidak dibulatkan.
 ═══════════════════════════════════════════ */
 
 .km {
-  --u: clamp(0.72px, min(calc(100vw / 1440), calc(100vh / 1024)), 1.25px);
+  --u: clamp(0.6px, min(calc(100vw / 1440), calc(100vh / 1430)), 1.25px);
   --km-navy: #21396B;
   --km-navy-tombol: #1A2C4E;
   --km-biru: #A3CDFE;
@@ -144,8 +145,10 @@ body:has(.km) { background: #A3CDFE; }
 }
 
 /* ── Kartu atas (navy saat aktif, oranye saat menunggu) ── */
+/* Lebar teks 680: di skala kecil teks dirender ±3% lebih sempit, jadi wadah yang lebih
+   lebar membuat "SiKu," naik ke baris pertama, berbeda dengan mockup */
 .km-hero {
-  padding: calc(38.2 * var(--u)) calc(62 * var(--u)) calc(38 * var(--u));
+  padding: calc(38.2 * var(--u)) calc(67.5 * var(--u)) calc(38 * var(--u));
   background: var(--km-oranye);
   color: #fff;
   text-align: center;
