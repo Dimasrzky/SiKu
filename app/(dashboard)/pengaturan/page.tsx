@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { BANK_REKENING } from '@/lib/bankRekening'
 import { JABATAN } from '@/lib/jabatan'
+import { HARI_PENGINGAT, SELECT_JADWAL_PENGINGAT, saklarHari, type BarisJadwalPengingat, type KolomHariPengingat } from '@/lib/pengingat/jadwal'
 import { SkeletonPengaturan } from '@/components/skeleton/SkeletonPengaturan'
 
 function bankLogoSrc(bank: string): string {
@@ -112,8 +113,9 @@ function FormField({ label, value, onChange, defaultValue='', type='text', disab
   )
 }
 
-function Toggle({ label, sub, defaultOn=false }: { label: string; sub?: string; defaultOn?: boolean }) {
-  const [on, setOn] = useState(defaultOn)
+function Toggle({ label, sub, on, onUbah, nonaktif=false }: {
+  label: string; sub?: string; on: boolean; onUbah: () => void; nonaktif?: boolean
+}) {
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.75rem 0', borderBottom:'1px solid #F1F5F9' }}>
       <div>
@@ -121,9 +123,10 @@ function Toggle({ label, sub, defaultOn=false }: { label: string; sub?: string; 
         {sub && <div style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginTop:2 }}>{sub}</div>}
       </div>
       <button
-        onClick={() => setOn(!on)}
+        type="button" role="switch" aria-checked={on} aria-label={label}
+        onClick={onUbah} disabled={nonaktif}
         style={{
-          width:44, height:24, borderRadius:100, border:'none', cursor:'pointer',
+          width:44, height:24, borderRadius:100, border:'none', cursor: nonaktif ? 'default' : 'pointer',
           background: on ? 'var(--emerald)' : '#D1D5DB', position:'relative', transition:'background 0.2s',
           flexShrink:0,
         }}
@@ -216,6 +219,12 @@ export default function PengaturanPage() {
   const [savingRekening,    setSavingRekening]    = useState(false)
   const [saveRekeningError, setSaveRekeningError] = useState('')
   const [perubahanRekening, setPerubahanRekening] = useState<PerubahanRekening | null>(null)
+  // Toggle hari pengingat otomatis — null selama belum termuat atau gagal dimuat (toggle nonaktif)
+  const [jadwal,            setJadwal]            = useState<Record<KolomHariPengingat, boolean> | null>(null)
+  const [menyimpanJadwal,   setMenyimpanJadwal]   = useState<ReadonlySet<KolomHariPengingat>>(new Set())
+  const [galatJadwal,       setGalatJadwal]       = useState('')
+  // pengaturan.pengingat_wa_aktif: saklar antrean WhatsApp yang dinyalakan tim SiKu
+  const [pengingatAktif,    setPengingatAktif]    = useState<boolean | null>(null)
 
   useEffect(() => {
     const authRaw = localStorage.getItem('siku_auth')
@@ -238,7 +247,7 @@ export default function PengaturanPage() {
       const p       = pData       as PRow       | null
 
       const sekolahId = profile?.sekolah_id ?? ''
-      const [{ data: sekolahData }, { data: rekeningData }, { data: logData }] = sekolahId
+      const [{ data: sekolahData }, { data: rekeningData }, { data: logData }, jadwalRes] = sekolahId
         ? await Promise.all([
             supabase.from('sekolah').select('nama, no_wa, alamat, yayasan').eq('id', sekolahId).single(),
             supabase.from('rekening').select('id, bank, no_rek, atas_nama')
@@ -246,8 +255,12 @@ export default function PengaturanPage() {
               .order('urutan', { ascending: true }).limit(1).maybeSingle(),
             supabase.from('rekening_log').select('nama_pengubah, created_at')
               .eq('sekolah_id', sekolahId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+            // Dipisah dari pembacaan jenjang_sekolah: kalau kolomnya belum dibuat, hanya
+            // toggle pengingat yang ikut gagal
+            supabase.from('pengaturan').select(`pengingat_wa_aktif, ${SELECT_JADWAL_PENGINGAT}`)
+              .eq('sekolah_id', sekolahId).maybeSingle(),
           ])
-        : [{ data: null }, { data: null }, { data: null }]
+        : [{ data: null }, { data: null }, { data: null }, { data: null, error: null }]
 
       type SekolahRow  = { nama: string; no_wa: string; alamat: string | null; yayasan: string | null }
       type RekeningDb  = { id: string; bank: string; no_rek: string; atas_nama: string }
@@ -257,6 +270,18 @@ export default function PengaturanPage() {
       const lg = logData as LogDb | null
       setRekening(rk ? { id: rk.id, bank: rk.bank, noRek: rk.no_rek, atasNama: rk.atas_nama } : null)
       setPerubahanRekening(lg ? { nama: lg.nama_pengubah, waktu: lg.created_at } : null)
+
+      // Toggle baru bisa dipakai kalau posisinya benar-benar terbaca
+      type JadwalRow = BarisJadwalPengingat & { pengingat_wa_aktif?: boolean | null }
+      const jadwalRow = jadwalRes.data as JadwalRow | null
+      if (jadwalRow) {
+        setJadwal(saklarHari(jadwalRow))
+        setPengingatAktif(jadwalRow.pengingat_wa_aktif === true)
+      } else {
+        setGalatJadwal(jadwalRes.error?.code === '42703'
+          ? 'Kolom pengingat di tabel pengaturan belum dibuat.'
+          : 'Pengaturan pengingat gagal dimuat. Muat ulang halaman.')
+      }
 
       const rawTelepon = (sk?.no_wa ?? '').replace(/^\+?62/, '')
       setTeleponInput(formatWA(rawTelepon))
@@ -384,6 +409,29 @@ export default function PengaturanPage() {
       setEditingAkun(false)
       handleSave()
     }
+  }
+
+  // Toggle pengingat langsung tersimpan. Gagal → kembali ke posisi semula, karena yang
+  // tampil harus sama dengan yang dibaca cron.
+  const ubahJadwal = async (kolom: KolomHariPengingat) => {
+    if (!jadwal || !userData.idSekolah) return
+    const nilai = !jadwal[kolom]
+    setJadwal(j => j && { ...j, [kolom]: nilai })
+    setMenyimpanJadwal(s => new Set(s).add(kolom))
+    setGalatJadwal('')
+    const { data, error } = await supabase
+      .from('pengaturan')
+      .update({ [kolom]: nilai })
+      .eq('sekolah_id', userData.idSekolah)
+      .select('sekolah_id')
+    setMenyimpanJadwal(s => { const sisa = new Set(s); sisa.delete(kolom); return sisa })
+    // Tanpa baris yang berubah (mis. ditolak RLS) juga dianggap gagal
+    if (error || !data?.length) {
+      setJadwal(j => j && { ...j, [kolom]: !nilai })
+      setGalatJadwal('Pengaturan pengingat gagal disimpan. Coba lagi.')
+      return
+    }
+    handleSave()
   }
 
   const handleTeleponChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -864,16 +912,32 @@ export default function PengaturanPage() {
         )}
       </Section>
 
-      {/* Notifikasi */}
+      {/* Notifikasi — hanya pengingat yang sudah ada pengirimnya (cron lib/pengingat/otomatis).
+          Notifikasi hari jatuh tempo, konfirmasi pembayaran, dan laporan bulanan belum
+          dibangun, jadi togglenya tidak ditampilkan. */}
       <Section title="Pengaturan Notifikasi WhatsApp" desc="Konfigurasi kapan dan bagaimana pesan otomatis dikirim ke orang tua">
-        <Toggle label="Reminder H-7 sebelum jatuh tempo"  sub="Kirim WA 7 hari sebelum tanggal jatuh tempo"         defaultOn={true}  />
-        <Toggle label="Reminder H-3 sebelum jatuh tempo"  sub="Kirim WA 3 hari sebelum tanggal jatuh tempo"         defaultOn={true}  />
-        <Toggle label="Reminder H-1 sebelum jatuh tempo"  sub="Kirim WA 1 hari sebelum tanggal jatuh tempo"         defaultOn={true}  />
-        <Toggle label="Notifikasi hari jatuh tempo"       sub="Kirim WA tepat di hari jatuh tempo"                   defaultOn={false} />
-        <Toggle label="Konfirmasi pembayaran otomatis"    sub="Kirim WA konfirmasi ke orang tua setelah bayar"       defaultOn={true}  />
-        <Toggle label="Laporan bulanan ke kepala sekolah" sub="Kirim ringkasan keuangan tiap awal bulan"             defaultOn={true}  />
+        {pengingatAktif === false && (
+          <div style={{ marginBottom:'0.5rem', fontSize:'0.8rem', color:'#92400E', padding:'0.5rem 0.75rem', background:'#FFFBEB', borderRadius:6 }}>
+            Pengingat otomatis belum diaktifkan untuk sekolah Anda. Pilihan di bawah tetap tersimpan dan berlaku begitu tim SiKu mengaktifkannya.
+          </div>
+        )}
+        {HARI_PENGINGAT.map(({ kolom, hari }) => (
+          <Toggle
+            key={kolom}
+            label={`Reminder H-${hari} sebelum jatuh tempo`}
+            sub={`Kirim WA ${hari} hari sebelum tanggal jatuh tempo`}
+            on={(jadwal ?? saklarHari())[kolom]}
+            onUbah={() => ubahJadwal(kolom)}
+            nonaktif={!jadwal || menyimpanJadwal.has(kolom)}
+          />
+        ))}
+        {galatJadwal && (
+          <div style={{ marginTop:'0.5rem', fontSize:'0.8rem', color:'#DC2626', padding:'0.5rem 0.75rem', background:'#FEF2F2', borderRadius:6 }}>
+            {galatJadwal}
+          </div>
+        )}
         <div style={{ padding:'0.75rem 0 0', fontSize:'0.78rem', color:'var(--text-muted)' }}>
-          Notifikasi WA dikirim menggunakan fonnte. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
+          Pesan dikirim dari nomor WhatsApp yang disiapkan tim SiKu. No. WhatsApp di Akun Pengguna dicantumkan sebagai kontak sekolah di pesan.
         </div>
       </Section>
     </div>

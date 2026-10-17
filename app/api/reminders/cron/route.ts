@@ -9,8 +9,9 @@ export const maxDuration = 60
 
 /**
  * Pengingat otomatis harian: dipanggil pg_cron pukul 07.55 WIB. Menerbitkan tagihan bulan
- * berjalan yang belum ada, lalu membuat job untuk tagihan yang jatuh tempo 7, 3, dan 1
- * hari lagi. Tidak mengirim apa pun — itu tugas worker.
+ * berjalan yang belum ada, lalu membuat job untuk tagihan yang jatuh tempo 7, 3, atau 1
+ * hari lagi — hanya hari yang dinyalakan sekolah di Pengaturan. Tidak mengirim apa pun —
+ * itu tugas worker.
  * Pemanggilnya mesin, dikenali dari CRON_SECRET (jalur publik di proxy.ts).
  */
 export async function POST(req: NextRequest) {

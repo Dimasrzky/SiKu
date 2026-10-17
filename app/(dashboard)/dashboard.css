@@ -821,7 +821,7 @@
 }
 
 .logout-modal-title {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 1.2rem;
   font-weight: 700;
   color: var(--navy-dark);

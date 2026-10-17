@@ -281,8 +281,6 @@ function DonutChart({ items, total }: { items: KomposisiItem[]; total: number })
   const totalLabel =
     total >= 1_000_000 ? (total / 1_000_000).toFixed(2).replace('.', ',') : total.toLocaleString('id-ID')
   const totalUnit  = total >= 1_000_000 ? 'juta' : 'rupiah'
-  // Celah putih antarsegmen; satu segmen saja dibiarkan utuh melingkar
-  const celah      = items.length > 1 ? 2 : 0
 
   type Seg = { i: number; dash: number; offset: number }
 
@@ -299,20 +297,17 @@ function DonutChart({ items, total }: { items: KomposisiItem[]; total: number })
   return (
     <svg viewBox="0 0 116 116" style={{ width: '40%', maxWidth: 190, height: 'auto', flexShrink: 0 }}>
       <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={16} />
-      {segments.map(({ i, dash, offset }) => {
-        const garis = Math.max(dash - celah, 0)
-        return (
-          <circle
-            key={i}
-            cx={CX} cy={CY} r={R}
-            fill="none"
-            stroke={KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length]}
-            strokeWidth={16}
-            strokeDasharray={`${garis} ${C - garis}`}
-            strokeDashoffset={offset}
-          />
-        )
-      })}
+      {segments.map(({ i, dash, offset }) => (
+        <circle
+          key={i}
+          cx={CX} cy={CY} r={R}
+          fill="none"
+          stroke={KOMPOSISI_COLORS[i % KOMPOSISI_COLORS.length]}
+          strokeWidth={16}
+          strokeDasharray={`${dash} ${C - dash}`}
+          strokeDashoffset={offset}
+        />
+      ))}
       <text x={CX} y={CY - 1} textAnchor="middle" fontSize={16} fontWeight={700} fill="#1A2C4E">
         {totalLabel}
       </text>

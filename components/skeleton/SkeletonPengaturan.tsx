@@ -1,18 +1,10 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { JABATAN } from '@/lib/jabatan'
+import { HARI_PENGINGAT } from '@/lib/pengingat/jadwal'
 import { Blok, BlokTeks, KepalaHalaman, KerangkaHalaman } from './Blok'
 
 // Kerangka Pengaturan — meniru app/(dashboard)/pengaturan/page.tsx: rekening, profil
 // sekolah, akun pengguna, notifikasi. Ubah bersama halamannya.
-
-const NOTIFIKASI = [
-  { label: 'Reminder H-7 sebelum jatuh tempo',  sub: 'Kirim WA 7 hari sebelum tanggal jatuh tempo' },
-  { label: 'Reminder H-3 sebelum jatuh tempo',  sub: 'Kirim WA 3 hari sebelum tanggal jatuh tempo' },
-  { label: 'Reminder H-1 sebelum jatuh tempo',  sub: 'Kirim WA 1 hari sebelum tanggal jatuh tempo' },
-  { label: 'Notifikasi hari jatuh tempo',       sub: 'Kirim WA tepat di hari jatuh tempo' },
-  { label: 'Konfirmasi pembayaran otomatis',    sub: 'Kirim WA konfirmasi ke orang tua setelah bayar' },
-  { label: 'Laporan bulanan ke kepala sekolah', sub: 'Kirim ringkasan keuangan tiap awal bulan' },
-] as const
 
 const sLabel: CSSProperties = { display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-mid)', marginBottom: 4 }
 const sKotak: CSSProperties = { padding: '0.65rem 0.9rem', border: '1.5px solid var(--border)', borderRadius: 8, background: '#F9FAFB' }
@@ -101,17 +93,17 @@ export const SkeletonPengaturan = () => (
     </Bagian>
 
     <Bagian judul="Pengaturan Notifikasi WhatsApp" keterangan="Konfigurasi kapan dan bagaimana pesan otomatis dikirim ke orang tua">
-      {NOTIFIKASI.map(n => (
-        <div key={n.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #F1F5F9' }}>
+      {HARI_PENGINGAT.map(({ kolom, hari }) => (
+        <div key={kolom} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #F1F5F9' }}>
           <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--navy-dark)' }}>{n.label}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>{n.sub}</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--navy-dark)' }}>Reminder H-{hari} sebelum jatuh tempo</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>Kirim WA {hari} hari sebelum tanggal jatuh tempo</div>
           </div>
           <Blok lebar={44} tinggi={24} sudut={100} />
         </div>
       ))}
       <div style={{ padding: '0.75rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-        Notifikasi WA dikirim menggunakan fonnte. Pastikan nomor WhatsApp resmi sekolah sudah terdaftar.
+        Pesan dikirim dari nomor WhatsApp yang disiapkan tim SiKu. No. WhatsApp di Akun Pengguna dicantumkan sebagai kontak sekolah di pesan.
       </div>
     </Bagian>
   </KerangkaHalaman>

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilSemua } from '../ambilSemua'
 import { runGenerate } from '../generateTagihan'
 import { selisihHari } from '../metrikLaporan'
+import { jadwalPengingat, SELECT_JADWAL_PENGINGAT, type BarisJadwalPengingat } from './jadwal'
 import { KONFIG_PENGINGAT, type KonfigPengingat } from './konfig'
 import { ringkasOtomatis } from './kelayakan'
 import { lolosPembatas, muatPembatas, pilihSender, sisipkanJob } from './pembatas'
@@ -9,11 +10,12 @@ import { dalamCooldown, muatPenilaian, type PenilaianSiswa } from './penilaian'
 import { muatKonteksPesan, susunIsiJob, type IsiJob } from './pesan'
 import { awalHariWIB, bulanTahunWIB } from './waktu'
 
-// Pengingat otomatis: tiap pagi, tagihan yang jatuh tempo 7, 3, dan 1 hari lagi
+// Pengingat otomatis: tiap pagi, tagihan yang jatuh tempo 7, 3, atau 1 hari lagi
 // dibuatkan job prioritas 1 (keputusan 1 Okt 2026 — spec aslinya mengingatkan pada hari
-// jatuh tempo). Hanya untuk sekolah yang saklarnya menyala dan kemitraannya sudah
-// dikonfirmasi, dan kelas yang dipilih di modal "Ingatkan orang tua". Tidak ada pesan
-// yang dikirim dari sini.
+// jatuh tempo). Hari mana yang dipakai dinyalakan tiap sekolah lewat toggle di Pengaturan
+// (lib/pengingat/jadwal). Hanya untuk sekolah yang saklarnya menyala dan kemitraannya
+// sudah dikonfirmasi, dan kelas yang dipilih di modal "Ingatkan orang tua". Tidak ada
+// pesan yang dikirim dari sini.
 //
 // Sebelum menilai, tagihan bulan berjalan diterbitkan lebih dulu dengan fungsi yang sama
 // dengan halaman Tagihan Aktif — tanpa itu pengingat bergantung pada admin membuka
@@ -36,7 +38,7 @@ export interface LaporanOtomatis {
   sekolahId: string
   /** Job pengingat yang dibuat pagi ini */
   dibuat:    number
-  /** Tagihan yang jatuh tempo H-7/H-3/H-1 tetapi tidak dibuatkan job */
+  /** Tagihan yang jatuh tempo pada hari pengingat sekolah ini tetapi tidak dibuatkan job */
   dilewati:  number
   /** Pembuatan job gagal untuk sekolah ini; sekolah lain tetap diproses */
   galat?:    string
@@ -57,17 +59,29 @@ export interface OpsiOtomatis {
   terbitkan?: typeof runGenerate
 }
 
-/** Kolom pengingat_kelas_ids belum dibuat — dianggap "belum pernah diatur" (semua kelas) */
+/** Kolom pengaturan yang SQL-nya belum dijalankan — dianggap "belum pernah diatur" */
 const kolomBelumAda = (e: { code?: string; message?: string } | null): boolean =>
-  !!e && (e.code === '42703' || e.code === 'PGRST204' || (e.message ?? '').includes('pengingat_kelas_ids'))
+  !!e && (e.code === '42703' || e.code === 'PGRST204' || /pengingat_(kelas_ids|h\d)/.test(e.message ?? ''))
 
-async function sekolahPenerima(db: SupabaseClient): Promise<{ data: { sekolah_id: string; kelas: Set<string> | null }[] | null; error: string | null }> {
-  type Baris = { sekolah_id: string; pengingat_kelas_ids?: string[] | null }
-  let { data, error }: { data: unknown; error: { code?: string; message?: string } | null } =
-    await db.from('pengaturan').select('sekolah_id, pengingat_kelas_ids').eq('pengingat_wa_aktif', true).limit(1000)
-  if (error && kolomBelumAda(error)) {
-    ({ data, error } = await db.from('pengaturan').select('sekolah_id').eq('pengingat_wa_aktif', true).limit(1000))
-  }
+interface SekolahPenerima {
+  sekolah_id: string
+  /** null = semua kelas */
+  kelas:      Set<string> | null
+  /** Hari sebelum jatuh tempo yang dinyalakan sekolah; kosong = tanpa pengingat otomatis */
+  jadwal:     number[]
+}
+
+async function sekolahPenerima(db: SupabaseClient): Promise<{ data: SekolahPenerima[] | null; error: string | null }> {
+  type Baris = { sekolah_id: string; pengingat_kelas_ids?: string[] | null } & BarisJadwalPengingat
+  type Hasil = { data: unknown; error: { code?: string; message?: string } | null }
+  const pilih = async (kolom: string): Promise<Hasil> =>
+    await db.from('pengaturan').select(kolom).eq('pengingat_wa_aktif', true).limit(1000)
+
+  // Kolom terbaru dilepas lebih dulu selama SQL-nya belum dijalankan. Yang tidak terbaca
+  // memakai bawaannya — semua kelas, semua hari — sama dengan perilaku sebelum kolomnya ada.
+  let { data, error } = await pilih(`sekolah_id, pengingat_kelas_ids, ${SELECT_JADWAL_PENGINGAT}`)
+  if (error && kolomBelumAda(error)) ({ data, error } = await pilih('sekolah_id, pengingat_kelas_ids'))
+  if (error && kolomBelumAda(error)) ({ data, error } = await pilih('sekolah_id'))
   if (error) return { data: null, error: 'Daftar sekolah gagal dimuat.' }
 
   // Pesan dikirim lewat nomor WhatsApp platform: hanya sekolah mitra yang sudah dikonfirmasi
@@ -80,6 +94,7 @@ async function sekolahPenerima(db: SupabaseClient): Promise<{ data: { sekolah_id
     data: ((data ?? []) as Baris[]).filter(b => terkonfirmasi.has(b.sekolah_id)).map(b => ({
       sekolah_id: b.sekolah_id,
       kelas:      b.pengingat_kelas_ids ? new Set(b.pengingat_kelas_ids) : null,
+      jadwal:     jadwalPengingat(b),
     })),
     error: null,
   }
@@ -112,14 +127,16 @@ async function terbitkanBulanIni(
 }
 
 async function antrekanSekolah(
-  db: SupabaseClient, sekolahId: string, kelasPenerima: Set<string> | null,
+  db: SupabaseClient, sekolahId: string, kelasPenerima: Set<string> | null, jadwal: number[],
   sekarang: Date, konfig: KonfigPengingat, origin: string,
 ): Promise<{ dibuat: number; dilewati: number }> {
   const galat = (apa: string) => new Error(apa)
 
+  // Semua toggle hari di Pengaturan dimatikan
+  if (jadwal.length === 0) return { dibuat: 0, dilewati: 0 }
+
   // Tagihan belum lunas yang jatuh temponya di antara H-terdekat dan H-terjauh. Baris lama
   // yang jatuh_tempo-nya kosong tidak ikut: tanggalnya tidak diketahui pasti.
-  const jadwal   = konfig.jadwalOtomatisHari
   const dari     = awalHariWIB(sekarang, Math.min(...jadwal)).toISOString()
   const sebelum  = awalHariWIB(sekarang, Math.max(...jadwal) + 1).toISOString()
   type Sasaran = { id: string; siswa_id: string; jatuh_tempo: string }
@@ -208,7 +225,7 @@ export async function antrekanOtomatis(
     if (tidakTerbit) console.warn(`[pengingat] tagihan bulan berjalan sekolah ${s.sekolah_id} tidak diterbitkan: ${tidakTerbit}`)
     const catatan = tidakTerbit ? { tidakTerbit } : {}
     try {
-      laporan.push({ sekolahId: s.sekolah_id, ...await antrekanSekolah(db, s.sekolah_id, s.kelas, sekarang, konfig, origin), ...catatan })
+      laporan.push({ sekolahId: s.sekolah_id, ...await antrekanSekolah(db, s.sekolah_id, s.kelas, s.jadwal, sekarang, konfig, origin), ...catatan })
     } catch (e) {
       const galat = e instanceof Error ? e.message : 'galat tidak dikenal'
       console.error(`[pengingat] pengingat otomatis sekolah ${s.sekolah_id} gagal: ${galat}`)

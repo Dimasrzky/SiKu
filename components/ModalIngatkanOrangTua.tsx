@@ -4,11 +4,12 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { Bell, Check, ChevronRight, Minus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { ambilSemua } from '@/lib/ambilSemua'
-import { Blok, giliran } from './skeleton/Blok'
+import { jadwalPengingat, sebutHari, SELECT_JADWAL_PENGINGAT, type BarisJadwalPengingat } from '@/lib/pengingat/jadwal'
+import { Blok, BlokTeks, giliran } from './skeleton/Blok'
 
 // Modal "Ingatkan orang tua" di dashboard: memilih kelas mana yang orang tuanya
-// menerima pengingat H-7. Pilihannya disimpan di pengaturan.pengingat_kelas_ids.
-// Modal ini hanya menyimpan daftar kelasnya — pengirim terjadwalnya belum ada.
+// menerima pengingat otomatis. Pilihannya disimpan di pengaturan.pengingat_kelas_ids dan
+// dibaca cron pengingat (lib/pengingat/otomatis); harinya (H-7/H-3/H-1) diatur di Pengaturan.
 
 interface KelasPengingat   { id: string; nama: string; jumlahSiswa: number }
 interface JenjangPengingat { jenjang: string; kelas: KelasPengingat[]; jumlahSiswa: number }
@@ -31,11 +32,16 @@ const urut = (a: string, b: string) => a.localeCompare(b, 'id', { numeric: true 
 
 const labelKelas = (nama: string) => (nama.startsWith('Kelas') ? nama : `Kelas ${nama}`)
 
+// Mengikuti toggle hari di Pengaturan
+const teksJadwal = (jadwal: number[]) => (jadwal.length === 0
+  ? 'Pengingat otomatis dimatikan di Pengaturan'
+  : `Notifikasi ${sebutHari(jadwal)} dikirimkan otomatis per siswa`)
+
 async function muatPengingat(sekolahId: string): Promise<{
-  data:  { jenjang: JenjangPengingat[]; dipilih: string[] } | null
+  data:  { jenjang: JenjangPengingat[]; dipilih: string[]; jadwal: number[] } | null
   error: string | null
 }> {
-  const [kelasRes, siswaRes, pengaturanRes] = await Promise.all([
+  const [kelasRes, siswaRes, pengaturanRes, jadwalRes] = await Promise.all([
     supabase.from('kelas').select('id, nama, jenjang').eq('sekolah_id', sekolahId).limit(500),
     // Diambil bertahap: satu .limit() bisa diam-diam terpotong di batas baris PostgREST
     ambilSemua<{ kelas_id: string | null }>((dari, sampai) => supabase
@@ -43,6 +49,8 @@ async function muatPengingat(sekolahId: string): Promise<{
       .eq('sekolah_id', sekolahId).eq('status', 'aktif')
       .order('id').range(dari, sampai)),
     supabase.from('pengaturan').select('pengingat_kelas_ids').eq('sekolah_id', sekolahId).maybeSingle(),
+    // Terpisah: kalau kolom hari belum dibuat, pilihan kelas yang tersimpan tetap terbaca
+    supabase.from('pengaturan').select(SELECT_JADWAL_PENGINGAT).eq('sekolah_id', sekolahId).maybeSingle(),
   ])
 
   if (kelasRes.error || siswaRes.error || (pengaturanRes.error && !kolomBelumAda(pengaturanRes.error))) {
@@ -76,7 +84,10 @@ async function muatPengingat(sekolahId: string): Promise<{
   const semuaId   = jenjang.flatMap(j => j.kelas.map(k => k.id))
   const dipilih   = tersimpan === null ? semuaId : semuaId.filter(id => tersimpan.includes(id))
 
-  return { data: { jenjang, dipilih }, error: null }
+  // Hanya untuk teks modal. Kolom yang belum terbaca dianggap menyala, sama seperti di cron.
+  const jadwal = jadwalPengingat(jadwalRes.data as BarisJadwalPengingat | null)
+
+  return { data: { jenjang, dipilih, jadwal }, error: null }
 }
 
 // Ikon PNG satu warna dari public/icons, diwarnai lewat mask supaya bisa dipakai
@@ -116,6 +127,8 @@ interface Props {
 
 export const ModalIngatkanOrangTua = ({ sekolahId, onTutup }: Props) => {
   const [daftar,      setDaftar]      = useState<JenjangPengingat[] | null>(null)
+  // Hari pengingat otomatis yang menyala di Pengaturan; null selama dimuat
+  const [jadwal,      setJadwal]      = useState<number[] | null>(null)
   const [galatMuat,   setGalatMuat]   = useState('')
   const [dipilih,     setDipilih]     = useState<Set<string>>(new Set())
   // Hanya satu jenjang yang terbuka pada satu waktu; null = semua tertutup
@@ -130,6 +143,7 @@ export const ModalIngatkanOrangTua = ({ sekolahId, onTutup }: Props) => {
       if (batal) return
       if (error || !data) { setGalatMuat(error ?? 'Daftar kelas gagal dimuat.'); return }
       setDaftar(data.jenjang)
+      setJadwal(data.jadwal)
       setDipilih(new Set(data.dipilih))
       setTerbuka(data.jenjang[0]?.jenjang ?? null)
     }
@@ -224,7 +238,10 @@ export const ModalIngatkanOrangTua = ({ sekolahId, onTutup }: Props) => {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 17, fontWeight: 500, color: NAVY, lineHeight: '22px', letterSpacing: RAPAT_JUDUL }}>Pilih kelas yang diingatkan</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13.5, color: ABU, lineHeight: '20px', marginTop: 2 }}>
-              <Bell size={11} style={{ flexShrink: 0 }} /> Notifikasi H-7 dikirimkan otomatis per siswa
+              <Bell size={11} style={{ flexShrink: 0 }} />
+              {jadwal || galatMuat
+                ? teksJadwal(jadwal ?? jadwalPengingat())
+                : <BlokTeks lebar={300} ukuran={13.5} tinggiBaris={20 / 13.5} />}
             </div>
           </div>
           <button

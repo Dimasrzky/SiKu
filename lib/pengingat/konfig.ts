@@ -3,7 +3,8 @@
 // tiap angka bisa diganti lewat env tanpa mengubah kode. Satu-satunya tempat angka ini ditulis.
 //
 // Tiga hal sengaja berbeda dari spec, mengikuti keputusan 1 Okt 2026:
-// - pengingat otomatis dikirim H-7, H-3, dan H-1 (spec: pada hari jatuh tempo)
+// - pengingat otomatis dikirim H-7, H-3, dan H-1 (spec: pada hari jatuh tempo). Harinya
+//   dinyalakan tiap sekolah di Pengaturan (lib/pengingat/jadwal.ts), bukan lewat env
 // - cooldown 2 hari kalender per siswa (spec: 3 hari per wali), supaya H-3 → H-1 lolos
 // - batas bulanan dihitung per siswa, karena satu pesan sekarang untuk satu siswa
 //
@@ -44,8 +45,6 @@ export interface KonfigPengingat {
   maksPerNomorPerHari:  number
   /** MAX_FAIL_STREAK — gagal beruntun yang memicu circuit breaker */
   maksGagalBeruntun:    number
-  /** Pengingat otomatis dikirim berapa hari sebelum jatuh tempo, terjauh dulu */
-  jadwalOtomatisHari:   number[]
 }
 
 export const KONFIG_PENGINGAT_BAWAAN: KonfigPengingat = {
@@ -64,7 +63,6 @@ export const KONFIG_PENGINGAT_BAWAAN: KonfigPengingat = {
   maksPerBulan:         4,
   maksPerNomorPerHari:  5,
   maksGagalBeruntun:    3,
-  jadwalOtomatisHari:   [7, 3, 1],
 }
 
 type Env = Record<string, string | undefined>
@@ -88,7 +86,7 @@ function rentangJam(nilai: string | undefined): RentangMenit | undefined {
   return mulai < selesai && selesai <= 24 * 60 ? { mulai, selesai } : undefined
 }
 
-/** "7,3,1" → bilangan bulat unik dalam [min, maks]; undefined kalau ada yang tidak sah */
+/** "1,2,3,4,5" → bilangan bulat unik dalam [min, maks]; undefined kalau ada yang tidak sah */
 function daftarBilangan(nilai: string | undefined, min: number, maks: number): number[] | undefined {
   if (!nilai?.trim()) return undefined
   const angka = nilai.split(',').map(s => (s.trim() ? Number(s.trim()) : NaN))
@@ -156,7 +154,6 @@ export function bacaKonfigPengingat(env: Env): KonfigPengingat {
     maksPerBulan:        angka('PENGINGAT_MAX_PER_MONTH', 1) ?? B.maksPerBulan,
     maksPerNomorPerHari: angka('PENGINGAT_MAX_PER_NUMBER_PER_DAY', 1) ?? B.maksPerNomorPerHari,
     maksGagalBeruntun:   angka('PENGINGAT_MAX_FAIL_STREAK', 1) ?? B.maksGagalBeruntun,
-    jadwalOtomatisHari:  baca('PENGINGAT_OFFSETS', v => daftarBilangan(v, 1, 31))?.sort((a, b) => b - a) ?? B.jadwalOtomatisHari,
   }
 }
 
