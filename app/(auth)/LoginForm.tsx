@@ -35,7 +35,7 @@ const LoginForm = () => {
       body:    JSON.stringify({ email, password }),
     })
     if (adminRes.ok) {
-      router.push('/admin/verifikasi-pembayaran')
+      router.push('/admin')
       return
     }
 

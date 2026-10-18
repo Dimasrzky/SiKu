@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import { bacaPilihanTersimpan, labelUnit } from '@/lib/rincianKomponen'
+import HalamanAdmin from '../../HalamanAdmin'
 import VerifikasiTable, { type VerifikasiItem } from '../VerifikasiTable'
 
 export const metadata: Metadata = {
@@ -74,5 +75,9 @@ export default async function VerifikasiSekolahPage({ params }: { params: Promis
     }
   })
 
-  return <VerifikasiTable items={items} namaSekolah={sekolahData.nama} />
+  return (
+    <HalamanAdmin jejak={[{ label: 'Verifikasi Pembayaran', href: '/admin/verifikasi-pembayaran' }, { label: sekolahData.nama }]}>
+      <VerifikasiTable items={items} namaSekolah={sekolahData.nama} />
+    </HalamanAdmin>
+  )
 }

@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Image from 'next/image'
-import { ShieldCheck, ImageOff, CheckCircle2, X, ArrowLeft } from 'lucide-react'
+import { ShieldCheck, ImageOff, CheckCircle2, X } from 'lucide-react'
+import KepalaAdmin from '../KepalaAdmin'
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
@@ -79,27 +79,9 @@ export default function VerifikasiTable({ items, namaSekolah }: Props) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F1F5F9', padding: '1.5rem' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-
-        {/* Header */}
-        <Link href="/admin/verifikasi-pembayaran" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#64748B', fontSize: '0.83rem', fontWeight: 700, textDecoration: 'none', marginBottom: '1rem' }}>
-          <ArrowLeft size={15} /> Kembali ke daftar sekolah
-        </Link>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-            <div style={{ width: 48, height: 48, background: '#1A2C4E', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <ShieldCheck size={24} color="#fff" />
-            </div>
-            <div>
-              <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#1A2C4E', margin: 0 }}>{namaSekolah}</h1>
-              <p style={{ fontSize: '0.85rem', color: '#64748B', margin: '0.15rem 0 0' }}>
-                Konfirmasi bukti transfer yang dikirim orang tua
-              </p>
-            </div>
-          </div>
-        </div>
+    <>
+      <div>
+        <KepalaAdmin Ikon={ShieldCheck} judul={namaSekolah} subjudul="Konfirmasi bukti transfer yang dikirim orang tua" />
 
         {/* Table card */}
         <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
@@ -281,6 +263,6 @@ export default function VerifikasiTable({ items, namaSekolah }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

@@ -1,0 +1,263 @@
+/* ═══════════════════════════════════════════
+   DASBOR ADMIN (SiKuAdmin) — header, sidebar, kartu konten
+   Tata letak mengikuti referensi dari user (Okt 2026): latar abu #EEEEEE, header
+   tanpa garis, sidebar putih berisi daftar menu bergaris, dan satu kartu putih berisi
+   jejak halaman. Kelas sendiri (admin-): CSS App Router tidak dibatasi per rute, jadi
+   nama yang sama dengan app/(dashboard)/dashboard.css akan saling menimpa.
+═══════════════════════════════════════════ */
+.admin-shell {
+  min-height: 100vh;
+  background: #EEEEEE;
+  color: #555555;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* ── Header ── */
+.admin-header {
+  height: 73px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 61px 0 56px;
+}
+
+.admin-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.admin-logo-gambar {
+  height: 40px;
+  width: auto;
+  display: block;
+}
+
+.admin-logo-teks {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #03337B;
+  line-height: 1.15;
+}
+
+.admin-akun { position: relative; }
+
+.admin-akun-tombol {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #111111;
+  cursor: pointer;
+}
+
+.admin-akun-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #111111;
+  background: #fff;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.admin-akun-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+  padding: 6px 0;
+  z-index: 100;
+}
+
+.admin-akun-nama {
+  padding: 0.55rem 1rem 0.65rem;
+  border-bottom: 1px solid #EEEEEE;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #333333;
+}
+
+.admin-akun-nama small {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #888888;
+}
+
+.admin-akun-keluar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: none;
+  background: transparent;
+  color: #DC2626;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-akun-keluar:hover { background: #FEF2F2; }
+.admin-akun-keluar:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Badan: sidebar + kartu konten ── */
+.admin-badan {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 0 19px;
+}
+
+.admin-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+  align-self: stretch;
+  min-height: calc(100vh - 73px);
+  background: #fff;
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 50px;
+  padding: 0.55rem 1.25rem;
+  border-bottom: 1px solid #EEEEEE;
+  font-size: 0.875rem;
+  color: #555555;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-nav-item:hover { background: #F7F7F7; }
+
+.admin-nav-item.active {
+  background: #F1F5FB;
+  color: #03337B;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 #03337B;
+}
+
+.admin-nav-ikon { flex-shrink: 0; }
+
+.admin-nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: #DC2626;
+  color: #fff;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-kartu {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(100vh - 73px - 29px);
+  margin-bottom: 29px;
+  background: #fff;
+}
+
+/* ── Jejak halaman ── */
+.admin-jejak {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0.5rem 24px;
+  border-bottom: 1px solid #E5E5E5;
+  font-size: 0.875rem;
+  color: #555555;
+}
+
+.admin-jejak a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-jejak a:hover { color: #03337B; }
+
+.admin-jejak-rumah {
+  display: flex;
+  color: #03337B !important;
+}
+
+.admin-isi { padding: 20px; }
+
+/* ── Beranda: sambutan ── */
+.admin-sambutan {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.admin-sambutan h1 {
+  margin: 20px 0 0;
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #555555;
+  overflow-wrap: anywhere;
+}
+
+.admin-sambutan p {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #555555;
+}
+
+.admin-sambutan-siku  { color: #FCC000; }
+.admin-sambutan-admin { color: #7DAEF8; }
+
+.admin-sambutan-ilustrasi {
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: linear-gradient(45deg, #7FCEE2, #ACB0CF);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Layar sempit: menu sidebar menjadi deretan di bawah header */
+@media (max-width: 900px) {
+  .admin-header { padding: 0 16px; height: 64px; }
+  .admin-badan { flex-direction: column; align-items: stretch; gap: 12px; padding: 0 12px; }
+  .admin-sidebar { width: auto; min-height: 0; }
+  .admin-nav { flex-direction: row; overflow-x: auto; }
+  .admin-nav-item { white-space: nowrap; border-bottom: none; border-right: 1px solid #EEEEEE; }
+  .admin-nav-item.active { box-shadow: inset 0 -3px 0 #03337B; }
+  .admin-kartu { min-height: 0; margin-bottom: 16px; }
+  .admin-sambutan h1 { font-size: 1.6rem; margin-top: 4px; }
+  .admin-sambutan-ilustrasi { width: 72px; height: 72px; }
+  .admin-sambutan-ilustrasi svg { width: 52px; height: auto; }
+}

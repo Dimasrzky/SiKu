@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Konfirmasi kemitraan sekolah oleh tim Equanusa. Sekolah yang baru mendaftar berstatus
-// 'menunggu' sampai admin menekan Konfirmasi di /admin/verifikasi-pembayaran; selama itu
+// 'menunggu' sampai admin menekan Konfirmasi di /admin/kemitraan; selama itu
 // bendahara hanya bisa membuka /kemitraan. Sesudah dikonfirmasi, halaman yang sama
 // menampilkan "Akun Anda Telah Diaktifkan" satu kali, sampai bendahara menekan Buka Dashboard.
 // Sekolah yang sudah ada sebelum fitur ini berstatus 'aktif' tanpa waktu konfirmasi, jadi

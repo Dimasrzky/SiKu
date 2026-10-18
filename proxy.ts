@@ -10,7 +10,7 @@ const PUBLIC_PATHS = [
   '/api/payment/create',     // buat transaksi dari halaman publik
   '/api/payment/callback',   // webhook dari iPaymu
   '/api/payment/status',     // cek status tagihan (polling dari halaman publik)
-  '/admin',                  // halaman admin verifikasi pembayaran — auth sendiri (cookie sesi admin), bukan Supabase Auth
+  '/admin',                  // dasbor admin Equanusa — auth sendiri (cookie sesi admin), bukan Supabase Auth
   '/api/admin',              // login/logout/aksi admin verifikasi — cek sesi sendiri di masing-masing route
   '/api/reminders/worker',   // worker antrean pengingat, dipanggil pg_cron — cek CRON_SECRET sendiri di route-nya
   '/api/reminders/cron',     // pengingat otomatis harian, dipanggil pg_cron — cek CRON_SECRET sendiri di route-nya

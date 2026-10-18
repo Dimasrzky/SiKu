@@ -50,14 +50,14 @@ export default function KonfirmasiKemitraan({ daftar }: { daftar: PendaftaranSek
   }
 
   return (
-    <section id="kemitraan" style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1.5rem', overflow: 'hidden', scrollMarginTop: '1.5rem' }}>
+    <section style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem 1.25rem' }}>
         <div style={{ width: 38, height: 38, background: '#DCE9FF', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <School size={19} color="#1A2C4E" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: 800, color: '#1A2C4E', margin: 0 }}>Konfirmasi Kemitraan Sekolah</h2>
+            <h2 style={{ fontSize: '1rem', fontWeight: 800, color: '#1A2C4E', margin: 0 }}>Menunggu Konfirmasi</h2>
             {daftar.length > 0 && (
               <span style={{ minWidth: 22, height: 22, padding: '0 7px', background: '#DC2626', color: '#fff', borderRadius: 20, fontSize: '0.72rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 {daftar.length}
