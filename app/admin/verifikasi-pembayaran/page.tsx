@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { Folder, ShieldCheck } from 'lucide-react'
+import { Folder, Puzzle, ShieldCheck } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import AdminLogoutButton from '../AdminLogoutButton'
@@ -117,6 +117,12 @@ export default async function VerifikasiPembayaranPage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Link
+              href="/admin/fitur-sekolah"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0.5rem 0.9rem', background: '#fff', color: '#1A2C4E', border: '1.5px solid #E2E8F0', borderRadius: 10, fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none' }}
+            >
+              <Puzzle size={14} /> Fitur Sekolah
+            </Link>
             <NotificationBell
               pending={folders.filter(f => f.count > 0)}
               pendaftaran={pendaftaran.map(p => ({ id: p.id, nama: p.namaSekolah }))}

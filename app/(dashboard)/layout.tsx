@@ -24,11 +24,14 @@ import {
   ChevronsUp,
   Lock,
   Database,
+  PieChart,
+  Wallet,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import {
   bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, simpanStatusLokal, statusLokal, type StatusKemitraan,
 } from '@/lib/kemitraan'
+import { bacaFiturSaya, fiturLokal, hapusFiturLokal, simpanFiturLokal, type KodeFitur } from '@/lib/fiturSekolah'
 import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
@@ -386,8 +389,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [galatContoh,     setGalatContoh]     = useState('')
   const [tagihanOpen, setTagihanOpen] = useState(() => pathname.startsWith('/tagihan'))
   const [siswaOpen,   setSiswaOpen]   = useState(() => pathname.startsWith('/siswa'))
+  const [laporanOpen, setLaporanOpen] = useState(() => pathname.startsWith('/laporan'))
   const [prevPath,    setPrevPath]    = useState(pathname)
   const [setupSteps,    setSetupSteps]    = useState<Record<string, boolean>>({})
+  // Subfitur khusus sekolah (lib/fiturSekolah) — dipasang tim Equanusa lewat dasbor admin
+  const [fitur,         setFitur]         = useState<KodeFitur[]>([])
   const [avatarHover,   setAvatarHover]   = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
 
@@ -428,18 +434,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const nowOnTagihan = pathname.startsWith('/tagihan')
     const wasOnSiswa   = prevPath.startsWith('/siswa')
     const nowOnSiswa   = pathname.startsWith('/siswa')
+    const wasOnLaporan = prevPath.startsWith('/laporan')
+    const nowOnLaporan = pathname.startsWith('/laporan')
     if (nowOnTagihan && !tagihanOpen) setTagihanOpen(true)
     if (wasOnTagihan && !nowOnTagihan) setTagihanOpen(false)
     if (nowOnSiswa   && !siswaOpen)   setSiswaOpen(true)
     if (wasOnSiswa   && !nowOnSiswa)  setSiswaOpen(false)
+    if (nowOnLaporan && !laporanOpen) setLaporanOpen(true)
+    if (wasOnLaporan && !nowOnLaporan) setLaporanOpen(false)
   }
 
   // Toggle dropdown — accordion: buka satu, tutup yang lain
   const toggleTagihan = () => {
-    setTagihanOpen(o => { if (!o) setSiswaOpen(false); return !o })
+    setTagihanOpen(o => { if (!o) { setSiswaOpen(false); setLaporanOpen(false) } return !o })
   }
   const toggleSiswa = () => {
-    setSiswaOpen(o => { if (!o) setTagihanOpen(false); return !o })
+    setSiswaOpen(o => { if (!o) { setTagihanOpen(false); setLaporanOpen(false) } return !o })
+  }
+  const toggleLaporan = () => {
+    setLaporanOpen(o => { if (!o) { setTagihanOpen(false); setSiswaOpen(false) } return !o })
   }
 
   const raw = useSyncExternalStore(
@@ -495,11 +508,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     load()
   }, [pathname])
 
+  // Diperiksa ulang tiap pindah halaman, supaya subfitur yang baru ditambahkan atau
+  // dicabut admin ikut terlihat tanpa harus masuk ulang
+  useEffect(() => {
+    let batal = false
+    const load = async () => {
+      setFitur(fiturLokal())
+      const { data } = await bacaFiturSaya(supabase)
+      if (batal || !data) return
+      setFitur(data)
+      simpanFiturLokal(data)
+    }
+    load()
+    return () => { batal = true }
+  }, [pathname])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem('siku_auth')
     localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
+    hapusFiturLokal()
     router.push('/')
   }
 
@@ -709,7 +738,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
           </div>
 
-          {allDone ? (
+          {allDone && fitur.includes('pengeluaran') ? (
+            <>
+              {/* Laporan dropdown — hanya untuk sekolah yang diberi subfitur Pengeluaran */}
+              <button
+                className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/laporan') ? ' active' : ''}`}
+                onClick={toggleLaporan}
+              >
+                <BarChart2 size={18} className="sidebar-icon" />
+                <span>Laporan</span>
+                <ChevronDown size={14} className={`sidebar-chevron${laporanOpen ? ' rotated' : ''}`} />
+              </button>
+              <div className={`sidebar-submenu${laporanOpen ? ' sidebar-submenu--open' : ''}`}>
+                <Link
+                  href="/laporan"
+                  className={`sidebar-sub-item${pathname.startsWith('/laporan') && !pathname.startsWith('/laporan/pengeluaran') ? ' active' : ''}`}
+                >
+                  <PieChart size={13} /><span>Ringkasan</span>
+                </Link>
+                <Link
+                  href="/laporan/pengeluaran"
+                  className={`sidebar-sub-item${pathname.startsWith('/laporan/pengeluaran') ? ' active' : ''}`}
+                >
+                  <Wallet size={13} /><span>Pengeluaran</span>
+                </Link>
+              </div>
+            </>
+          ) : allDone ? (
             <Link
               href="/laporan"
               className={`sidebar-item${pathname === '/laporan' || pathname.startsWith('/laporan/') ? ' active' : ''}`}
@@ -850,6 +905,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               localStorage.removeItem('siku_auth')
               localStorage.removeItem('siku_setup_steps')
               localStorage.removeItem('siku_setup_done')
+              hapusFiturLokal()
               setResetting(false)
               setShowResetModal(false)
               router.push('/')

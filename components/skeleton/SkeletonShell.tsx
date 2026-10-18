@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import {
   BarChart2, Banknote, Calendar, ChevronDown, ChevronsUp, FileCheck, Gift, GraduationCap, Layers,
-  LayoutDashboard, LogOut, Package, Receipt, Settings, SlidersHorizontal, Users, type LucideIcon,
+  LayoutDashboard, LogOut, Package, PieChart, Receipt, Settings, SlidersHorizontal, Users, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { Blok } from './Blok'
 import { SkeletonHalaman } from './SkeletonHalaman'
@@ -37,19 +37,31 @@ const Menu = ({ label, Ikon, aktif, buka }: { label: string; Ikon: LucideIcon; a
   </div>
 )
 
-const SubMenu = ({ daftar, buka, pathname }: { daftar: ItemMenu[]; buka: boolean; pathname: string }) => (
-  <div className={`sidebar-submenu${buka ? ' sidebar-submenu--open' : ''}`}>
-    {daftar.map(({ label, href, Ikon }) => (
-      <div key={href} className={`sidebar-sub-item${pathname.startsWith(href) ? ' active' : ''}`}>
-        <Ikon size={13} /><span>{label}</span>
-      </div>
-    ))}
-  </div>
-)
+// Submenu Laporan hanya ada untuk sekolah dengan subfitur Pengeluaran (lib/fiturSekolah).
+// Kerangka tidak tahu subfitur sekolah, kecuali di halaman Pengeluaran sendiri.
+const SUB_LAPORAN: ItemMenu[] = [
+  { label: 'Ringkasan',   href: '/laporan',             Ikon: PieChart },
+  { label: 'Pengeluaran', href: '/laporan/pengeluaran', Ikon: Wallet },
+]
+
+const SubMenu = ({ daftar, buka, pathname }: { daftar: ItemMenu[]; buka: boolean; pathname: string }) => {
+  // Awalan terpanjang yang cocok: /laporan/pengeluaran tidak ikut menyalakan /laporan
+  const aktif = daftar.filter(d => pathname.startsWith(d.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href
+  return (
+    <div className={`sidebar-submenu${buka ? ' sidebar-submenu--open' : ''}`}>
+      {daftar.map(({ label, href, Ikon }) => (
+        <div key={href} className={`sidebar-sub-item${href === aktif ? ' active' : ''}`}>
+          <Ikon size={13} /><span>{label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export const SkeletonShell = ({ pathname }: { pathname: string }) => {
-  const diTagihan = pathname.startsWith('/tagihan')
-  const diSiswa   = pathname.startsWith('/siswa')
+  const diTagihan     = pathname.startsWith('/tagihan')
+  const diSiswa       = pathname.startsWith('/siswa')
+  const diPengeluaran = pathname.startsWith('/laporan/pengeluaran')
   return (
     <div className="dashboard-shell">
       {/* Belum bisa dipakai — menu asli muncul begitu data login terbaca */}
@@ -69,7 +81,8 @@ export const SkeletonShell = ({ pathname }: { pathname: string }) => {
           <SubMenu daftar={SUB_TAGIHAN} buka={diTagihan} pathname={pathname} />
           <Menu label="Siswa" Ikon={Users} aktif={diSiswa} buka={diSiswa} />
           <SubMenu daftar={SUB_SISWA} buka={diSiswa} pathname={pathname} />
-          <Menu label="Laporan" Ikon={BarChart2} aktif={pathname.startsWith('/laporan')} />
+          <Menu label="Laporan" Ikon={BarChart2} aktif={pathname.startsWith('/laporan')} buka={diPengeluaran ? true : undefined} />
+          {diPengeluaran && <SubMenu daftar={SUB_LAPORAN} buka pathname={pathname} />}
         </nav>
 
         <div className="sidebar-bottom">

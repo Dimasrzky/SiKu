@@ -6,6 +6,7 @@ import {
 } from './SkeletonTagihan'
 import { SkeletonAlumni, SkeletonDaftarSiswa, SkeletonManajemenKelas, SkeletonNaikKelas } from './SkeletonSiswa'
 import { SkeletonLaporan, SkeletonLaporanJenjang, SkeletonLaporanKelas, SkeletonLaporanSiswa } from './SkeletonLaporan'
+import { SkeletonPengeluaran } from './SkeletonPengeluaran'
 import { Blok, BlokTeks, KerangkaHalaman } from './Blok'
 
 /** Rute tanpa kerangka khusus: judul + satu kartu berisi baris */
@@ -51,6 +52,7 @@ export const SkeletonHalaman = ({ pathname }: { pathname: string }) => {
     case '/siswa/naik-kelas':      return <SkeletonNaikKelas />
     case '/siswa/alumni':          return <SkeletonAlumni />
     case '/laporan':               return <SkeletonLaporan />
+    case '/laporan/pengeluaran':   return <SkeletonPengeluaran />
   }
   // /laporan/<level>/<id>
   const [, akar, level, id] = pathname.split('/')
