@@ -9,6 +9,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
+import { identitasKelas, namaKelas } from '@/lib/namaKelas'
 import { SkeletonNaikKelas } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -31,12 +32,6 @@ function getInitials(nama: string): string {
   return parts.length >= 2
     ? (parts[0][0] + parts[1][0]).toUpperCase()
     : nama.slice(0, 2).toUpperCase()
-}
-
-// Ekstrak identitas dari nama kelas: "10-INTERNASIONAL" dengan jenjang "10" → "INTERNASIONAL"
-function getIdentitas(kelasNama: string, jenjang: string): string {
-  const prefix = `${jenjang}-`
-  return kelasNama.startsWith(prefix) ? kelasNama.slice(prefix.length) : kelasNama
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -184,6 +179,7 @@ export default function NaikKelasPage() {
     const kelasNamaMap = new Map(kelasList.map(k => [k.nama.trim(), k]))
 
     // Validasi per kelas: setiap kelas NON-maxLevel harus punya target dengan identitas sama
+    // (kelas tanpa identitas naik ke kelas tanpa identitas: "1" → "2")
     const missing: string[] = []
     for (const kelas of kelasList) {
       if (kelas.jenjang === maxLevel) continue  // kelas tertinggi → alumni, valid
@@ -192,8 +188,7 @@ export default function NaikKelasPage() {
       if (currentIdx < 0 || currentIdx >= jenjangLevels.length - 1) continue
 
       const nextLevel  = jenjangLevels[currentIdx + 1]
-      const identitas  = getIdentitas(kelas.nama, kelas.jenjang)
-      const targetNama = `${nextLevel}-${identitas}`
+      const targetNama = namaKelas(nextLevel, identitasKelas(kelas.nama, kelas.jenjang))
 
       if (!kelasNamaMap.has(targetNama) && !missing.includes(targetNama)) {
         missing.push(targetNama)
@@ -276,8 +271,7 @@ export default function NaikKelasPage() {
         const nextLevel  = currentIdx >= 0 ? jenjangLevels[currentIdx + 1] : null
         if (!nextLevel) continue
 
-        const identitas   = getIdentitas(kelas.nama, kelas.jenjang)
-        const targetNama  = `${nextLevel}-${identitas}`
+        const targetNama  = namaKelas(nextLevel, identitasKelas(kelas.nama, kelas.jenjang))
         const targetKelas = kelasNamaMap.get(targetNama) ?? null
 
         const key = `${kelas.jenjang}-${nextLevel}`

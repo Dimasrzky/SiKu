@@ -1221,7 +1221,7 @@ export default function PaketPerKelasPage() {
               Rekening sekolah belum ditambahkan!
             </h3>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
-              Tambahkan rekening resmi sekolah di halaman Pengaturan terlebih dahulu. Tanpa rekening tujuan, tagihan yang dibuat tidak bisa dibayar oleh orang tua.
+              Tambahkan rekening resmi sekolah di halaman <strong style={{ color: 'var(--navy-dark)', fontWeight: 800 }}>Pengaturan</strong> terlebih dahulu. Tanpa rekening tujuan, tagihan yang dibuat tidak bisa dibayar oleh orang tua.
             </p>
             <button
               onClick={() => { setShowRekeningPopup(false); router.push('/pengaturan') }}

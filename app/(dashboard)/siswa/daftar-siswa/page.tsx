@@ -12,6 +12,7 @@ import {
 import * as XLSX from 'xlsx'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { kunciKelas } from '@/lib/namaKelas'
 import { SkeletonDaftarSiswa } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -57,8 +58,42 @@ interface SiswaRow {
   status:    string
 }
 
-interface BeasiswaProgram { id: string; nama: string; jenis: string; persen: number | null; nominal: number | null; count: number }
-interface SiswaBeasiswaInfo { beasiswa_id: string; nama: string; jenis: string; persen: number | null; nominal: number | null }
+/**
+ * `label` = isi badge. Potongan personal tidak punya nama program, jadi badgenya menyebut
+ * komponen yang dipotong + besarnya ("SPP −50%"); `rincian` = teks lengkap untuk tooltip.
+ */
+interface BeasiswaProgram { id: string; nama: string; jenis: string; label: string; rincian: string; count: number }
+interface SiswaBeasiswaInfo { beasiswa_id: string; nama: string; jenis: string; label: string; rincian: string }
+
+type ProgramBeasiswaRaw = {
+  id: string; nama: string | null; jenis: string; keterangan: string | null
+  jenis_potongan: 'persen' | 'nominal' | null; persen: number | null; nominal: number | null
+  beasiswa_komponen: { komponen_id: string }[]
+}
+
+const besaranPotongan = (p: ProgramBeasiswaRaw): string =>
+  p.jenis_potongan === 'nominal' || (p.persen == null && p.nominal != null)
+    ? `Rp ${(p.nominal ?? 0).toLocaleString('id-ID')}`
+    : `${p.persen ?? 0}%`
+
+/** Label badge + rincian tooltip satu program beasiswa/potongan */
+const labelProgram = (p: ProgramBeasiswaRaw, namaKomponen: Map<string, string>): { label: string; rincian: string } => {
+  const komponen = p.beasiswa_komponen.map(k => namaKomponen.get(k.komponen_id)).filter((n): n is string => !!n)
+  const besaran  = besaranPotongan(p)
+  if (p.jenis === 'beasiswa') {
+    const nama = p.nama ?? 'Beasiswa'
+    return { label: nama, rincian: `${nama}: potongan ${besaran}${komponen.length ? ` untuk ${komponen.join(', ')}` : ''}` }
+  }
+  // Paling banyak dua nama komponen di badge; sisanya di tooltip
+  const ringkas = komponen.length === 0 ? 'Potongan'
+    : komponen.length <= 2 ? komponen.join(', ')
+    : `${komponen.slice(0, 2).join(', ')} +${komponen.length - 2}`
+  return {
+    label:   `${ringkas} −${besaran}`,
+    rincian: `Potongan ${besaran} untuk ${komponen.length ? komponen.join(', ') : '(komponen belum dipilih)'}`
+      + (p.keterangan ? ` — ${p.keterangan}` : ''),
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +105,13 @@ const readJenjangParam = (): string =>
   typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('jenjang') ?? ''
+
+/** Saring siswa tanpa nomor WA dari URL: /siswa/daftar-siswa?wa=kosong (kartu Dashboard) */
+const readWaKosongParam = (): boolean =>
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('wa') === 'kosong'
+
+/** Nomor WA wali boleh kosong saat impor/tambah siswa, dilengkapi belakangan lewat Edit */
+const tanpaNomorWa = (s: { no_wa: string | null }) => !s.no_wa?.trim()
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -93,11 +135,13 @@ export default function DaftarSiswaPage() {
   // jadi filter belum ikut render awal dan tidak ada risiko hydration mismatch
   const [filterJenjang,       setFilterJenjang]       = useState(readJenjangParam)
   const [filterBeasiswa,      setFilterBeasiswa]      = useState('')
+  const [filterTanpaWa,       setFilterTanpaWa]       = useState(readWaKosongParam)
   const [searchQuery,         setSearchQuery]         = useState('')
   const [showJenjangDropdown, setShowJenjangDropdown] = useState(false)
   const [showBsDropdown,      setShowBsDropdown]      = useState(false)
   const dropdownRef  = useRef<HTMLDivElement>(null)
   const bsDropRef    = useRef<HTMLDivElement>(null)
+  const tabelRef     = useRef<HTMLDivElement>(null)
 
   // Beasiswa data
   const [beasiswaPrograms, setBeasiswaPrograms] = useState<BeasiswaProgram[]>([])
@@ -159,19 +203,22 @@ export default function DaftarSiswaPage() {
   }
 
   const loadBeasiswa = async (sid: string) => {
-    const { data: programs } = await supabase
-      .from('beasiswa')
-      .select('id, nama, jenis, persen, nominal')
-      .eq('sekolah_id', sid)
-      .limit(100)
+    const [{ data: programs }, { data: komponenRows }] = await Promise.all([
+      supabase
+        .from('beasiswa')
+        .select('id, nama, jenis, keterangan, jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id)')
+        .eq('sekolah_id', sid)
+        .limit(100),
+      supabase.from('komponen_tagihan').select('id, nama').eq('sekolah_id', sid).limit(200),
+    ])
+    const namaKomponen = new Map(((komponenRows ?? []) as { id: string; nama: string }[]).map(k => [k.id, k.nama]))
 
     const progIds = (programs ?? []).map((p: { id: string }) => p.id)
     const { data: assignments } = progIds.length > 0
       ? await supabase.from('beasiswa_siswa').select('siswa_id, beasiswa_id').in('beasiswa_id', progIds).limit(1000)
       : { data: [] }
 
-    type ProgRaw = { id: string; nama: string; jenis: string; persen: number | null; nominal: number | null }
-    const progMap = new Map<string, ProgRaw>(((programs ?? []) as ProgRaw[]).map(p => [p.id, p]))
+    const progMap = new Map(((programs ?? []) as ProgramBeasiswaRaw[]).map(p => [p.id, { ...p, ...labelProgram(p, namaKomponen) }]))
     const countMap = new Map<string, number>()
     const siswaMap = new Map<string, SiswaBeasiswaInfo[]>()
     for (const a of (assignments ?? []) as { siswa_id: string; beasiswa_id: string }[]) {
@@ -179,10 +226,10 @@ export default function DaftarSiswaPage() {
       const prog = progMap.get(a.beasiswa_id)
       if (prog) {
         if (!siswaMap.has(a.siswa_id)) siswaMap.set(a.siswa_id, [])
-        siswaMap.get(a.siswa_id)!.push({ beasiswa_id: a.beasiswa_id, nama: prog.nama, jenis: prog.jenis, persen: prog.persen, nominal: prog.nominal })
+        siswaMap.get(a.siswa_id)!.push({ beasiswa_id: a.beasiswa_id, nama: prog.nama ?? '', jenis: prog.jenis, label: prog.label, rincian: prog.rincian })
       }
     }
-    setBeasiswaPrograms((programs ?? []).map((p: ProgRaw): BeasiswaProgram => ({ id: p.id, nama: p.nama, jenis: p.jenis, persen: p.persen, nominal: p.nominal, count: countMap.get(p.id) ?? 0 })))
+    setBeasiswaPrograms([...progMap.values()].map((p): BeasiswaProgram => ({ id: p.id, nama: p.nama ?? '', jenis: p.jenis, label: p.label, rincian: p.rincian, count: countMap.get(p.id) ?? 0 })))
     setSiswaBeasiswaMap(siswaMap)
   }
 
@@ -247,7 +294,7 @@ export default function DaftarSiswaPage() {
     ws['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 25 }, { wch: 20 }]
     XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa')
 
-    const kelasRows: (string | number)[][] = [['Nama Kelas (gunakan persis seperti ini)'], ...kelasList.map(k => [k.nama])]
+    const kelasRows: (string | number)[][] = [['Nama Kelas (boleh ditulis "1-A" atau "Kelas 1-A")'], ...kelasList.map(k => [k.nama])]
     const wsKelas = XLSX.utils.aoa_to_sheet(kelasRows)
     wsKelas['!cols'] = [{ wch: 35 }]
     XLSX.utils.book_append_sheet(wb, wsKelas, 'Daftar Kelas')
@@ -260,19 +307,31 @@ export default function DaftarSiswaPage() {
   const parseFile = (file: File) => {
     setImportError('')
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data  = new Uint8Array(e.target!.result as ArrayBuffer)
         const wb    = XLSX.read(data, { type: 'array' })
         const ws    = wb.Sheets[wb.SheetNames[0]]
         const rows  = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
 
+        // NIS unik per sekolah (constraint siswa_sekolah_id_nis_key) — termasuk alumni dan siswa
+        // nonaktif yang tidak tampil di daftar. Satu NIS terpakai menggagalkan seluruh impor,
+        // jadi barisnya ditandai di preview dan dilewati.
+        const { data: nisAda } = await supabase
+          .from('siswa').select('nis, nama, status').eq('sekolah_id', sekolahId).limit(5000)
+        const pemilikNis = new Map<string, string>()
+        for (const s of (nisAda ?? []) as { nis: string | null; nama: string; status: string | null }[]) {
+          const nis = s.nis?.trim()
+          if (nis) pemilikNis.set(nis, s.status && s.status !== 'aktif' ? `${s.nama} (${s.status})` : s.nama)
+        }
+        const barisNis = new Map<string, number>()  // NIS → nomor baris pertama di file
+
+        // Nama kelas di Excel boleh ditulis seperti tampilannya ("Kelas 1", "Kelas 1-A") atau
+        // seperti di template ("1", "1-A"): dicocokkan lewat kunciKelas
         const kelasMap = new Map<string, string>()
         kelasList.forEach(k => {
-          const upper = k.nama.toUpperCase()
-          kelasMap.set(upper, k.id)
-          // juga petakan versi tanpa dash/spasi, misal "1-A" → "1A"
-          kelasMap.set(upper.replace(/[-\s]/g, ''), k.id)
+          const kunci = kunciKelas(k.nama)
+          if (!kelasMap.has(kunci)) kelasMap.set(kunci, k.id)
         })
 
         const parsed: ParsedRow[] = rows.map((row, i) => {
@@ -281,11 +340,16 @@ export default function DaftarSiswaPage() {
           const namaKelas = String(row['Nama Kelas'] ?? '').trim()
           const namaWali  = String(row['Nama Orang Tua'] ?? '').trim()
           const noWa      = String(row['No WhatsApp'] ?? '').trim()
-          const kelasId   = kelasMap.get(namaKelas.toUpperCase()) ?? kelasMap.get(namaKelas.toUpperCase().replace(/[-\s]/g, ''))
+          const kelasId   = kelasMap.get(kunciKelas(namaKelas))
+
+          const barisKembar = nis ? barisNis.get(nis) : undefined
+          if (nis && barisKembar === undefined) barisNis.set(nis, i + 1)
 
           let error: string | undefined
           if (!nama)        error = 'Nama wajib diisi'
           else if (!nis)    error = 'NIS wajib diisi'
+          else if (barisKembar !== undefined) error = `NIS sama dengan baris ${barisKembar}`
+          else if (pemilikNis.has(nis)) error = `NIS sudah dipakai: ${pemilikNis.get(nis)}`
           else if (!kelasId) error = `Kelas "${namaKelas}" tidak ditemukan`
 
           return { no: i + 1, nama, nis, namaKelas, namaWali, noWa, kelasId, error }
@@ -467,8 +531,10 @@ export default function DaftarSiswaPage() {
     const matchBeasiswa = !filterBeasiswa || (siswaBeasiswaMap.get(s.id) ?? []).some(b =>
       filterBeasiswa === 'beasiswa' ? b.jenis === 'beasiswa' : b.jenis !== 'beasiswa'
     )
-    return matchJenjang && matchSearch && matchBeasiswa
+    const matchWa = !filterTanpaWa || tanpaNomorWa(s)
+    return matchJenjang && matchSearch && matchBeasiswa && matchWa
   })
+  const jumlahTanpaWa = siswaList.filter(s => s.status === 'aktif' && tanpaNomorWa(s)).length
 
   // Donut chart data — grouped per jenjang
   const r = 35, circumference = 2 * Math.PI * r
@@ -763,6 +829,22 @@ export default function DaftarSiswaPage() {
 
       {previewRows && renderPreview()}
 
+      {/* Pengingat nomor WA wali yang belum diisi — tampil selama masih ada */}
+      {jumlahTanpaWa > 0 && (
+        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: '#FEF3C7', border: '1.5px solid #FCD34D', borderRadius: 12, padding: '0.85rem 1.1rem', marginBottom: '1.5rem' }}>
+          <AlertCircle size={20} color="#B45309" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, fontSize: '0.875rem', color: '#78350F', lineHeight: 1.5 }}>
+            <strong>{jumlahTanpaWa} siswa belum punya nomor WhatsApp wali.</strong>{' '}
+            Pengingat tagihan tidak bisa dikirim ke wali mereka. Lengkapi lewat tombol Edit di baris siswa.
+          </div>
+          <button
+            onClick={() => { setFilterTanpaWa(f => !f); tabelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+            style={{ flexShrink: 0, background: '#B45309', color: '#fff', border: 'none', borderRadius: 8, padding: '0.5rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+            {filterTanpaWa ? 'Tampilkan semua siswa' : 'Tampilkan siswanya'}
+          </button>
+        </div>
+      )}
+
       {/* Ringkasan card */}
       <div style={{ background: '#ffffff', borderRadius: 16, padding: '1.5rem', marginBottom: '1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', borderLeft:'28px solid #1A2C4E' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '2rem' }}>
@@ -823,10 +905,10 @@ export default function DaftarSiswaPage() {
                 ? <span style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Belum ada program aktif</span>
                 : beasiswaPrograms.filter(p => p.count > 0).map(p => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ background: p.jenis === 'beasiswa' ? '#DCFCE7' : '#FEF3C7', color: p.jenis === 'beasiswa' ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span title={p.rincian} style={{ background: p.jenis === 'beasiswa' ? '#DCFCE7' : '#FEF3C7', color: p.jenis === 'beasiswa' ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       {p.jenis === 'beasiswa'
-                        ? <><GraduationCap size={10} /> {p.nama}</>
-                        : <>✂ Potongan {p.persen != null ? `${p.persen}%` : p.nama}</>}
+                        ? <><GraduationCap size={10} /> {p.label}</>
+                        : <>✂ {p.label}</>}
                     </span>
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>{p.count} <span style={{ fontWeight: 400, color: '#94A3B8' }}>Siswa</span></span>
                   </div>
@@ -837,7 +919,7 @@ export default function DaftarSiswaPage() {
       </div>
 
       {/* Semua siswa card */}
-      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow:'0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+      <div ref={tabelRef} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow:'0 1px 3px rgba(0,0,0,0.07)', overflow: 'hidden', scrollMarginTop: '1rem' }}>
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #F1F5F9' }}>
           <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1A2C4E' }}>Semua siswa</div>
           <div style={{ fontSize: '0.83rem', color: '#64748B' }}>Cari, lihat, dan kelola data siswa secara individual</div>
@@ -884,6 +966,13 @@ export default function DaftarSiswaPage() {
               </div>
             )}
           </div>
+
+          {filterTanpaWa && (
+            <button onClick={() => setFilterTanpaWa(false)} title="Hapus saringan"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#FEF3C7', border: '1.5px solid #FCD34D', borderRadius: 8, padding: '0.45rem 0.75rem', fontSize: '0.85rem', fontWeight: 600, color: '#92400E', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Tanpa nomor WA <X size={13} />
+            </button>
+          )}
 
           <div style={{ minWidth: 500, position: 'relative', marginLeft: 'auto' }}>
             <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
@@ -1152,16 +1241,23 @@ function SiswaTableRow({ s, bsMap, onDelete, onEdit, onView }: {
           ? <span style={{ background: s.kelas.warna, color: '#fff', padding: '2px 10px', borderRadius: 6, fontSize: '0.78rem', fontWeight: 700 }}>{s.kelas.nama}</span>
           : '—'}
       </td>
-      <td style={{ padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: '#64748B' }}>{s.nama_wali ?? '—'}</td>
+      <td style={{ padding: '0.75rem 1.25rem', fontSize: '0.85rem', color: '#64748B' }}>
+        {s.nama_wali ?? '—'}
+        {tanpaNomorWa(s) && (
+          <span style={{ display: 'block', width: 'fit-content', marginTop: 3, background: '#FEF3C7', color: '#92400E', fontSize: '0.7rem', fontWeight: 700, padding: '1px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+            Belum ada No WA
+          </span>
+        )}
+      </td>
       <td style={{ padding: '0.75rem 1.25rem' }}>
         {bsList.length === 0
           ? <span style={{ color: '#94A3B8', fontSize: '0.8rem' }}>—</span>
           : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
               {bsList.map(bs => (
-                <span key={bs.beasiswa_id} style={{ background: bs.jenis === 'beasiswa' ? '#DCFCE7' : '#FEF3C7', color: bs.jenis === 'beasiswa' ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                <span key={bs.beasiswa_id} title={bs.rincian} style={{ background: bs.jenis === 'beasiswa' ? '#DCFCE7' : '#FEF3C7', color: bs.jenis === 'beasiswa' ? '#15803D' : '#92400E', fontSize: '0.72rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                   {bs.jenis === 'beasiswa'
-                    ? <><GraduationCap size={10} /> {bs.nama}</>
-                    : <>✂ Potongan {bs.persen != null ? `${bs.persen}%` : bs.nama}</>}
+                    ? <><GraduationCap size={10} /> {bs.label}</>
+                    : <>✂ {bs.label}</>}
                 </span>
               ))}
             </div>}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { CheckCircle2, XCircle, ChevronDown, Trash2, Search, LayoutGrid, Users, AlertCircle, Eye, X, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { identitasKelas, namaKelas } from '@/lib/namaKelas'
 import { SkeletonManajemenKelas } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -25,6 +26,8 @@ const JENJANG_MAP: Record<string, string[]> = {
 const STEP_ORDER      = ['profil_sekolah', 'tahun_ajaran', 'komponen_tagihan', 'buat_kelas', 'import_siswa']
 const THIS_STEP_INDEX = 3
 
+const PESAN_IDENTITAS_KOSONG = 'Identitas kelas harus diisi, atau hapus centang "Ada identitas kelas?".'
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface KelasRow {
@@ -36,6 +39,113 @@ interface KelasRow {
   semester:     string
   wali_kelas?:  string | null
 }
+
+interface RancanganKelas { nama: string; tingkat: string; label: string }
+
+// ── Form kelas baru (setup + tambah kelas) ────────────────────────────────────
+
+/**
+ * Kelas yang akan dibuat dari isian form, untuk satu tingkat. Dengan identitas: tiap identitas
+ * ("7-A", "7-B"). Tanpa identitas: satu kelas bernama tingkat saja ("7").
+ */
+const rancangKelas = (tingkat: string[], adaIdentitas: boolean, identitas: string[]): RancanganKelas[] => {
+  const t = tingkat[0]
+  if (!t) return []
+  const hasil = adaIdentitas
+    ? identitas.map(i => i.trim().toUpperCase()).filter(Boolean)
+        .map(id => ({ nama: namaKelas(t, id), tingkat: t, label: `${t} ${id}` }))
+    : [{ nama: namaKelas(t, ''), tingkat: t, label: `Kelas ${t}` }]
+  // Identitas kembar dalam satu isian cukup dibuat sekali
+  return hasil.filter((k, i) => hasil.findIndex(x => x.nama === k.nama) === i)
+}
+
+/** Tombol tingkat kelas: selalu satu tingkat per batch, supaya tiap tingkat bisa diberi warna sendiri */
+const PilihTingkat = ({ pilihan, terpilih, onUbah }: {
+  pilihan: string[]
+  terpilih: string[]
+  onUbah: (tingkat: string[]) => void
+}) => (
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+    {pilihan.map(j => {
+      const selected = terpilih.includes(j)
+      return (
+        <button key={j} type="button" aria-pressed={selected} onClick={() => onUbah(selected ? [] : [j])}
+          style={{ padding: '0.55rem 1.1rem', borderRadius: 10, fontFamily: 'inherit', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.15s', border: selected ? '2px solid #8CA6D0' : '2px solid #BABFC7', background: selected ? '#A3CDFE' : '#fff', color: selected ? '#1A2C4E' : 'var(--text-mid)', boxShadow: selected ? '0 4px 12px rgba(26,44,78,0.3)' : '6px 6px 8px rgba(18,47,102,0.10)' }}>
+          Kelas {j}
+        </button>
+      )
+    })}
+  </div>
+)
+
+/** Centang "Ada identitas kelas?" + daftar identitas. Tanpa centang, tiap tingkat cukup satu kelas. */
+const IsianIdentitas = ({ ada, onUbahAda, daftar, onUbahDaftar, tingkat }: {
+  ada: boolean
+  onUbahAda: (ada: boolean) => void
+  daftar: string[]
+  onUbahDaftar: (daftar: string[]) => void
+  /** Tingkat untuk contoh: yang terpilih, atau tingkat pertama sekolah */
+  tingkat: string
+}) => {
+  // TK/PAUD bertingkat huruf (A, B, C), jadi contohnya A1, A2, A3
+  const contoh = (/^\d+$/.test(tingkat) ? ['A', 'B', 'C'] : ['1', '2', '3']).map(x => `${tingkat}${x}`).join(', ')
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', marginBottom: 4 }}>
+        <input type="checkbox" checked={ada} onChange={e => onUbahAda(e.target.checked)}
+          style={{ width: 18, height: 18, margin: 0, cursor: 'pointer', accentColor: '#1A2C4E', flexShrink: 0 }} />
+        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-mid)' }}>Ada identitas kelas?</span>
+        <span style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)' }}>(contoh {contoh})</span>
+      </label>
+      {ada ? (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {daftar.map((val, i) => {
+              const isLast = i === daftar.length - 1
+              return (
+                <div key={i} style={{ display: 'flex', gap: '0.5rem', width: '60%' }}>
+                  <input type="text" placeholder="Contoh: A, 1, Unggulan, MIPA" value={val} onChange={e => onUbahDaftar(daftar.map((v, idx) => idx === i ? e.target.value : v))} style={{ ...sInput, flex: 1 }} autoFocus={i === 0} />
+                  {isLast ? (
+                    <button type="button" onClick={() => onUbahDaftar([...daftar, ''])} style={{ flexShrink: 0, marginLeft: '0.5rem', padding: '0 1rem', borderRadius: 10, background: '#1A2C4E', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.85rem', color: '#ffffff', whiteSpace: 'nowrap', boxShadow: '6px 6px 8px rgba(18,47,102,0.10)', border: 'none' }}>
+                      + Tambah
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => onUbahDaftar(daftar.filter((_, idx) => idx !== i))} style={{ flexShrink: 0, marginLeft: '3.2rem', padding: '0 0.9rem', border: '2.5px solid #c7504e', borderRadius: 10, background: '#dab1b1', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '1.8rem', color: '#000000', lineHeight: 1, boxShadow: '6px 6px 8px rgba(18,47,102,0.10)' }}>
+                      ×
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Pratinjau kelas yang akan dibuat dalam satu kali simpan */
+const ReviewKelas = ({ rancangan, warna, adaIdentitas }: { rancangan: RancanganKelas[]; warna: string; adaIdentitas: boolean }) => (
+  rancangan.length === 0 ? (
+    <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1.1rem 1.4rem', background: '#F8FAFC' }}>
+      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#64748B', marginBottom: '0.25rem' }}>Kelas yang akan dibuat</div>
+      <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: 500 }}>
+        {adaIdentitas ? <>Pilih tingkat &amp; tambahkan identitas kelas</> : 'Pilih tingkat kelas'}
+      </div>
+    </div>
+  ) : (
+    <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1rem 1.25rem', background: '#F8FAFC', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
+      {rancangan.map(k => (
+        <div key={k.nama} style={{ background: warna, color: '#fff', fontWeight: 800, fontSize: '0.95rem', padding: '0.45rem 1rem', borderRadius: 10, letterSpacing: '0.01em', boxShadow: `0 3px 8px ${warna}55` }}>
+          {k.label}
+        </div>
+      ))}
+    </div>
+  )
+)
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -65,7 +175,8 @@ export default function KelasPage() {
   // View mode inline add form
   const [showViewAdd,          setShowViewAdd]          = useState(false)
   const [viewAddClosing,       setViewAddClosing]       = useState(false)
-  const [viewAddJenjang,       setViewAddJenjang]       = useState('')
+  const [viewAddTingkat,       setViewAddTingkat]       = useState<string[]>([])
+  const [viewAddAdaIdentitas,  setViewAddAdaIdentitas]  = useState(true)
   const [viewAddIdentitasList, setViewAddIdentitasList] = useState<string[]>([''])
   const [viewAddWarna,         setViewAddWarna]         = useState(WARNA_OPTIONS[0])
   const [viewAddSaving,        setViewAddSaving]        = useState(false)
@@ -78,6 +189,8 @@ export default function KelasPage() {
   const [showHeaderModal,          setShowHeaderModal]          = useState(false)
   const [headerModalJenjang,       setHeaderModalJenjang]       = useState('')
   const [headerModalIdentitasList, setHeaderModalIdentitasList] = useState<string[]>([''])
+  // Identitas untuk kelas lama tanpa identitas di tingkat ini, mis. "Kelas 1" → "1-A"
+  const [headerModalIdentitasLama, setHeaderModalIdentitasLama] = useState('')
   const [headerModalWarna,         setHeaderModalWarna]         = useState(WARNA_OPTIONS[0])
   const [headerModalSaving,        setHeaderModalSaving]        = useState(false)
   const [headerModalError,         setHeaderModalError]         = useState('')
@@ -97,7 +210,8 @@ export default function KelasPage() {
   // Setup form state
   const [showForm,          setShowForm]          = useState(false)
   const [formClosing,       setFormClosing]       = useState(false)
-  const [formJenjang,       setFormJenjang]       = useState('')
+  const [formTingkat,       setFormTingkat]       = useState<string[]>([])
+  const [formAdaIdentitas,  setFormAdaIdentitas]  = useState(true)
   const [formIdentitasList, setFormIdentitasList] = useState<string[]>([''])
   const [formWarna,         setFormWarna]         = useState(WARNA_OPTIONS[0])
 
@@ -212,15 +326,12 @@ export default function KelasPage() {
   const resetForm = () => {
     setShowForm(false)
     setFormClosing(false)
-    setFormJenjang('')
+    setFormTingkat([])
+    setFormAdaIdentitas(true)
     setFormIdentitasList([''])
     setFormWarna(WARNA_OPTIONS[0])
     setError('')
   }
-
-  const addIdentitas    = () => setFormIdentitasList(prev => [...prev, ''])
-  const removeIdentitas = (i: number) => setFormIdentitasList(prev => prev.filter((_, idx) => idx !== i))
-  const updateIdentitas = (i: number, val: string) => setFormIdentitasList(prev => prev.map((v, idx) => idx === i ? val : v))
 
   const handleDeleteKelas = async () => {
     if (!deleteTarget) return
@@ -248,9 +359,9 @@ export default function KelasPage() {
 
   const handleSimpanForm = async () => {
     setError('')
-    if (!formJenjang) { setError('Tingkat kelas harus dipilih.'); return }
-    const validIdentitas = formIdentitasList.filter(i => i.trim())
-    if (validIdentitas.length === 0) { setError('Identitas kelas harus diisi.'); return }
+    if (formTingkat.length === 0) { setError('Tingkat kelas harus dipilih.'); return }
+    const rancangan = rancangKelas(formTingkat, formAdaIdentitas, formIdentitasList)
+    if (rancangan.length === 0) { setError(PESAN_IDENTITAS_KOSONG); return }
     setSaving(true)
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch('/api/setup-step', {
@@ -261,10 +372,7 @@ export default function KelasPage() {
         data: {
           tahun_ajaran: tahunAjaran,
           semester,
-          kelas: validIdentitas.map(id => ({
-            nama:  `${formJenjang}-${id.trim().toUpperCase()}`,
-            warna: formWarna,
-          })),
+          kelas: rancangan.map(k => ({ nama: k.nama, warna: formWarna })),
         },
       }),
     })
@@ -283,7 +391,8 @@ export default function KelasPage() {
     const allDone = jenjangOptions.length > 0 && jenjangOptions.every(j => rawRows.some(r => r.jenjang === j))
     if (allDone) { setShowAllJenjangDonePopup(true); return }
 
-    setViewAddJenjang('')
+    setViewAddTingkat([])
+    setViewAddAdaIdentitas(true)
     setViewAddIdentitasList([''])
     setViewAddWarna(WARNA_OPTIONS[0])
     setViewAddError('')
@@ -295,16 +404,35 @@ export default function KelasPage() {
     const existingWarna = rawRows.find(r => r.jenjang === jenjang)?.warna ?? WARNA_OPTIONS[0]
     setHeaderModalJenjang(jenjang)
     setHeaderModalIdentitasList([''])
+    setHeaderModalIdentitasLama('')
     setHeaderModalWarna(existingWarna)
     setHeaderModalError('')
     setHeaderModalSaving(false)
     setShowHeaderModal(true)
   }
 
+  // Kelas tanpa identitas di satu tingkat ("Kelas 1") — paling banyak satu, dan hanya bila
+  // tingkat itu belum punya kelas lain
+  const kelasTanpaIdentitas = (tingkat: string) =>
+    rawRows.find(r => r.jenjang === tingkat && !identitasKelas(r.nama, r.jenjang))
+
   const handleHeaderModalSimpan = async () => {
     setHeaderModalError('')
-    const validIds = headerModalIdentitasList.filter(i => i.trim())
-    if (validIds.length === 0) { setHeaderModalError('Identitas kelas harus diisi.'); return }
+    // Kelas lama tanpa identitas diberi identitas dulu, supaya tidak ada "1" bersama "1-B"
+    const kelasLama = kelasTanpaIdentitas(headerModalJenjang)
+    const idLama    = headerModalIdentitasLama.trim().toUpperCase()
+    if (kelasLama && !idLama) { setHeaderModalError(`Beri identitas dulu untuk Kelas ${headerModalJenjang} yang sudah ada.`); return }
+    const rancangan = rancangKelas([headerModalJenjang], true, headerModalIdentitasList)
+    if (rancangan.length === 0) { setHeaderModalError('Identitas kelas harus diisi.'); return }
+
+    const namaLamaBaru = kelasLama ? namaKelas(headerModalJenjang, idLama) : null
+    const namaTerpakai = new Set(rawRows.filter(r => r.id !== kelasLama?.id).map(r => r.nama.trim().toUpperCase()))
+    if (namaLamaBaru) {
+      if (namaTerpakai.has(namaLamaBaru)) { setHeaderModalError(`Kelas ${namaLamaBaru} sudah ada.`); return }
+      namaTerpakai.add(namaLamaBaru)
+    }
+    const kembar = rancangan.find(k => namaTerpakai.has(k.nama))
+    if (kembar) { setHeaderModalError(`Kelas ${kembar.nama} sudah ada.`); return }
     setHeaderModalSaving(true)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -313,10 +441,20 @@ export default function KelasPage() {
     const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
     if (!profile?.sekolah_id) { setHeaderModalError('Data sekolah tidak ditemukan.'); setHeaderModalSaving(false); return }
 
-    const rows = validIds.map(id => ({
+    // Ganti nama kelas lama lebih dulu: kalau kelas baru gagal disimpan, yang tersisa hanya
+    // kelas lama yang sudah beridentitas, bukan campuran "1" dan "1-B"
+    let barisSekarang = rawRows
+    if (kelasLama && namaLamaBaru) {
+      const { error: ubahError } = await supabase.from('kelas').update({ nama: namaLamaBaru }).eq('id', kelasLama.id)
+      if (ubahError) { setHeaderModalError(ubahError.message); setHeaderModalSaving(false); return }
+      barisSekarang = rawRows.map(r => r.id === kelasLama.id ? { ...r, nama: namaLamaBaru } : r)
+      setRawRows(barisSekarang)
+    }
+
+    const rows = rancangan.map(k => ({
       sekolah_id: profile.sekolah_id as string,
-      nama: `${headerModalJenjang}-${id.trim().toUpperCase()}`,
-      jenjang: headerModalJenjang,
+      nama: k.nama,
+      jenjang: k.tingkat,
       warna: headerModalWarna,
       tahun_ajaran: tahunAjaran,
       semester,
@@ -329,7 +467,7 @@ export default function KelasPage() {
 
     if (insertError) { setHeaderModalError(insertError.message); setHeaderModalSaving(false); return }
     if (inserted) {
-      const newRows = [...rawRows, ...(inserted as KelasRow[])]
+      const newRows = [...barisSekarang, ...(inserted as KelasRow[])]
       setRawRows(newRows)
       const allDone = jenjangOptions.length > 0 && jenjangOptions.every(j => newRows.some(r => r.jenjang === j))
       if (allDone) setShowAllJenjangDonePopup(true)
@@ -343,15 +481,12 @@ export default function KelasPage() {
     setTimeout(() => { setShowViewAdd(false); setViewAddClosing(false) }, 400)
   }
 
-  const addViewIdentitas    = () => setViewAddIdentitasList(prev => [...prev, ''])
-  const removeViewIdentitas = (i: number) => setViewAddIdentitasList(prev => prev.filter((_, idx) => idx !== i))
-  const updateViewIdentitas = (i: number, val: string) => setViewAddIdentitasList(prev => prev.map((v, idx) => idx === i ? val : v))
-
   const handleViewAddSimpan = async () => {
     setViewAddError('')
-    if (!viewAddJenjang) { setViewAddError('Tingkat kelas harus dipilih.'); return }
-    const validIds = viewAddIdentitasList.filter(i => i.trim())
-    if (validIds.length === 0) { setViewAddError('Identitas kelas harus diisi.'); return }
+    if (viewAddTingkat.length === 0) { setViewAddError('Tingkat kelas harus dipilih.'); return }
+    // Hanya tingkat yang belum punya kelas yang bisa dipilih, jadi nama tidak bisa kembar
+    const rancangan = rancangKelas(viewAddTingkat, viewAddAdaIdentitas, viewAddIdentitasList)
+    if (rancangan.length === 0) { setViewAddError(PESAN_IDENTITAS_KOSONG); return }
     setViewAddSaving(true)
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -360,10 +495,10 @@ export default function KelasPage() {
     const { data: profile } = await supabase.from('profiles').select('sekolah_id').eq('id', user.id).single()
     if (!profile?.sekolah_id) { setViewAddError('Data sekolah tidak ditemukan.'); setViewAddSaving(false); return }
 
-    const rows = validIds.map(id => ({
+    const rows = rancangan.map(k => ({
       sekolah_id: profile.sekolah_id as string,
-      nama: `${viewAddJenjang}-${id.trim().toUpperCase()}`,
-      jenjang: viewAddJenjang,
+      nama: k.nama,
+      jenjang: k.tingkat,
       warna: viewAddWarna,
       tahun_ajaran: tahunAjaran,
       semester,
@@ -392,19 +527,23 @@ export default function KelasPage() {
   // Edit modal
   const openEdit = (kelas: KelasRow) => {
     setEditTarget(kelas)
-    const dashIdx = kelas.nama.indexOf('-')
-    setEditIdentitas(dashIdx >= 0 ? kelas.nama.slice(dashIdx + 1) : kelas.nama)
+    setEditIdentitas(identitasKelas(kelas.nama, kelas.jenjang))
     setEditWaliKelas(kelas.wali_kelas ?? '')
     setEditWarna(kelas.warna)
     setEditError('')
     setEditSaving(false)
   }
 
+  const editPunyaKelasLain = !!editTarget && rawRows.some(r => r.jenjang === editTarget.jenjang && r.id !== editTarget.id)
+
   const handleEditSimpan = async () => {
     if (!editTarget) return
-    if (!editIdentitas.trim()) { setEditError('Identitas kelas harus diisi.'); return }
+    // Identitas boleh kosong hanya untuk satu-satunya kelas di tingkat itu ("Kelas 1")
+    const identitas = editIdentitas.trim().toUpperCase()
+    if (!identitas && editPunyaKelasLain) { setEditError(`Tingkat ${editTarget.jenjang} punya lebih dari satu kelas, jadi identitas wajib diisi.`); return }
+    const newNama = namaKelas(editTarget.jenjang, identitas)
+    if (rawRows.some(r => r.id !== editTarget.id && r.nama.trim().toUpperCase() === newNama)) { setEditError(`Kelas ${newNama} sudah ada.`); return }
     setEditSaving(true)
-    const newNama = `${editTarget.jenjang}-${editIdentitas.trim().toUpperCase()}`
     const { error: updateError } = await supabase
       .from('kelas')
       .update({ nama: newNama, wali_kelas: editWaliKelas.trim() || null, warna: editWarna })
@@ -447,6 +586,9 @@ export default function KelasPage() {
     }
 
     const uniqueJenjang = [...new Set(rawRows.map(r => r.jenjang))]
+    // Form tambah kelas hanya menawarkan tingkat yang belum punya kelas
+    const viewAddTersedia = jenjangOptions.filter(j => !rawRows.some(r => r.jenjang === j))
+    const headerModalKelasLama = showHeaderModal ? kelasTanpaIdentitas(headerModalJenjang) : undefined
     const totalSiswa    = Object.values(siswaCounts).reduce((a, b) => a + b, 0)
     const belumWali     = rawRows.filter(r => !r.wali_kelas).length
 
@@ -504,59 +646,25 @@ export default function KelasPage() {
                   <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
                     Pilih satu tingkat untuk kelas yang akan dibuat
                   </div>
-                  {(() => {
-                    const available = jenjangOptions.filter(j => !rawRows.some(r => r.jenjang === j))
-                    if (available.length === 0) {
-                      return (
-                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#6F788A', background: '#6F788A1A', borderRadius: 8, padding: '0.6rem 0.875rem', margin: 0 }}>
-                          Semua tingkat sudah memiliki kelas. Gunakan tombol <strong>+</strong> pada header tingkat untuk menambah identitas baru.
-                        </p>
-                      )
-                    }
-                    return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        {available.map(j => {
-                          const selected = viewAddJenjang === j
-                          return (
-                            <button key={j} onClick={() => setViewAddJenjang(prev => prev === j ? '' : j)}
-                              style={{ padding: '0.55rem 1.1rem', borderRadius: 10, fontFamily: 'inherit', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.15s', border: selected ? '2px solid #8CA6D0' : '2px solid #BABFC7', background: selected ? '#A3CDFE' : '#fff', color: selected ? '#1A2C4E' : 'var(--text-mid)', boxShadow: selected ? '0 4px 12px rgba(26,44,78,0.3)' : '6px 6px 8px rgba(18,47,102,0.10)' }}>
-                              Kelas {j}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
+                  {viewAddTersedia.length === 0 ? (
+                    <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#6F788A', background: '#6F788A1A', borderRadius: 8, padding: '0.6rem 0.875rem', margin: 0 }}>
+                      Semua tingkat sudah memiliki kelas. Gunakan tombol <strong>+</strong> pada header tingkat untuk menambah identitas baru.
+                    </p>
+                  ) : (
+                    <PilihTingkat pilihan={viewAddTersedia} terpilih={viewAddTingkat} onUbah={setViewAddTingkat} />
+                  )}
                 </div>
 
                 <div style={{ height: 2, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
                 {/* Identitas kelas */}
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <label style={sLabel}>Identitas kelas</label>
-                  <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                    Akan digabung dengan tingkat. Contoh: {viewAddJenjang || '7'} + A → &ldquo;{viewAddJenjang || '7'}-A&rdquo;
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {viewAddIdentitasList.map((val, i) => {
-                      const isLast = i === viewAddIdentitasList.length - 1
-                      return (
-                        <div key={i} style={{ display: 'flex', gap: '0.5rem', width: '60%' }}>
-                          <input type="text" placeholder="Contoh: A, 1, Unggulan, MIPA" value={val} onChange={e => updateViewIdentitas(i, e.target.value)} style={{ ...sInput, flex: 1 }} autoFocus={i === 0} />
-                          {isLast ? (
-                            <button onClick={addViewIdentitas} style={{ flexShrink: 0, marginLeft: '0.5rem', padding: '0 1rem', borderRadius: 10, background: '#1A2C4E', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.85rem', color: '#ffffff', whiteSpace: 'nowrap', boxShadow: '6px 6px 8px rgba(18,47,102,0.10)', border: 'none' }}>
-                              + Tambah
-                            </button>
-                          ) : (
-                            <button onClick={() => removeViewIdentitas(i)} style={{ flexShrink: 0, marginLeft: '3.2rem', padding: '0 0.9rem', border: '2.5px solid #c7504e', borderRadius: 10, background: '#dab1b1', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '1.8rem', color: '#000000', lineHeight: 1, boxShadow: '6px 6px 8px rgba(18,47,102,0.10)' }}>
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                <IsianIdentitas
+                  ada={viewAddAdaIdentitas}
+                  onUbahAda={setViewAddAdaIdentitas}
+                  daftar={viewAddIdentitasList}
+                  onUbahDaftar={setViewAddIdentitasList}
+                  tingkat={viewAddTingkat[0] ?? viewAddTersedia[0] ?? jenjangOptions[0]}
+                />
 
                 <div style={{ height: 2, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
@@ -583,27 +691,11 @@ export default function KelasPage() {
                 <div style={{ marginBottom: '1.25rem' }}>
                   <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.2rem' }}>Review tampilan</div>
                   <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.875rem' }}>Kelas yang akan dibuat dalam batch ini</div>
-                  {(() => {
-                    const validIds = viewAddIdentitasList.filter(i => i.trim())
-                    const hasData  = viewAddJenjang && validIds.length > 0
-                    if (!hasData) {
-                      return (
-                        <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1.1rem 1.4rem', background: '#F8FAFC' }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#64748B', marginBottom: '0.25rem' }}>Kelas yang akan dibuat</div>
-                          <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: 500 }}>Pilih tingkat &amp; tambahkan identitas kelas</div>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1rem 1.25rem', background: '#F8FAFC', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', boxShadow: '6px 6px 8px rgba(18,47,102,0.18)' }}>
-                        {validIds.map((id, i) => (
-                          <div key={i} style={{ background: viewAddWarna, color: '#fff', fontWeight: 800, fontSize: '0.95rem', padding: '0.45rem 1rem', borderRadius: 10, letterSpacing: '0.01em', boxShadow: `0 3px 8px ${viewAddWarna}55` }}>
-                            {viewAddJenjang} {id.trim()}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })()}
+                  <ReviewKelas
+                    rancangan={rancangKelas(viewAddTingkat, viewAddAdaIdentitas, viewAddIdentitasList)}
+                    warna={viewAddWarna}
+                    adaIdentitas={viewAddAdaIdentitas}
+                  />
                 </div>
 
                 <p style={{ fontSize: '0.9rem', fontWeight: 500, color: '#6F788A', margin: '0 0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#6F788A1A', borderRadius: 8, padding: '0.6rem 0.875rem' }}>
@@ -886,6 +978,7 @@ export default function KelasPage() {
                 <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>Identitas kelas</label>
                 <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>
                   Akan digabung dengan tingkat {editTarget.jenjang}. Contoh: A → &ldquo;{editTarget.jenjang}-A&rdquo;
+                  {!editPunyaKelasLain && <> Kosongkan bila tingkat ini hanya punya satu kelas (&ldquo;Kelas {editTarget.jenjang}&rdquo;).</>}
                 </div>
                 <input type="text" placeholder="Contoh: A, 1, Unggulan, MIPA" value={editIdentitas} onChange={e => setEditIdentitas(e.target.value)} style={sInput} autoFocus />
               </div>
@@ -893,6 +986,21 @@ export default function KelasPage() {
               <div style={{ marginBottom: '1.25rem' }}>
                 <label style={{ ...sLabel, display: 'block', marginBottom: 6 }}>Wali kelas</label>
                 <input type="text" placeholder="Nama wali kelas" value={editWaliKelas} onChange={e => setEditWaliKelas(e.target.value)} style={sInput} />
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ ...sLabel, display: 'block', marginBottom: 6 }}>Warna kelas</label>
+                <div style={{ display: 'inline-flex', gap: '0.45rem', alignItems: 'center', background: '#FFFFFF', border: '3px solid #BABFC7', borderRadius: 13, padding: '0.5rem 0.75rem', boxShadow: '6px 6px 8px rgba(18,47,102,0.18)' }}>
+                  {WARNA_OPTIONS.map(w => (
+                    <button key={w} type="button" aria-label={`Warna ${w}`} aria-pressed={editWarna === w} onClick={() => setEditWarna(w)} style={{ width: 30, height: 30, borderRadius: 8, background: w, border: 'none', cursor: 'pointer', flexShrink: 0, boxShadow: editWarna === w ? `0 0 0 2px #fff, 0 0 0 4px ${w}` : 'none', transition: 'all 0.15s' }} />
+                  ))}
+                  <label title="Pilih warna kustom" style={{ position: 'relative', width: 32, height: 32, flexShrink: 0, cursor: 'pointer' }}>
+                    <input type="color" value={editWarna} onChange={e => setEditWarna(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }} />
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: !WARNA_OPTIONS.includes(editWarna) ? editWarna : 'transparent', boxShadow: !WARNA_OPTIONS.includes(editWarna) ? `0 0 0 2px #fff, 0 0 0 4px ${editWarna}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+                      {WARNA_OPTIONS.includes(editWarna) && <Image src="/icons/IconPipet.png" width={18} height={18} alt="Pipet" />}
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -1023,9 +1131,28 @@ export default function KelasPage() {
 
               {headerModalError && <div className="login-error" style={{ marginBottom: '1rem' }}>{headerModalError}</div>}
 
+              {/* Kelas lama tanpa identitas ikut diberi identitas, supaya bisa dibedakan dari kelas baru */}
+              {headerModalKelasLama && (
+                <div style={{ marginBottom: '1.25rem', background: '#FEF3C7', border: '1.5px solid #FCD34D', borderRadius: 12, padding: '0.875rem 1rem' }}>
+                  <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>Identitas untuk Kelas {headerModalJenjang} yang sudah ada</label>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#92400E', marginBottom: 8 }}>
+                    Kelas {headerModalJenjang} belum punya identitas. Beri identitas dulu supaya bisa dibedakan dari kelas baru
+                    {headerModalIdentitasLama.trim() && <> — menjadi &ldquo;Kelas {namaKelas(headerModalJenjang, headerModalIdentitasLama.trim().toUpperCase()).replace('-', ' ')}&rdquo;</>}.
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Contoh: A"
+                    value={headerModalIdentitasLama}
+                    onChange={e => setHeaderModalIdentitasLama(e.target.value)}
+                    style={sInput}
+                    autoFocus
+                  />
+                </div>
+              )}
+
               {/* Identitas kelas */}
               <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>Identitas kelas</label>
+                <label style={{ ...sLabel, display: 'block', marginBottom: 4 }}>{headerModalKelasLama ? 'Identitas kelas baru' : 'Identitas kelas'}</label>
                 <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>
                   Akan digabung dengan tingkat. Contoh: {headerModalJenjang} + A → &ldquo;{headerModalJenjang}-A&rdquo;
                 </div>
@@ -1040,7 +1167,7 @@ export default function KelasPage() {
                           value={val}
                           onChange={e => setHeaderModalIdentitasList(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
                           style={{ ...sInput, flex: 1 }}
-                          autoFocus={i === 0}
+                          autoFocus={i === 0 && !headerModalKelasLama}
                         />
                         {isLast ? (
                           <button
@@ -1067,13 +1194,13 @@ export default function KelasPage() {
 
               {/* Review */}
               {(() => {
-                const validIds = headerModalIdentitasList.filter(i => i.trim())
-                if (validIds.length === 0) return null
+                const rancangan = rancangKelas([headerModalJenjang], true, headerModalIdentitasList)
+                if (rancangan.length === 0) return null
                 return (
                   <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '0.875rem 1.1rem', background: '#F8FAFC', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                    {validIds.map((id, i) => (
-                      <div key={i} style={{ background: headerModalWarna, color: '#fff', fontWeight: 800, fontSize: '0.9rem', padding: '0.4rem 0.9rem', borderRadius: 10, boxShadow: `0 3px 8px ${headerModalWarna}55` }}>
-                        {headerModalJenjang} {id.trim()}
+                    {rancangan.map(k => (
+                      <div key={k.nama} style={{ background: headerModalWarna, color: '#fff', fontWeight: 800, fontSize: '0.9rem', padding: '0.4rem 0.9rem', borderRadius: 10, boxShadow: `0 3px 8px ${headerModalWarna}55` }}>
+                        {k.label}
                       </div>
                     ))}
                   </div>
@@ -1188,7 +1315,7 @@ export default function KelasPage() {
       {/* Info Banner */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', background: '#1A2C4E', borderRadius: 12, padding: '1rem 1.25rem', marginBottom: '1.5rem', color: '#fff', boxShadow: '10px 16px 14px rgba(18, 47, 102, 0.31)' }}>
         <p style={{ flex: 1, fontSize: '1.1rem', lineHeight: 1.65, margin: 0 }}>
-          Buat daftar kelas yang ada di sekolah. Setiap kelas memiliki tingkat, identitas (A, B, 1, 2...), dan warna untuk memudahkan pengelolaan tagihan per kelas.
+          Buat daftar kelas yang ada di sekolah. Setiap kelas memiliki tingkat, warna, dan identitas (A, B, 1, 2...) bila satu tingkat punya lebih dari satu kelas, untuk memudahkan pengelolaan tagihan per kelas.
         </p>
         <div style={{ flexShrink: 0, marginLeft: 'auto', width: 40, height: 40, background: '#F7DD7D', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', top: '-0.4rem', right: '-0.65rem' }}>
           <Image src="/icons/IconTSeru.png" width={3.5} height={3.5} alt="Info" style={{ display: 'block' }} />
@@ -1208,46 +1335,18 @@ export default function KelasPage() {
             <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
               Pilih satu tingkat untuk kelas yang akan dibuat
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {jenjangOptions.map(j => {
-                const selected = formJenjang === j
-                return (
-                  <button key={j} onClick={() => setFormJenjang(prev => prev === j ? '' : j)}
-                    style={{ padding: '0.55rem 1.1rem', borderRadius: 10, fontFamily: 'inherit', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', transition: 'all 0.15s', border: selected ? '2px solid #8CA6D0' : '2px solid #BABFC7', background: selected ? '#A3CDFE' : '#fff', color: selected ? '#1A2C4E' : 'var(--text-mid)', boxShadow: selected ? '0 4px 12px rgba(26,44,78,0.3)' : '6px 6px 8px rgba(18,47,102,0.10)' }}>
-                    Kelas {j}
-                  </button>
-                )
-              })}
-            </div>
+            <PilihTingkat pilihan={jenjangOptions} terpilih={formTingkat} onUbah={setFormTingkat} />
           </div>
 
           <div style={{ height: 2, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
-          <div style={{ marginBottom: '1.25rem' }}>
-            <label style={sLabel}>Identitas kelas</label>
-            <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-              Akan digabung dengan tingkat. Contoh: {formJenjang || '7'} + A → &ldquo;{formJenjang || '7'}-A&rdquo;
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {formIdentitasList.map((val, i) => {
-                const isLast = i === formIdentitasList.length - 1
-                return (
-                  <div key={i} style={{ display: 'flex', gap: '0.5rem', width: '60%' }}>
-                    <input type="text" placeholder="Contoh: A, 1, Unggulan, MIPA" value={val} onChange={e => updateIdentitas(i, e.target.value)} style={{ ...sInput, flex: 1 }} autoFocus={i === 0} />
-                    {isLast ? (
-                      <button onClick={addIdentitas} style={{ flexShrink: 0, marginLeft: '0.5rem', padding: '0 1rem', borderRadius: 10, background: '#1A2C4E', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '0.85rem', color: '#ffffff', whiteSpace: 'nowrap', boxShadow: '6px 6px 8px rgba(18,47,102,0.10)', border: 'none' }}>
-                        + Tambah
-                      </button>
-                    ) : (
-                      <button onClick={() => removeIdentitas(i)} style={{ flexShrink: 0, marginLeft: '3.2rem', padding: '0 0.9rem', border: '2.5px solid #c7504e', borderRadius: 10, background: '#dab1b1', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: '1.8rem', color: '#000000', lineHeight: 1, boxShadow: '6px 6px 8px rgba(18,47,102,0.10)' }}>
-                        ×
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          <IsianIdentitas
+            ada={formAdaIdentitas}
+            onUbahAda={setFormAdaIdentitas}
+            daftar={formIdentitasList}
+            onUbahDaftar={setFormIdentitasList}
+            tingkat={formTingkat[0] ?? jenjangOptions[0]}
+          />
 
           <div style={{ height: 2, background: '#C1C6CF', margin: '0 0 1.25rem' }} />
 
@@ -1272,27 +1371,11 @@ export default function KelasPage() {
           <div style={{ marginBottom: '1.25rem' }}>
             <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.2rem' }}>Review tampilan</div>
             <div style={{ fontSize: '0.87rem', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.875rem' }}>Kelas yang akan dibuat dalam batch ini</div>
-            {(() => {
-              const validIds = formIdentitasList.filter(i => i.trim())
-              const hasData  = formJenjang && validIds.length > 0
-              if (!hasData) {
-                return (
-                  <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1.1rem 1.4rem', background: '#F8FAFC' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#64748B', marginBottom: '0.25rem' }}>Kelas yang akan dibuat</div>
-                    <div style={{ fontSize: '0.85rem', color: '#94A3B8', fontWeight: 500 }}>Pilih tingkat &amp; tambahkan identitas kelas</div>
-                  </div>
-                )
-              }
-              return (
-                <div style={{ border: '2px solid #E2E8F0', borderRadius: 12, padding: '1rem 1.25rem', background: '#F8FAFC', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', boxShadow: '6px 6px 8px rgba(18, 47, 102, 0.18)' }}>
-                  {validIds.map((id, i) => (
-                    <div key={i} style={{ background: formWarna, color: '#fff', fontWeight: 800, fontSize: '0.95rem', padding: '0.45rem 1rem', borderRadius: 10, letterSpacing: '0.01em', boxShadow: `0 3px 8px ${formWarna}55` }}>
-                      {formJenjang} {id.trim()}
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
+            <ReviewKelas
+              rancangan={rancangKelas(formTingkat, formAdaIdentitas, formIdentitasList)}
+              warna={formWarna}
+              adaIdentitas={formAdaIdentitas}
+            />
           </div>
 
           <p style={{ fontSize: '0.9rem', fontWeight: 500, color: '#6F788A', margin: '0 0 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#6F788A1A', borderRadius: 8, padding: '0.6rem 0.875rem' }}>

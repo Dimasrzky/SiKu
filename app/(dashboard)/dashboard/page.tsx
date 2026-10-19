@@ -339,6 +339,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     { data: pembayaranRaw },
     { data: rincianBulanIni },
     terbitRes,
+    { count: tanpaWaCount },
   ] = await Promise.all([
     supabase.from('kelas').select('id', { count: 'exact', head: true }),
     supabase
@@ -371,6 +372,9 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       .order('id').range(dari, sampai)),
     // Apakah ada yang menahan penerbitan tagihan bulan ini (kelas tanpa paket, dsb.)
     statusPenerbitan(supabase, sid, bulanIni, tahunIni),
+    // Siswa aktif tanpa nomor WA wali — pengingat tagihan tidak bisa sampai ke mereka
+    supabase.from('siswa').select('id', { count: 'exact', head: true })
+      .eq('sekolah_id', sid).eq('status', 'aktif').or('no_wa.is.null,no_wa.eq.""'),
   ])
 
   // Tagihan Rp 0 (beasiswa penuh) dibaca lunas oleh semua hitungan di bawah —
@@ -715,6 +719,17 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
       })
     }
   }
+
+  // Nomor WA wali boleh dikosongkan saat impor dan dilengkapi belakangan. Selama masih ada
+  // yang kosong, kartu ini mengingatkan — sesudah insight merah lain (urutan push =
+  // prioritas), dan sesudah pilihan kabar umum di atas supaya kabar itu tetap tampil.
+  if ((tanpaWaCount ?? 0) > 0) insights.push({
+    id: 'wa-belum-lengkap', level: 'merah',
+    judul: 'Nomor WA wali belum lengkap',
+    desc: `${tanpaWaCount} siswa aktif belum punya nomor WhatsApp wali.`,
+    sub: 'Pengingat tagihan tidak bisa dikirim ke wali mereka. Lengkapi lewat Daftar Siswa → Edit.',
+    actionLabel: 'Lengkapi Data', actionHref: '/siswa/daftar-siswa?wa=kosong',
+  })
 
   // ── Tabel status pembayaran siswa ──────────────────────────────────────────
   const siswaBayarList: SiswaBayarRow[] = tagihanIni
