@@ -1,3 +1,4 @@
+import { SkeletonSetupChecklist } from '../SetupChecklist'
 import { SkeletonDashboard } from './SkeletonDashboard'
 import { SkeletonPembayaran } from './SkeletonPembayaran'
 import { SkeletonPengaturan } from './SkeletonPengaturan'
@@ -36,7 +37,14 @@ const bacaSegmen = (segmen: string | undefined) => {
  */
 export const SkeletonHalaman = ({ pathname }: { pathname: string }) => {
   switch (pathname) {
-    case '/dashboard':             return <SkeletonDashboard />
+    // Sekolah yang masih setup melihat checklist, bukan Dashboard (app/(dashboard)/dashboard/page.tsx).
+    // Server tidak tahu yang mana, jadi keduanya dirender dan CSS memilih dari <html data-setup>.
+    case '/dashboard': return (
+      <>
+        <div className="kerangka-normal"><SkeletonDashboard /></div>
+        <div className="kerangka-setup"><div className="dashboard-content"><SkeletonSetupChecklist /></div></div>
+      </>
+    )
     case '/pembayaran':            return <SkeletonPembayaran />
     case '/pengaturan':            return <SkeletonPengaturan />
     case '/tagihan':

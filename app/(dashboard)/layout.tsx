@@ -32,6 +32,7 @@ import {
   bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, simpanStatusLokal, statusLokal, type StatusKemitraan,
 } from '@/lib/kemitraan'
 import { bacaFiturSaya, fiturLokal, hapusFiturLokal, simpanFiturLokal, type KodeFitur } from '@/lib/fiturSekolah'
+import { KUNCI_LANGKAH_SETUP } from '@/lib/langkahSetup'
 import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
@@ -391,7 +392,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [siswaOpen,   setSiswaOpen]   = useState(() => pathname.startsWith('/siswa'))
   const [laporanOpen, setLaporanOpen] = useState(() => pathname.startsWith('/laporan'))
   const [prevPath,    setPrevPath]    = useState(pathname)
-  const [setupSteps,    setSetupSteps]    = useState<Record<string, boolean>>({})
+  // Dari cache sejak render pertama, supaya gembok menu tidak berkedip. Di server dan saat
+  // hydrate nilainya tidak dipakai — sidebar asli baru tampil sesudah data login terbaca.
+  const [setupSteps,    setSetupSteps]    = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return (JSON.parse(localStorage.getItem(KUNCI_LANGKAH_SETUP) ?? '{}') as Record<string, boolean> | null) ?? {} } catch { return {} }
+  })
   // Subfitur khusus sekolah (lib/fiturSekolah) — dipasang tim Equanusa lewat dasbor admin
   const [fitur,         setFitur]         = useState<KodeFitur[]>([])
   const [avatarHover,   setAvatarHover]   = useState(false)

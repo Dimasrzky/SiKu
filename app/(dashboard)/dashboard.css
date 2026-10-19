@@ -1006,6 +1006,30 @@
   .skeleton::after { animation: none; display: none; }
 }
 
+/* Kerangka dari server (SkeletonShell) untuk sekolah yang masih setup. <html data-setup>
+   ditulis skrip di <head> (lib/langkahSetup) hanya selama setup belum selesai; isinya
+   langkah yang sudah selesai. Tanpa atribut: Dashboard penuh, semua menu terbuka. */
+.kerangka-normal { display: contents; }
+.kerangka-setup  { display: none; }
+html[data-setup] .kerangka-normal { display: none; }
+html[data-setup] .kerangka-setup  { display: contents; }
+
+/* Menu ber-data-kunci terkunci selama langkahnya belum selesai — tampilan sama dengan
+   menu terkunci di layout (redup 0.4 + gembok) */
+.kerangka-saat-terkunci { display: none; }
+html[data-setup]:not([data-setup~="tahun_ajaran"])     [data-kunci="tahun_ajaran"],
+html[data-setup]:not([data-setup~="komponen_tagihan"]) [data-kunci="komponen_tagihan"],
+html[data-setup]:not([data-setup~="buat_kelas"])       [data-kunci="buat_kelas"],
+html[data-setup]:not([data-setup~="import_siswa"])     [data-kunci="import_siswa"] { opacity: 0.4; }
+html[data-setup]:not([data-setup~="tahun_ajaran"])     [data-kunci="tahun_ajaran"] .kerangka-saat-terkunci,
+html[data-setup]:not([data-setup~="komponen_tagihan"]) [data-kunci="komponen_tagihan"] .kerangka-saat-terkunci,
+html[data-setup]:not([data-setup~="buat_kelas"])       [data-kunci="buat_kelas"] .kerangka-saat-terkunci,
+html[data-setup]:not([data-setup~="import_siswa"])     [data-kunci="import_siswa"] .kerangka-saat-terkunci { display: inline; }
+html[data-setup]:not([data-setup~="tahun_ajaran"])     [data-kunci="tahun_ajaran"] .kerangka-saat-terbuka,
+html[data-setup]:not([data-setup~="komponen_tagihan"]) [data-kunci="komponen_tagihan"] .kerangka-saat-terbuka,
+html[data-setup]:not([data-setup~="buat_kelas"])       [data-kunci="buat_kelas"] .kerangka-saat-terbuka,
+html[data-setup]:not([data-setup~="import_siswa"])     [data-kunci="import_siswa"] .kerangka-saat-terbuka { display: none; }
+
 
 /* ═══════════════════════════════════════════
    RESPONSIVE

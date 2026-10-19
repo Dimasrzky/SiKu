@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bacaStatus, simpanStatusLokal, tandaiAktivasiDilihatLokal, type StatusKemitraan } from '@/lib/kemitraan'
+import { simpanLangkahSetupLokal } from '@/lib/langkahSetup'
 import { IkonDiproses, IkonPapanJam, IkonTerompet, IkonWhatsApp } from './IkonKemitraan'
 
 /** Isi siku_auth kalau perangkat ini belum menyimpannya (sesi masih ada, localStorage sudah dibersihkan) */
@@ -108,8 +109,12 @@ const HalamanKemitraan = ({
     // mengembalikan bendahara ke halaman ini lagi
     tandaiAktivasiDilihatLokal(sekolahId)
     simpanStatusLokal('aktif')
-    const { error } = await supabase
-      .from('profiles').update({ aktivasi_dilihat_at: new Date().toISOString() }).eq('id', userId)
+    // Langkah setup ikut dibaca, supaya Dashboard langsung menampilkan checklist setup
+    // (bukan kerangka Dashboard penuh) — sekolah yang baru aktif hampir selalu belum setup
+    const [{ error }] = await Promise.all([
+      supabase.from('profiles').update({ aktivasi_dilihat_at: new Date().toISOString() }).eq('id', userId),
+      simpanLangkahSetupLokal(supabase, sekolahId),
+    ])
     if (error) console.warn('[kemitraan] penanda halaman aktivasi gagal disimpan:', error.message)
     router.push('/dashboard')
   }

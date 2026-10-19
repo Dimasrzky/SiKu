@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Fraunces, Plus_Jakarta_Sans, DM_Sans } from 'next/font/google'
+import { SKRIP_TANDA_SETUP } from '@/lib/langkahSetup'
 import './globals.css'
 
 const fraunces = Fraunces({
@@ -43,7 +44,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" data-scroll-behavior="smooth">
+    // suppressHydrationWarning: atribut data-setup ditulis skrip di bawah sebelum React hydrate
+    <html lang="id" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        {/* Kerangka dashboard dari server memilih checklist setup / Dashboard penuh lewat ini */}
+        <script dangerouslySetInnerHTML={{ __html: SKRIP_TANDA_SETUP }} />
+      </head>
       <body suppressHydrationWarning className={`${fraunces.variable} ${jakarta.variable} ${dmSans.variable}`}>
         {children}
       </body>

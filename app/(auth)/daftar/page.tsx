@@ -7,6 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, type StatusKemitraan } from '@/lib/kemitraan'
 import { JABATAN } from '@/lib/jabatan'
+import { simpanLangkahSetupLokal } from '@/lib/langkahSetup'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
 import { KolomSandi } from '@/components/auth/KolomSandi'
@@ -67,7 +68,10 @@ export default function DaftarPage() {
         .maybeSingle()
 
       if (profile?.sekolah_id) {
-        const kemitraan = await bacaKemitraan(supabase, session.user.id)
+        const [kemitraan] = await Promise.all([
+          bacaKemitraan(supabase, session.user.id),
+          simpanLangkahSetupLokal(supabase, profile.sekolah_id),
+        ])
         localStorage.setItem('siku_auth', JSON.stringify({
           email:   profile.email   ?? session.user.email ?? '',
           nama:    profile.nama    ?? session.user.email ?? '',

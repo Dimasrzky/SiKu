@@ -20,6 +20,7 @@ import { bacaPilihanTersimpan, bagiPerUnit, tagihanBukti } from '@/lib/rincianKo
 import { usePengingat } from '@/lib/usePengingat'
 import { usePengingatManual } from '@/lib/usePengingatManual'
 import { JABATAN } from '@/lib/jabatan'
+import { setupBelumSelesaiLokal } from '@/lib/langkahSetup'
 import { TombolIngatkan } from '@/components/TombolIngatkan'
 import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
 import { SetupChecklist, SkeletonSetupChecklist } from '@/components/SetupChecklist'
@@ -1013,17 +1014,6 @@ function SetupBerhasilPopup({ onClose }: { onClose: () => void }) {
 function getAuthRaw()       { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
 
-/**
- * Setup belum selesai menurut cache langkah setup yang ditulis layout. Tanpa cache
- * (mis. tepat sesudah login) tidak diketahui — dianggap selesai, karena itu yang umum.
- */
-function setupBelumSelesai(): boolean {
-  try {
-    const raw = localStorage.getItem('siku_setup_steps')
-    return raw !== null && (JSON.parse(raw) as Record<string, boolean>).import_siswa !== true
-  } catch { return false }
-}
-
 // ── Animasi masuk popup alert naik kelas ──────────────────────────────────────
 
 const ALERT_CSS = `
@@ -1268,8 +1258,10 @@ export default function DashboardPage() {
     />
   )
 
+  // Cache langkah setup diisi saat login / Buka Dashboard, jadi sekolah yang masih setup
+  // langsung melihat kerangka checklist, bukan kerangka Dashboard penuh
   if (hasSiswa === null) {
-    return setupBelumSelesai()
+    return setupBelumSelesaiLokal()
       ? <div className="dashboard-content"><SkeletonSetupChecklist /></div>
       : kerangka
   }

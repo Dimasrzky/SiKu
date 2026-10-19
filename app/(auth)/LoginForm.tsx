@@ -7,6 +7,7 @@ import { UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN } from '@/lib/kemitraan'
 import { hapusFiturLokal } from '@/lib/fiturSekolah'
+import { simpanLangkahSetupLokal } from '@/lib/langkahSetup'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
 import { KolomSandi } from '@/components/auth/KolomSandi'
@@ -62,10 +63,14 @@ const LoginForm = () => {
       return
     }
 
-    // Gagal dibaca: tetap ke dashboard, layout dashboard memeriksanya lagi
-    const kemitraan = await bacaKemitraan(supabase, data.user.id)
+    // Kemitraan gagal dibaca: tetap ke dashboard, layout dashboard memeriksanya lagi.
+    // Langkah setup ikut dibaca sekarang, supaya Dashboard langsung menampilkan checklist
+    // setup (bukan kerangka Dashboard penuh) untuk sekolah yang belum selesai setup.
+    const [kemitraan] = await Promise.all([
+      bacaKemitraan(supabase, data.user.id),
+      simpanLangkahSetupLokal(supabase, profile.sekolah_id),
+    ])
 
-    localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
     hapusFiturLokal()
     localStorage.setItem(
