@@ -9,6 +9,8 @@ import { SkeletonPaketKelas } from '@/components/skeleton/SkeletonTagihan'
 
 const formatRupiah = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
+const urut = (a: string, b: string) => a.localeCompare(b, 'id', { numeric: true })
+
 const formatDate = (iso: string | null) => {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -115,7 +117,7 @@ export default function PaketPerKelasPage() {
   const [formJatuhTempo,     setFormJatuhTempo]     = useState('')
   const [formSaving,         setFormSaving]         = useState(false)
   const [formError,          setFormError]          = useState('')
-  const [selectedJenjang,    setSelectedJenjang]    = useState('')
+  const [selectedJenjangs,   setSelectedJenjangs]   = useState<string[]>([])
   const [selectedKelasIds,   setSelectedKelasIds]   = useState<string[]>([])
   const [checkedKomponenIds, setCheckedKomponenIds] = useState<string[]>([])
   const [nominalMap,         setNominalMap]         = useState<Record<string, number>>({})
@@ -182,7 +184,8 @@ export default function PaketPerKelasPage() {
             jenjang:     pk.kelas?.jenjang ?? '',
             siswa_count: pk.kelas?.siswa?.[0]?.count ?? 0,
           }))
-          .filter(k => k.id !== ''),
+          .filter(k => k.id !== '')
+          .sort((a, b) => urut(a.jenjang, b.jenjang) || urut(a.nama, b.nama)),
         komponen_list: p.paket_komponen.map(pk => ({
           id:          pk.id,
           komponen_id: pk.komponen_id,
@@ -283,13 +286,15 @@ export default function PaketPerKelasPage() {
   const assignedKelasIds   = new Set(activePakets.flatMap(p => p.kelas_list.map(k => k.id)))
   // Kelas & jenjang yang masih tersedia untuk form (belum dipakai di paket aktif manapun)
   const availableKelas     = kelasList.filter(k => !assignedKelasIds.has(k.id))
-  const availableJenjang   = [...new Set(availableKelas.map(k => k.jenjang).filter(Boolean))]
+  const availableJenjang   = [...new Set(availableKelas.map(k => k.jenjang).filter(Boolean))].sort(urut)
   // Kelas dari jenjang yg sudah ada paket tapi tidak dipilih + jenjang yang belum ada paket sama sekali
   const coveredJenjang     = new Set(activePakets.flatMap(p => p.kelas_list.map(k => k.jenjang)))
   const missedKelas        = kelasList.filter(k => coveredJenjang.has(k.jenjang) && !assignedKelasIds.has(k.id))
   const uncoveredKelas     = kelasList.filter(k => !coveredJenjang.has(k.jenjang))
   const warningKelas       = [...missedKelas, ...uncoveredKelas]
-  const filteredKelas      = selectedJenjang ? availableKelas.filter(k => k.jenjang === selectedJenjang) : []
+  // Satu paket boleh mencakup beberapa tingkat (mis. kelas 1, 2, dan 4): penerbitan tagihan
+  // mencocokkan paket per kelas, bukan per tingkat
+  const jenjangTerpilih    = availableJenjang.filter(j => selectedJenjangs.includes(j))
   const totalSiswaSelected = kelasList.filter(k => selectedKelasIds.includes(k.id)).reduce((s, k) => s + k.siswa_count, 0)
   const totalKomponen      = checkedKomponenIds.length
   const totalNominal       = checkedKomponenIds.reduce((sum, id) => {
@@ -312,7 +317,7 @@ export default function PaketPerKelasPage() {
     if (allPaketed) { setShowAllPaketedPopup(true); return }
 
     setFormNama(''); setFormJatuhTempo(''); setFormError(''); setFormClosing(false)
-    setSelectedJenjang(''); setSelectedKelasIds([])
+    setSelectedJenjangs([]); setSelectedKelasIds([])
     setCheckedKomponenIds([]); setNominalMap({})
     setEditingNominalId(null)
     setShowForm(true)
@@ -420,6 +425,25 @@ export default function PaketPerKelasPage() {
       setCarryError((err as Error).message)
       setCarrying(false)
     }
+  }
+
+  // Memilih tingkat langsung mencentang semua kelasnya yang belum berpaket; membatalkan
+  // tingkat ikut melepas kelas-kelas itu. Kelas tertentu tetap bisa dilepas satu per satu.
+  const toggleJenjang = (j: string) => {
+    const idsTingkat = availableKelas.filter(k => k.jenjang === j).map(k => k.id)
+    const sisa       = (prev: string[]) => prev.filter(id => !idsTingkat.includes(id))
+    if (selectedJenjangs.includes(j)) {
+      setSelectedJenjangs(prev => prev.filter(x => x !== j))
+      setSelectedKelasIds(sisa)
+    } else {
+      setSelectedJenjangs(prev => [...prev, j])
+      setSelectedKelasIds(prev => [...sisa(prev), ...idsTingkat])
+    }
+  }
+
+  const pilihSemuaKelas = () => {
+    setSelectedJenjangs(availableJenjang)
+    setSelectedKelasIds(availableKelas.map(k => k.id))
   }
 
   const toggleKelas = (id: string) =>
@@ -619,39 +643,49 @@ export default function PaketPerKelasPage() {
                       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         {availableJenjang.length === 0 ? (
                           <span style={{ fontSize: '0.875rem', color: '#94A3B8' }}>Semua jenjang sudah memiliki paket</span>
-                        ) : availableJenjang.map(j => (
-                          <button key={j}
-                            onClick={() => { setSelectedJenjang(j); setSelectedKelasIds([]) }}
-                            style={{ padding: '0.45rem 1.1rem', borderRadius: 8, border: selectedJenjang === j ? 'none' : '2px solid #C1C6CF', background: selectedJenjang === j ? '#1A2C4E' : '#fff', color: selectedJenjang === j ? '#fff' : '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                            Kelas {j}
-                          </button>
-                        ))}
+                        ) : availableJenjang.map(j => {
+                          const active = selectedJenjangs.includes(j)
+                          return (
+                            <button key={j} onClick={() => toggleJenjang(j)}
+                              style={{ padding: '0.45rem 1.1rem', borderRadius: 8, border: active ? 'none' : '2px solid #C1C6CF', background: active ? '#1A2C4E' : '#fff', color: active ? '#fff' : '#6F788A', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                              Kelas {j}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
-                    {selectedJenjang && (
+                    {availableJenjang.length > 0 && (
                       <button
-                        onClick={() => setSelectedKelasIds(filteredKelas.map(k => k.id))}
+                        onClick={pilihSemuaKelas}
                         style={{ background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.5rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 4px 2px rgba(18,47,102,0.2)', alignSelf: 'flex-end' }}>
                         Pilih Semua
                       </button>
                     )}
                   </div>
 
-                  {selectedJenjang && (
+                  {jenjangTerpilih.length > 0 && (
                     <div style={{ marginTop: '1rem' }}>
                       <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--navy-dark)', marginBottom: '0.5rem' }}>Berlaku untuk kelas</div>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        {filteredKelas.length === 0 ? (
-                          <span style={{ fontSize: '0.875rem', color: '#94A3B8' }}>Tidak ada kelas di jenjang ini</span>
-                        ) : filteredKelas.map(k => {
-                          const active = selectedKelasIds.includes(k.id)
-                          return (
-                            <button key={k.id} onClick={() => toggleKelas(k.id)}
-                              style={{ padding: '0.4rem 0.875rem', borderRadius: 8, border: active ? '2px solid #1A2C4E' : '2px solid #C1C6CF', background: active ? '#EEF2FF' : '#F8FAFC', color: active ? '#1A2C4E' : '#6F788A', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                              {k.nama}
-                            </button>
-                          )
-                        })}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                        {jenjangTerpilih.map(j => (
+                          <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ width: 64, flexShrink: 0, fontSize: '0.82rem', fontWeight: 700, color: '#6F788A' }}>Kelas {j}</span>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              {availableKelas
+                                .filter(k => k.jenjang === j)
+                                .sort((a, b) => urut(a.nama, b.nama))
+                                .map(k => {
+                                  const active = selectedKelasIds.includes(k.id)
+                                  return (
+                                    <button key={k.id} onClick={() => toggleKelas(k.id)}
+                                      style={{ padding: '0.4rem 0.875rem', borderRadius: 8, border: active ? '2px solid #1A2C4E' : '2px solid #C1C6CF', background: active ? '#EEF2FF' : '#F8FAFC', color: active ? '#1A2C4E' : '#6F788A', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                                      {k.nama}
+                                    </button>
+                                  )
+                                })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                       {selectedKelasIds.length > 0 && (
                         <p style={{ fontSize: '0.82rem', fontWeight: 500, color: '#6F788A', margin: '0.5rem 0 0', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
