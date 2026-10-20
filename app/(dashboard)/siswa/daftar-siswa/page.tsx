@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { kunciKelas } from '@/lib/namaKelas'
+import { ambilSemua, ambilPerPotong } from '@/lib/ambilSemua'
 import { SkeletonDaftarSiswa } from '@/components/skeleton/SkeletonSiswa'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -203,25 +204,28 @@ export default function DaftarSiswaPage() {
   }
 
   const loadBeasiswa = async (sid: string) => {
+    // Potongan personal tersimpan satu baris per siswa, jadi barisnya bisa ratusan:
+    // dibaca per halaman dan daftar id-nya dipecah supaya URL .in() tidak kepanjangan
     const [{ data: programs }, { data: komponenRows }] = await Promise.all([
-      supabase
+      ambilSemua<ProgramBeasiswaRaw>((dari, sampai) => supabase
         .from('beasiswa')
         .select('id, nama, jenis, keterangan, jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id)')
         .eq('sekolah_id', sid)
-        .limit(100),
+        .order('id').range(dari, sampai)),
       supabase.from('komponen_tagihan').select('id, nama').eq('sekolah_id', sid).limit(200),
     ])
     const namaKomponen = new Map(((komponenRows ?? []) as { id: string; nama: string }[]).map(k => [k.id, k.nama]))
 
-    const progIds = (programs ?? []).map((p: { id: string }) => p.id)
-    const { data: assignments } = progIds.length > 0
-      ? await supabase.from('beasiswa_siswa').select('siswa_id, beasiswa_id').in('beasiswa_id', progIds).limit(1000)
-      : { data: [] }
+    const { data: assignments } = await ambilPerPotong<{ siswa_id: string; beasiswa_id: string }>(
+      programs.map(p => p.id),
+      (ids, dari, sampai) => supabase.from('beasiswa_siswa').select('id, siswa_id, beasiswa_id')
+        .in('beasiswa_id', ids).order('id').range(dari, sampai),
+    )
 
-    const progMap = new Map(((programs ?? []) as ProgramBeasiswaRaw[]).map(p => [p.id, { ...p, ...labelProgram(p, namaKomponen) }]))
+    const progMap = new Map(programs.map(p => [p.id, { ...p, ...labelProgram(p, namaKomponen) }]))
     const countMap = new Map<string, number>()
     const siswaMap = new Map<string, SiswaBeasiswaInfo[]>()
-    for (const a of (assignments ?? []) as { siswa_id: string; beasiswa_id: string }[]) {
+    for (const a of assignments) {
       countMap.set(a.beasiswa_id, (countMap.get(a.beasiswa_id) ?? 0) + 1)
       const prog = progMap.get(a.beasiswa_id)
       if (prog) {
@@ -229,7 +233,17 @@ export default function DaftarSiswaPage() {
         siswaMap.get(a.siswa_id)!.push({ beasiswa_id: a.beasiswa_id, nama: prog.nama ?? '', jenis: prog.jenis, label: prog.label, rincian: prog.rincian })
       }
     }
-    setBeasiswaPrograms([...progMap.values()].map((p): BeasiswaProgram => ({ id: p.id, nama: p.nama ?? '', jenis: p.jenis, label: p.label, rincian: p.rincian, count: countMap.get(p.id) ?? 0 })))
+    // Potongan personal tersimpan satu per siswa; yang isinya sama (besaran, komponen,
+    // alasan) digabung di ringkasan supaya tampil "5 Siswa", bukan lima baris "1 Siswa"
+    const ringkasan = new Map<string, BeasiswaProgram>()
+    for (const p of progMap.values()) {
+      const kunci = p.jenis === 'beasiswa' ? p.id : `potongan|${p.rincian}`
+      const count = countMap.get(p.id) ?? 0
+      const ada   = ringkasan.get(kunci)
+      if (ada) ada.count += count
+      else ringkasan.set(kunci, { id: p.id, nama: p.nama ?? '', jenis: p.jenis, label: p.label, rincian: p.rincian, count })
+    }
+    setBeasiswaPrograms([...ringkasan.values()])
     setSiswaBeasiswaMap(siswaMap)
   }
 

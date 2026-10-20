@@ -8,6 +8,7 @@ import {
   TA_PERIODE_SELECT, type PeriodeTahunAjaran,
 } from '@/lib/komponenTagihan'
 import { bulanTahunWIB } from '@/lib/pengingat/waktu'
+import { tagihanBukti } from '@/lib/rincianKomponen'
 import { createServiceClient } from '@/lib/supabase-service'
 
 // Menerbitkan tagihan, membaca seluruh tagihan sekolah, lalu menulis koreksinya — bisa
@@ -265,6 +266,27 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
   if (bsRes.error) throw galat('Gagal memuat data beasiswa.', bsRes.error)
   if (individuRes.error) throw galat('Gagal memuat data komponen individu.', individuRes.error)
 
+  // Tagihan yang sudah punya pembayaran, atau bukti transfer yang menunggu verifikasi,
+  // tidak boleh kehilangan baris rincian: pembayaran per komponen menunjuk ke baris itu
+  const [bayarRes, buktiRes] = await Promise.all([
+    ambilPerPotong<{ tagihan_id: string }>(sasaran.map(r => r.id), (ids, dari, sampai) => db
+      .from('pembayaran')
+      .select('id, tagihan_id')
+      .in('tagihan_id', ids)
+      .order('id').range(dari, sampai)),
+    ambilSemua<{ tagihan_id: string; pilihan: unknown }>((dari, sampai) => db
+      .from('verifikasi_pembayaran')
+      .select('id, tagihan_id, pilihan')
+      .eq('sekolah_id', sid).eq('status', 'menunggu')
+      .order('id').range(dari, sampai)),
+  ])
+  if (bayarRes.error) throw galat('Gagal memuat pembayaran.', bayarRes.error)
+  if (buktiRes.error) throw galat('Gagal memuat bukti yang menunggu verifikasi.', buktiRes.error)
+  const adaPembayaran = new Set([
+    ...bayarRes.data.map(p => p.tagihan_id),
+    ...buktiRes.data.flatMap(tagihanBukti),
+  ])
+
   // siswa_id → beasiswa list
   const siswaBeasiswaMap = new Map<string, PotonganBeasiswa[]>()
   for (const row of bsRes.data) {
@@ -294,8 +316,10 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
       siswaId, bulan: r.bulan, tahun: r.tahun, totalTersimpan: r.total_nominal,
       rincian:  r.tagihan_item ?? [],
       individu: siswaIndividuMap.get(siswaId) ?? [],
+      paket:    kelasKompList.get(r.siswa?.kelas?.id ?? '') ?? [],
       beasiswa: siswaBeasiswaMap.get(siswaId) ?? [],
       ta, riwayat,
+      rapikan:  r.status === 'belum_bayar' && !adaPembayaran.has(r.id),
     })
   }
 
@@ -316,16 +340,54 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
     }
   }
 
-  // Langkah 2 — total dari rincian yang sudah pasti
-  const hasilHitung = new Map(sasaran.map(r => [r.id, hitung(r)]))
+  const hasilHitung    = new Map(sasaran.map(r => [r.id, hitung(r)]))
+  const tagihanBerubah = new Set<string>()
+
+  // Langkah 2 — rincian per komponen dari hitungan yang sama, sebelum totalnya: nominal
+  // (pengganti dari komponen individu, atau nominal paket hari ini) dan potongan beasiswa.
+  // Potongan per komponen adalah dasar harga per komponen di halaman bayar wali: selama
+  // belum tertulis, tagihan itu hanya bisa dibayar utuh.
+  // Baris yang dibuang (komponen dobel / sudah keluar dari paket) dihapus lebih dulu
+  const dibuang: string[] = []
+  const rincianBaru: { id: string; ubah: { nominal?: number; potongan?: number } }[] = []
+  for (const r of sasaran) {
+    const { total, nominal, potongan, buang } = hasilHitung.get(r.id)!
+    if (total === null) continue
+    const buangIdx = new Set(buang)
+    ;(r.tagihan_item ?? []).forEach((it, i) => {
+      if (buangIdx.has(i)) { dibuang.push(it.id); tagihanBerubah.add(r.id); return }
+      const ubah: { nominal?: number; potongan?: number } = {}
+      const n = nominal[i]
+      const p = potongan[i]
+      if (n !== undefined && Number.isFinite(n) && n !== it.nominal)  ubah.nominal  = n
+      if (p !== undefined && Number.isFinite(p) && p !== it.potongan) ubah.potongan = p
+      if (Object.keys(ubah).length === 0) return
+      rincianBaru.push({ id: it.id, ubah })
+      tagihanBerubah.add(r.id)
+    })
+  }
+  for (let i = 0; i < dibuang.length; i += UKURAN_HAPUS) {
+    const { error } = await db.from('tagihan_item').delete().in('id', dibuang.slice(i, i + UKURAN_HAPUS))
+    if (error) throw galat('Gagal membuang komponen dobel dari rincian tagihan.', error)
+  }
+  // Beberapa sekaligus, bukan semuanya: ratusan permintaan berbarengan mudah ditolak
+  // server, dan penulisan yang gagal harus terlihat — bukan dihitung sebagai berhasil
+  for (let i = 0; i < rincianBaru.length; i += UKURAN_TULIS) {
+    const hasil = await Promise.all(
+      rincianBaru.slice(i, i + UKURAN_TULIS).map(({ id, ubah }) =>
+        db.from('tagihan_item').update(ubah).eq('id', id)
+      )
+    )
+    const gagal = hasil.find(h => h.error)
+    if (gagal?.error) throw galat('Gagal menyimpan rincian per komponen.', gagal.error)
+  }
+
+  // Langkah 3 — total dari rincian yang sudah pasti
   const toUpdate: { id: string; total: number }[] = []
   for (const r of sasaran) {
     const { total } = hasilHitung.get(r.id)!
     if (total !== null && total !== r.total_nominal) toUpdate.push({ id: r.id, total })
   }
-
-  // Beberapa sekaligus, bukan semuanya: ratusan permintaan berbarengan mudah ditolak
-  // server, dan penulisan yang gagal harus terlihat — bukan dihitung sebagai berhasil
   for (let i = 0; i < toUpdate.length; i += UKURAN_TULIS) {
     const hasil = await Promise.all(
       toUpdate.slice(i, i + UKURAN_TULIS).map(({ id, total }) =>
@@ -334,30 +396,7 @@ async function recalculateAll(db: SupabaseClient, sid: string): Promise<number> 
     )
     const gagal = hasil.find(h => h.error)
     if (gagal?.error) throw galat('Gagal menyimpan total tagihan.', gagal.error)
-  }
-
-  // Langkah 3 — potongan per komponen dari hitungan yang sama. Dasar harga per komponen
-  // di halaman bayar wali: selama belum tertulis, tagihan itu hanya bisa dibayar utuh.
-  const potonganBaru: { id: string; potongan: number }[] = []
-  const tagihanBerubah = new Set(toUpdate.map(u => u.id))
-  for (const r of sasaran) {
-    const { total, potongan } = hasilHitung.get(r.id)!
-    if (total === null) continue
-    ;(r.tagihan_item ?? []).forEach((it, i) => {
-      const p = potongan[i]
-      if (p === undefined || !Number.isFinite(p) || p === it.potongan) return
-      potonganBaru.push({ id: it.id, potongan: p })
-      tagihanBerubah.add(r.id)
-    })
-  }
-  for (let i = 0; i < potonganBaru.length; i += UKURAN_TULIS) {
-    const hasil = await Promise.all(
-      potonganBaru.slice(i, i + UKURAN_TULIS).map(({ id, potongan }) =>
-        db.from('tagihan_item').update({ potongan }).eq('id', id)
-      )
-    )
-    const gagal = hasil.find(h => h.error)
-    if (gagal?.error) throw galat('Gagal menyimpan potongan per komponen.', gagal.error)
+    toUpdate.slice(i, i + UKURAN_TULIS).forEach(u => tagihanBerubah.add(u.id))
   }
 
   return tagihanBerubah.size

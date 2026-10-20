@@ -12,7 +12,7 @@ import { bolehDihitungUlang, hitungUlangTagihan, type PotonganBeasiswa } from '@
 import { muatRingkasanPeriode, RINGKASAN_PERIODE_KOSONG, type BulanTahun, type RingkasanPeriode } from '@/lib/ringkasanPeriode'
 import { pesanPenahanTerbit, statusPenerbitan, type PesanPenahan } from '@/lib/statusPenerbitan'
 import { masihBersisa, muatTertagih, rincianSisa, sisaTagihan, tagihanTautan, tagihanTertagih, tunggakanSebelum, type TagihanBayar, type TagihanSisa } from '@/lib/tagihanTertagih'
-import { bagiKeTagihan, bagiPerUnit, kunciUnit, labelUnit, rincianKomponen, unitBayar } from '@/lib/rincianKomponen'
+import { bagiKeTagihan, bagiPerUnit, kunciUnit, labelUnit, rincianKomponen, tagihanBukti, unitBayar } from '@/lib/rincianKomponen'
 import { buildPesanTagihanText, buildPesanTunggakanText, buildWaMeLink } from '@/lib/templates/waTagihan'
 import { STATUS_TAGIHAN, URUTAN_STATUS, statusEfektif, lewatJatuhTempo, batasJatuhTempo, formatJatuhTempo } from '@/lib/statusTagihan'
 import {
@@ -98,11 +98,18 @@ type TunggakanRaw      = { id: string; siswa_id: string; status: string; bulan: 
 type TagihanSiswaSisa  = TagihanSisa & { payment_token: string | null }
 type BeasiswaSiswaRaw  = { siswa_id: string; beasiswa: { jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null; beasiswa_komponen: { komponen_id: string }[] } | null }
 type IndividuSiswaRaw  = { siswa_id: string; komponen_id: string; nominal: number; komponen: { nama: string; jenis: string } | null }
+type PaketNominalRaw   = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
 type CatatSiswaResult  = { id: string; nama: string; nis: string | null; no_wa: string | null; nama_wali: string | null; kelas: { id: string; nama: string; warna: string } | null }
 type PembayaranRow     = { id: string; jumlah: number; metode: string; tanggal_bayar: string; catatan: string | null; alokasi: unknown }
 /** Tagihan bulan ini di modal Catat Pembayaran — untuk ringkasan dan riwayatnya */
 type CatatTagihanRow   = { id: string; total_nominal: number; status: string; bulan: number; tahun: number }
-type DetailBeasiswaRow = { nama: string; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
+type DetailBeasiswaRow = { nama: string | null; jenis: string; keterangan: string | null; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
+
+/** Label badge potongan: nama program beasiswa, atau alasan potongan personal (yang tidak punya nama) */
+const labelPotongan = (bs: DetailBeasiswaRow): string =>
+  bs.jenis === 'beasiswa'
+    ? bs.nama?.trim() || 'Beasiswa'
+    : bs.keterangan?.trim() || 'Potongan personal'
 type DetailKomponenRow = { id: string; nama_komponen: string; nominal: number; potongan: number; jenis: string }
 /**
  * Satu baris rincian di modal detail. Untuk tagihan yang berincian per komponen, setiap
@@ -276,8 +283,9 @@ function TagihanAktifContent() {
   // ── loadTagihan ─────────────────────────────────────────────────────────────
 
   // Total tagihan yang sudah terbit dihitung dari snapshot tagihan_item, bukan
-  // diturunkan ulang dari paket. Paket yang diedit belakangan tidak boleh mengubah
-  // nominal tagihan yang kuitansinya sudah dipegang orang tua.
+  // diturunkan ulang dari paket. Hanya tagihan bulan berjalan yang belum lunas yang
+  // nominal rinciannya mengikuti paket + komponen individu hari ini (lib/hitungUlangTagihan,
+  // diputuskan 20 Okt 2026); tagihan lunas dan bulan-bulan lalu tetap seperti terbit.
   const loadTagihan = useCallback(async function load(sid: string, bulan: number, tahun: number): Promise<SiswaTagihanRow[]> {
     const [{ data: tagihanData }, riwayatRes, { data: taPeriode, error: eTa }, { data: tunggakanData }] = await Promise.all([
       supabase
@@ -299,7 +307,7 @@ function TagihanAktifContent() {
         .order('id')
         .range(dari, sampai)),
       supabase
-        .from('tahun_ajaran').select(TA_PERIODE_SELECT).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
+        .from('tahun_ajaran').select(`nama, ${TA_PERIODE_SELECT}`).eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle(),
       // Tagihan periode sebelumnya yang belum lunas, bahan tunggakan per siswa — cicilan
       // ikut, sisanya dihitung sesudah pembayarannya dimuat. Diambil bertahap: status
       // Menunggak bergantung pada daftar ini, dan satu permintaan bisa diam-diam
@@ -315,7 +323,7 @@ function TagihanAktifContent() {
     ])
 
     const riwayat = bangunRiwayatTagih(riwayatRes.data)
-    const ta = (taPeriode ?? null) as PeriodeTahunAjaran | null
+    const ta = (taPeriode ?? null) as (PeriodeTahunAjaran & { nama: string }) | null
 
     const sekarang = new Date()
     const rows     = (tagihanData ?? []) as unknown as TagihanRawRow[]
@@ -342,7 +350,7 @@ function TagihanAktifContent() {
     const today    = new Date().toISOString().split('T')[0]
 
     // Daftar siswa dipecah per potongan: ratusan id dalam satu URL ditolak server
-    const [bsRes, individuRes] = await Promise.all([
+    const [bsRes, individuRes, paketRes, bayarRes, buktiRes] = await Promise.all([
       ambilPerPotong<BeasiswaSiswaRaw>(siswaIds, (ids, dari, sampai) => supabase
         .from('beasiswa_siswa')
         .select('siswa_id, beasiswa:beasiswa_id(jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id))')
@@ -356,7 +364,39 @@ function TagihanAktifContent() {
         .in('siswa_id', ids)
         .order('id')
         .range(dari, sampai)),
+      // Nominal paket kelas hari ini — dasar nominal rincian bulan ini, dan penentu apakah
+      // komponen individu mengganti nominal paket atau ditambahkan
+      supabase
+        .from('paket')
+        .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
+        .eq('sekolah_id', sid)
+        .eq('tahun_ajaran', ta?.nama ?? '')
+        .limit(100),
+      // Tagihan yang sudah punya pembayaran / bukti menunggu tidak dirapikan rinciannya —
+      // syarat yang sama dengan /api/recalculate-tagihan
+      ambilPerPotong<{ tagihan_id: string }>(sasaran.map(r => r.id), (ids, dari, sampai) => supabase
+        .from('pembayaran')
+        .select('id, tagihan_id')
+        .in('tagihan_id', ids)
+        .order('id')
+        .range(dari, sampai)),
+      ambilSemua<{ tagihan_id: string; pilihan: unknown }>((dari, sampai) => supabase
+        .from('verifikasi_pembayaran')
+        .select('id, tagihan_id, pilihan')
+        .eq('sekolah_id', sid)
+        .eq('status', 'menunggu')
+        .order('id')
+        .range(dari, sampai)),
     ])
+    const adaPembayaran = new Set([
+      ...bayarRes.data.map(p => p.tagihan_id),
+      ...buktiRes.data.flatMap(tagihanBukti),
+    ])
+
+    const kelasPaketMap = new Map<string, { komponen_id: string; nominal: number }[]>()
+    for (const p of (paketRes.data ?? []) as unknown as PaketNominalRaw[]) {
+      for (const pk of p.paket_kelas) kelasPaketMap.set(pk.kelas_id, p.paket_komponen)
+    }
 
     const siswaBeasiswaMap = new Map<string, PotonganBeasiswa[]>()
     for (const row of bsRes.data) {
@@ -378,7 +418,8 @@ function TagihanAktifContent() {
     // Kalau ada pembacaan yang gagal, total yang tersimpan ditampilkan apa adanya.
     // Menghitung dari data separuh berarti menampilkan tagihan tanpa potongan beasiswa
     // — dan meminta server menuliskannya.
-    const dataLengkap = !riwayatRes.error && !eTa && !bsRes.error && !individuRes.error
+    const dataLengkap = !riwayatRes.error && !eTa && !bsRes.error && !individuRes.error && !paketRes.error
+      && !bayarRes.error && !buktiRes.error
 
     // tagihan id → total yang seharusnya
     const totalSeharusnya = new Map<string, number>()
@@ -390,16 +431,22 @@ function TagihanAktifContent() {
           siswaId, bulan, tahun, totalTersimpan: r.total_nominal,
           rincian:  r.tagihan_item ?? [],
           individu: siswaIndividuMap.get(siswaId) ?? [],
+          paket:    kelasPaketMap.get(r.siswa?.kelas?.id ?? '') ?? [],
           beasiswa: siswaBeasiswaMap.get(siswaId) ?? [],
           ta, riwayat,
+          rapikan:  r.status === 'belum_bayar' && !adaPembayaran.has(r.id),
         })
         if (hasil.total === null) continue
         totalSeharusnya.set(r.id, hasil.total)
-        // Potongan per komponen yang belum tertulis membuat tagihan itu hanya bisa dibayar
-        // utuh di halaman bayar wali — server juga yang menuliskannya
-        const potonganBeda = (r.tagihan_item ?? []).filter((it, i) => hasil.potongan[i] !== undefined && hasil.potongan[i] !== it.potongan).length
-        if (hasil.total !== r.total_nominal || hasil.susulan.length > 0 || potonganBeda > 0) {
-          belumSesuai.push(`${r.id}:${hasil.total}:${hasil.susulan.length}:${potonganBeda}`)
+        // Nominal & potongan per komponen yang belum tertulis, dan baris yang harus dibuang —
+        // potongan yang tertinggal membuat tagihan itu hanya bisa dibayar utuh di halaman
+        // bayar wali. Server juga yang menuliskannya.
+        const buang = new Set(hasil.buang)
+        const rincianBeda = hasil.buang.length + (r.tagihan_item ?? []).filter((it, i) => !buang.has(i) && (
+          (hasil.nominal[i] !== undefined && hasil.nominal[i] !== it.nominal) ||
+          (hasil.potongan[i] !== undefined && hasil.potongan[i] !== it.potongan))).length
+        if (hasil.total !== r.total_nominal || hasil.susulan.length > 0 || rincianBeda > 0) {
+          belumSesuai.push(`${r.id}:${hasil.total}:${hasil.susulan.length}:${rincianBeda}`)
         }
       }
     }
@@ -930,7 +977,7 @@ function TagihanAktifContent() {
     const [{ data: bsData }, { data: itemData }, { data: paketData }, { data: tunggakanData }] = await Promise.all([
       supabase
         .from('beasiswa_siswa')
-        .select('beasiswa:beasiswa_id(nama, jenis_potongan, persen, nominal)')
+        .select('beasiswa:beasiswa_id(nama, jenis, keterangan, jenis_potongan, persen, nominal)')
         .eq('siswa_id', t.siswa_id)
         .or(`berlaku_sampai.is.null,berlaku_sampai.gte.${today}`),
       supabase
@@ -1766,7 +1813,7 @@ function TagihanAktifContent() {
                 ? <Blok lebar={110} tinggi={27} sudut={20} />
                 : detailBeasiswa.map((bs, i) => (
                     <span key={i} style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.75rem', fontWeight: 700, padding: '4px 12px', borderRadius: 20 }}>
-                      🎗 {bs.nama}
+                      🎗 {labelPotongan(bs)}
                     </span>
                   ))
               }
@@ -1847,7 +1894,7 @@ function TagihanAktifContent() {
                     })}
                     {detailBeasiswa.map((bs, i) => (
                       <div key={`bs-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.55rem 1rem', borderBottom: '1px solid #F8FAFC' }}>
-                        <span style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>🎗 {bs.nama}</span>
+                        <span style={{ background: '#D1FAE5', color: '#065F46', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, flexShrink: 0, maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={labelPotongan(bs)}>🎗 {labelPotongan(bs)}</span>
                         <span style={{ flex: 1 }} />
                         <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#065F46' }}>
                           {bs.jenis_potongan === 'persen' ? `– ${bs.persen}%` : `– ${formatRp(bs.nominal ?? 0)}`}

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong, ambilSemua } from './ambilSemua'
 import { komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from './komponenTagihan'
-import { potonganPerKomponen, type PotonganBeasiswa } from './hitungUlangTagihan'
+import { gabungKomponenSiswa, potonganPerKomponen, type PotonganBeasiswa } from './hitungUlangTagihan'
 
 // Penerbitan tagihan bulanan: satu tagihan per siswa aktif yang belum punya tagihan pada
 // bulan itu, lengkap dengan rincian komponen, komponen individu, dan potongan beasiswanya.
@@ -139,10 +139,8 @@ export async function runGenerate(
     const bolehTagih = (k: { jenis: string; komponen_id: string }) =>
       komponenDitagihkan(k.jenis, bulan, tahun, ta, siswa.id, k.komponen_id, riwayat)
 
-    const filtered = komps.filter(bolehTagih)
-    const individu = (siswaIndividuMap.get(siswa.id) ?? []).filter(bolehTagih)
-
-    const allKomps = [...filtered, ...individu]
+    // Komponen individu yang juga ada di paket mengganti nominal paketnya, bukan ditambahkan
+    const allKomps = gabungKomponenSiswa(komps, siswaIndividuMap.get(siswa.id) ?? []).filter(bolehTagih)
     if (allKomps.length === 0) continue
 
     // Potongan juga dicatat per komponen, supaya wali bisa membayar komponen satu per satu

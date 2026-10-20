@@ -6,6 +6,7 @@ import { Award, Scissors, X, Plus, Eye, Pencil, Trash2, ChevronDown, Users, Aler
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { polaIlike } from '@/lib/polaCari'
+import { ambilSemua, ambilPerPotong } from '@/lib/ambilSemua'
 import { galatBesaran } from '@/lib/besaranPotongan'
 import { SkeletonBeasiswa } from '@/components/skeleton/SkeletonTagihan'
 
@@ -23,10 +24,13 @@ interface ProgramItem {
 
 interface AssignRow { siswa_id: string; nama: string; kelas_nama: string; kelas_warna: string | null; berlaku_sampai: string }
 
+// Satu baris = satu siswa (id = beasiswa_siswa.id). Sejak 20 Okt 2026 tiap siswa punya baris
+// `beasiswa` jenis override sendiri; data lama bisa masih berbagi beasiswa_id dengan siswa lain.
 interface PotonganRow {
   id: string; beasiswa_id: string; siswa_id: string
   siswa_nama: string; inisial: string; kelas_nama: string; kelas_warna: string | null
   alasan: string | null; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null
+  komponen_ids: string[]
   berlaku_sampai: string | null; status: 'aktif' | 'segera_berakhir' | 'berakhir'
 }
 
@@ -106,9 +110,11 @@ export default function BeasiswaPage() {
   const [editPotJenis,   setEditPotJenis]   = useState<'persen' | 'nominal'>('persen')
   const [editPotBesaran, setEditPotBesaran] = useState('')
   const [editPotTgl,     setEditPotTgl]     = useState('')
+  const [editPotKomponen, setEditPotKomponen] = useState<Set<string>>(new Set())
   const [editPotSaving,  setEditPotSaving]  = useState(false)
   const [deletePot,      setDeletePot]      = useState<PotonganRow | null>(null)
   const [deletePotLoading, setDeletePotLoading] = useState(false)
+  const [potError,       setPotError]       = useState('')
 
   // Penerima beasiswa states
   const [penerimaList,   setPenerimaList]   = useState<PenerimaRow[]>([])
@@ -142,6 +148,7 @@ export default function BeasiswaPage() {
   const [ptGlobal,     setPtGlobal]     = useState('')
   const [ptFilter,     setPtFilter]     = useState('Semua')
   const [ptSearchQ,    setPtSearchQ]    = useState('')
+  const [ptError,      setPtError]      = useState('')
 
   const assignTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ptTimer     = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -171,31 +178,38 @@ export default function BeasiswaPage() {
   }, [])
 
   const loadPotongan = useCallback(async (sid: string) => {
-    const { data: overrides } = await supabase
-      .from('beasiswa').select('id, keterangan, jenis_potongan, persen, nominal')
+    // Satu potongan per siswa, jadi jumlahnya bisa ratusan: dibaca per halaman dan
+    // daftar id-nya dipecah supaya URL .in() tidak kepanjangan
+    type OvRaw = {
+      id: string; keterangan: string | null; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null
+      beasiswa_komponen: { komponen_id: string }[]
+    }
+    const { data: overrides } = await ambilSemua<OvRaw>((dari, sampai) => supabase
+      .from('beasiswa').select('id, keterangan, jenis_potongan, persen, nominal, beasiswa_komponen(komponen_id)')
       .eq('sekolah_id', sid).eq('jenis', 'override')
-    if (!overrides || overrides.length === 0) { setPotonganList([]); return }
+      .order('id').range(dari, sampai))
+    if (overrides.length === 0) { setPotonganList([]); return }
 
-    type OvRaw = { id: string; keterangan: string | null; jenis_potongan: 'persen' | 'nominal'; persen: number | null; nominal: number | null }
-    const ids = overrides.map((o: OvRaw) => o.id)
-    const ovMap = new Map((overrides as OvRaw[]).map(o => [o.id, o]))
-
-    const { data: rows } = await supabase
-      .from('beasiswa_siswa')
-      .select('id, beasiswa_id, berlaku_sampai, siswa:siswa_id(id, nama, kelas:kelas_id(nama, jenjang, warna))')
-      .in('beasiswa_id', ids).limit(500)
+    const ovMap = new Map(overrides.map(o => [o.id, o]))
 
     type RawRow = {
       id: string; beasiswa_id: string; berlaku_sampai: string | null
       siswa: { id: string; nama: string; kelas: { nama: string; jenjang: string; warna: string | null } | null } | null
     }
-    setPotonganList(((rows ?? []) as RawRow[]).filter(r => r.siswa).map(r => {
+    const { data: rows } = await ambilPerPotong<RawRow>(overrides.map(o => o.id), (ids, dari, sampai) => supabase
+      .from('beasiswa_siswa')
+      .select('id, beasiswa_id, berlaku_sampai, siswa:siswa_id(id, nama, kelas:kelas_id(nama, jenjang, warna))')
+      .in('beasiswa_id', ids)
+      .order('id').range(dari, sampai))
+
+    setPotonganList(rows.filter(r => r.siswa).map(r => {
       const ov = ovMap.get(r.beasiswa_id)!
       return {
         id: r.id, beasiswa_id: r.beasiswa_id, siswa_id: r.siswa!.id,
         siswa_nama: r.siswa!.nama, inisial: getInisial(r.siswa!.nama),
         kelas_nama: r.siswa!.kelas?.nama ?? '—', kelas_warna: r.siswa!.kelas?.warna ?? null,
         alasan: ov.keterangan, jenis_potongan: ov.jenis_potongan, persen: ov.persen, nominal: ov.nominal,
+        komponen_ids: ov.beasiswa_komponen.map(bk => bk.komponen_id),
         berlaku_sampai: r.berlaku_sampai, status: getStatus(r.berlaku_sampai),
       }
     }))
@@ -400,41 +414,105 @@ export default function BeasiswaPage() {
 
   // ── Potongan aksi handlers ────────────────────────────────────────────────
 
+  /** Hapus baris `beasiswa` potongan beserta komponennya — hanya untuk potongan yang tidak lagi dipakai siswa mana pun */
+  const hapusPotongan = async (beasiswaId: string) => {
+    await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', beasiswaId)
+    await supabase.from('beasiswa').delete().eq('id', beasiswaId)
+  }
+
+  /** Apakah siswa lain (selain baris beasiswa_siswa `kecualiId`) masih memakai potongan ini — data sebelum 20 Okt 2026 */
+  const dipakaiSiswaLain = async (beasiswaId: string, kecualiId: string): Promise<boolean> => {
+    const { count, error } = await supabase.from('beasiswa_siswa')
+      .select('id', { count: 'exact', head: true })
+      .eq('beasiswa_id', beasiswaId).neq('id', kecualiId)
+    if (error) throw new Error('Gagal memeriksa pemakai potongan ini.')
+    return (count ?? 0) > 0
+  }
+
   const openEditPot = (r: PotonganRow) => {
     setEditPotAlasan(r.alasan ?? '')
     setEditPotJenis(r.jenis_potongan)
     setEditPotBesaran(r.jenis_potongan === 'persen' ? String(r.persen ?? 0) : String(r.nominal ?? 0))
     setEditPotTgl(r.berlaku_sampai ?? '')
+    setEditPotKomponen(new Set(r.komponen_ids))
+    setPotError('')
     setEditPot(r)
   }
 
   const saveEditPot = async () => {
-    if (!editPot || galatBesaran(editPotJenis, editPotBesaran)) return
+    if (!editPot || galatBesaran(editPotJenis, editPotBesaran) || editPotKomponen.size === 0) return
     setEditPotSaving(true)
+    setPotError('')
+    const isian = {
+      keterangan:     editPotAlasan.trim() || null,
+      jenis_potongan: editPotJenis,
+      persen:         editPotJenis === 'persen'  ? Number(editPotBesaran) : null,
+      nominal:        editPotJenis === 'nominal' ? Number(editPotBesaran) : null,
+    }
+    let potonganBaru: string | null = null
     try {
-      await supabase.from('beasiswa').update({
-        keterangan: editPotAlasan.trim() || null,
-        jenis_potongan: editPotJenis,
-        persen: editPotJenis === 'persen' ? Number(editPotBesaran) : null,
-        nominal: editPotJenis === 'nominal' ? Number(editPotBesaran) : null,
-      }).eq('id', editPot.beasiswa_id)
-      await supabase.from('beasiswa_siswa').update({ berlaku_sampai: editPotTgl || null }).eq('id', editPot.id)
+      // Potongan lama yang masih dipakai siswa lain tidak diubah: siswa ini dipindah ke
+      // potongannya sendiri, supaya perubahan nominal tidak ikut ke siswa lain
+      const pisah      = await dipakaiSiswaLain(editPot.beasiswa_id, editPot.id)
+      let beasiswaId   = editPot.beasiswa_id
+      if (pisah) {
+        const { data: baru, error } = await supabase.from('beasiswa')
+          .insert({ sekolah_id: sekolahId, jenis: 'override', ...isian }).select('id').single()
+        if (error || !baru) throw new Error('Gagal memisahkan potongan siswa ini.')
+        beasiswaId = potonganBaru = (baru as { id: string }).id
+      } else {
+        const { error } = await supabase.from('beasiswa').update(isian).eq('id', beasiswaId)
+        if (error) throw new Error('Gagal menyimpan besaran potongan.')
+      }
+
+      // Komponen diubah per selisih; potongan pisahan mulai tanpa komponen
+      const lama     = pisah ? new Set<string>() : new Set(editPot.komponen_ids)
+      const dilepas  = [...lama].filter(id => !editPotKomponen.has(id))
+      const ditambah = [...editPotKomponen].filter(id => !lama.has(id))
+      if (ditambah.length > 0) {
+        const { error } = await supabase.from('beasiswa_komponen')
+          .insert(ditambah.map(kid => ({ beasiswa_id: beasiswaId, komponen_id: kid })))
+        if (error) throw new Error('Gagal menyimpan komponen yang dipotong.')
+      }
+      if (dilepas.length > 0) {
+        const { error } = await supabase.from('beasiswa_komponen')
+          .delete().eq('beasiswa_id', beasiswaId).in('komponen_id', dilepas)
+        if (error) throw new Error('Gagal melepas komponen yang tidak lagi dipotong.')
+      }
+
+      const { error: eSiswa } = await supabase.from('beasiswa_siswa')
+        .update({ beasiswa_id: beasiswaId, berlaku_sampai: editPotTgl || null }).eq('id', editPot.id)
+      if (eSiswa) throw new Error('Gagal menyimpan potongan siswa ini.')
+      potonganBaru = null
+
       await loadPotongan(sekolahId)
       setEditPot(null)
       triggerRecalculate()
+    } catch (err) {
+      // Potongan pisahan yang belum sempat dipakai siswa ini dibuang lagi
+      if (potonganBaru) await hapusPotongan(potonganBaru)
+      setPotError((err as Error).message)
     } finally { setEditPotSaving(false) }
   }
 
   const confirmDeletePot = async () => {
     if (!deletePot) return
     setDeletePotLoading(true)
+    setPotError('')
     try {
-      await supabase.from('beasiswa_komponen').delete().eq('beasiswa_id', deletePot.beasiswa_id)
-      await supabase.from('beasiswa_siswa').delete().eq('id', deletePot.id)
-      await supabase.from('beasiswa').delete().eq('id', deletePot.beasiswa_id)
+      // Yang dihapus hanya siswa ini; potongannya ikut dihapus kalau tidak ada siswa lain yang memakainya
+      const { error } = await supabase.from('beasiswa_siswa').delete().eq('id', deletePot.id)
+      if (error) throw new Error('Gagal menghapus potongan siswa ini.')
+      try {
+        if (!(await dipakaiSiswaLain(deletePot.beasiswa_id, deletePot.id))) await hapusPotongan(deletePot.beasiswa_id)
+      } catch {
+        // Potongan tanpa siswa tidak tampil dan tidak berlaku, jadi gagal membersihkannya tidak menggagalkan penghapusan
+      }
       await loadPotongan(sekolahId)
       setDeletePot(null)
       triggerRecalculate()
+    } catch (err) {
+      setPotError((err as Error).message)
     } finally { setDeletePotLoading(false) }
   }
 
@@ -481,7 +559,7 @@ export default function BeasiswaPage() {
     setTimeout(() => {
       setPtShowForm(false); setPtClosing(false)
       setPtJenjang(''); setPtSearch(''); setPtResults([]); setPtRows([])
-      setPtAlasan(''); setPtJenis('persen'); setPtBesaran(''); setPtGlobal('')
+      setPtAlasan(''); setPtJenis('persen'); setPtBesaran(''); setPtGlobal(''); setPtError('')
       setPtKomponen(new Set(komponenList.map(k => k.id)))
     }, 320)
   }
@@ -498,28 +576,44 @@ export default function BeasiswaPage() {
     setPtSearch(''); setPtResults([])
   }
 
+  // Tiap siswa mendapat potongannya sendiri (baris `beasiswa` + komponennya), walau dibuat
+  // dari satu form. Dulu satu form = satu potongan bersama, sehingga mengedit atau menghapus
+  // satu siswa ikut mengubah/menghapus siswa lain di form yang sama.
   const savePt = async () => {
-    if (ptRows.length === 0 || galatBesaran(ptJenis, ptBesaran)) return
+    if (ptRows.length === 0 || ptKomponen.size === 0 || galatBesaran(ptJenis, ptBesaran)) return
     setPtSaving(true)
+    setPtError('')
+    const isian = {
+      sekolah_id: sekolahId, jenis: 'override', keterangan: ptAlasan.trim() || null,
+      jenis_potongan: ptJenis,
+      persen:  ptJenis === 'persen'  ? Number(ptBesaran) : null,
+      nominal: ptJenis === 'nominal' ? Number(ptBesaran) : null,
+    }
+    const komponenIds = [...ptKomponen]
+
+    const simpanSatu = async (r: { siswa: SiswaResult; berlaku_sampai: string }): Promise<boolean> => {
+      const { data: pot, error } = await supabase.from('beasiswa').insert(isian).select('id').single()
+      if (error || !pot) return false
+      const potId = (pot as { id: string }).id
+      const { error: eKomp } = await supabase.from('beasiswa_komponen')
+        .insert(komponenIds.map(kid => ({ beasiswa_id: potId, komponen_id: kid })))
+      const { error: eSiswa } = eKomp
+        ? { error: eKomp }
+        : await supabase.from('beasiswa_siswa').insert({ beasiswa_id: potId, siswa_id: r.siswa.id, berlaku_sampai: r.berlaku_sampai || null })
+      if (eKomp || eSiswa) { await hapusPotongan(potId); return false }
+      return true
+    }
+
     try {
-      const { data: prog, error } = await supabase.from('beasiswa').insert({
-        sekolah_id: sekolahId, jenis: 'override', keterangan: ptAlasan.trim() || null,
-        jenis_potongan: ptJenis,
-        persen: ptJenis === 'persen' ? Number(ptBesaran) : null,
-        nominal: ptJenis === 'nominal' ? Number(ptBesaran) : null,
-      }).select('id').single()
-      if (error || !prog) throw error
-      if (ptKomponen.size > 0) {
-        const { error: kompError } = await supabase.from('beasiswa_komponen').insert([...ptKomponen].map(kid => ({ beasiswa_id: prog.id, komponen_id: kid })))
-        if (kompError) throw kompError
-      }
-      const { error: siswaError } = await supabase.from('beasiswa_siswa').insert(
-        ptRows.map(r => ({ beasiswa_id: prog.id, siswa_id: r.siswa.id, berlaku_sampai: r.berlaku_sampai || null }))
-      )
-      if (siswaError) throw siswaError
+      const hasil  = await Promise.all(ptRows.map(simpanSatu))
+      const gagal  = ptRows.filter((_, i) => !hasil[i])
+      const adaYangTersimpan = gagal.length < ptRows.length
       await loadPotongan(sekolahId)
-      closePtForm()
-      triggerRecalculate()
+      if (adaYangTersimpan) triggerRecalculate()
+      if (gagal.length === 0) { closePtForm(); return }
+      // Yang berhasil sudah tampil di daftar; form hanya menyisakan siswa yang gagal untuk dicoba lagi
+      setPtRows(gagal)
+      setPtError(`Potongan untuk ${gagal.map(r => r.siswa.nama).join(', ')} gagal disimpan. Coba simpan lagi.`)
     } finally { setPtSaving(false) }
   }
 
@@ -534,6 +628,17 @@ export default function BeasiswaPage() {
     const fs = ptFilter === 'Semua' || (ptFilter === 'Aktif' && r.status === 'aktif') || (ptFilter === 'Segera berakhir' && r.status === 'segera_berakhir') || (ptFilter === 'Berakhir' && r.status === 'berakhir')
     return fs && (!ptSearchQ || r.siswa_nama.toLowerCase().includes(ptSearchQ.toLowerCase()))
   })
+
+  // Komponen yang dipotong, untuk badge. Komponen terikat tahun ajaran, jadi nama yang sama
+  // dari periode berbeda cukup tampil sekali.
+  const komponenDipotong = (ids: string[]): KomponenItem[] => {
+    const perNama = new Map<string, KomponenItem>()
+    for (const id of ids) {
+      const k = komponenList.find(x => x.id === id)
+      if (k && !perNama.has(k.nama)) perNama.set(k.nama, k)
+    }
+    return [...perNama.values()]
+  }
 
   const isProgram = activeTab === 'program'
 
@@ -839,9 +944,10 @@ export default function BeasiswaPage() {
                         onRemove={i => setPtRows(prev => prev.filter((_, j) => j !== i))} />
                     </>
                   )}
+                  {ptError && <div style={{ ...sErrorBox, marginTop: '1.25rem' }}>{ptError}</div>}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
                     <button onClick={closePtForm} style={sBtnYellow}>Batalkan Pembuatan <X size={15} /></button>
-                    <button onClick={savePt} disabled={ptSaving || ptRows.length === 0} style={{ ...sBtnYellow, opacity: ptRows.length === 0 ? 0.6 : 1 }}>
+                    <button onClick={savePt} disabled={ptSaving || ptRows.length === 0 || ptKomponen.size === 0} style={{ ...sBtnYellow, opacity: ptRows.length === 0 || ptKomponen.size === 0 ? 0.6 : 1 }}>
                       {ptSaving ? 'Menyimpan...' : <>Simpan &amp; Lanjutkan →</>}
                     </button>
                   </div>
@@ -911,7 +1017,7 @@ export default function BeasiswaPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', borderRadius: 10, overflow: 'hidden' }}>
                 <thead>
                   <tr style={{ background: '#1A2C4E', color: '#fff' }}>
-                    {['Nama', 'Potongan', 'Kelas', 'Aksi'].map(h => <th key={h} style={{ padding: '0.7rem 1rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>)}
+                    {['Nama', 'Potongan', 'Komponen', 'Kelas', 'Aksi'].map(h => <th key={h} style={{ padding: '0.7rem 1rem', textAlign: 'left', fontWeight: 600 }}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -936,13 +1042,16 @@ export default function BeasiswaPage() {
                         {r.berlaku_sampai && <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{fTgl(r.berlaku_sampai)}</div>}
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
+                        <BadgeKomponen list={komponenDipotong(r.komponen_ids)} />
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ background: r.kelas_warna ?? '#DBEAFE', color: '#ffffff', padding: '2px 10px', borderRadius: 6, fontSize: '0.8rem', fontWeight: 700 }}>{r.kelas_nama}</span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
                           <button onClick={() => setDetailPot(r)} style={sIcon}><Eye size={13} /></button>
                           <button onClick={() => openEditPot(r)} style={sIcon}><Pencil size={13} /></button>
-                          <button onClick={() => setDeletePot(r)} style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
+                          <button onClick={() => { setPotError(''); setDeletePot(r) }} style={{ ...sIcon, color: '#DC2626', background: '#FEF2F2' }}><Trash2 size={13} /></button>
                         </div>
                       </td>
                     </tr>
@@ -1123,6 +1232,7 @@ export default function BeasiswaPage() {
             {[
               { label: 'Alasan', val: detailPot.alasan ?? '—' },
               { label: 'Potongan', val: detailPot.jenis_potongan === 'persen' ? `${detailPot.persen ?? 0}%` : fRp(detailPot.nominal ?? 0) },
+              { label: 'Komponen', val: komponenDipotong(detailPot.komponen_ids).map(k => k.nama).join(', ') || '—' },
               { label: 'Berlaku sampai', val: detailPot.berlaku_sampai ? fTgl(detailPot.berlaku_sampai) : 'Tidak ada batas' },
               { label: 'Status', val: detailPot.status === 'aktif' ? 'Aktif' : detailPot.status === 'segera_berakhir' ? 'Segera berakhir' : 'Berakhir' },
             ].map(item => (
@@ -1229,16 +1339,19 @@ export default function BeasiswaPage() {
               <input value={editPotAlasan} onChange={e => setEditPotAlasan(e.target.value)} placeholder="Contoh: Orang tua meninggal" style={sInp} />
             </div>
             <div style={sDivider} />
+            <KomponenSelector label="Komponen yang dipotong" list={komponenList} selected={editPotKomponen} onChange={setEditPotKomponen} />
+            <div style={sDivider} />
             <JenisRow jenis={editPotJenis} besaran={editPotBesaran} onJenis={setEditPotJenis} onBesaran={setEditPotBesaran} />
             <div style={{ marginTop: '1.25rem' }}>
               <label style={sLbl}>Berlaku sampai</label>
               <input type="date" value={editPotTgl} onChange={e => setEditPotTgl(e.target.value)} style={sInp} />
               <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>Kosongkan jika tidak ada batas waktu</div>
             </div>
+            {potError && <div style={{ ...sErrorBox, marginTop: '1.25rem' }}>{potError}</div>}
           </div>
           <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
             <button onClick={() => setEditPot(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
-            <button onClick={saveEditPot} disabled={editPotSaving} style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: editPotSaving ? 0.7 : 1 }}>
+            <button onClick={saveEditPot} disabled={editPotSaving || editPotKomponen.size === 0} style={{ background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: editPotKomponen.size === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: editPotSaving || editPotKomponen.size === 0 ? 0.6 : 1 }}>
               {editPotSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
             </button>
           </div>
@@ -1256,7 +1369,9 @@ export default function BeasiswaPage() {
             <div style={{ fontSize: '0.875rem', color: '#64748B', marginBottom: '1.5rem', lineHeight: 1.7 }}>
               Yakin ingin menghapus potongan personal untuk <strong style={{ color: '#1A2C4E' }}>{deletePot.siswa_nama}</strong>?
               {deletePot.alasan && <> Alasan: <em>{deletePot.alasan}</em>.</>}
+              {' '}Potongan siswa lain tidak ikut terhapus.
             </div>
+            {potError && <div style={{ ...sErrorBox, marginBottom: '1rem' }}>{potError}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button onClick={() => setDeletePot(null)} style={{ background: '#fff', border: '1.5px solid #E2E8F0', color: '#475569', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit' }}>Batal</button>
               <button onClick={confirmDeletePot} disabled={deletePotLoading} style={{ background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.25rem', fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', opacity: deletePotLoading ? 0.7 : 1 }}>
@@ -1304,6 +1419,28 @@ function KomponenSelector({ label, list, selected, onChange }: { label: string; 
         })}
       </div>
       <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>ⓘ {selected.size} dari {list.length} komponen terpilih</div>
+    </div>
+  )
+}
+
+/** Badge komponen yang dipotong; paling banyak dua, sisanya "+N" dengan daftar lengkap di tooltip */
+function BadgeKomponen({ list }: { list: KomponenItem[] }) {
+  if (list.length === 0) return <span style={{ color: '#94A3B8' }}>—</span>
+  const tampil = list.slice(0, 2)
+  const sisa   = list.length - tampil.length
+  return (
+    <div title={list.map(k => k.nama).join(', ')} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+      {tampil.map(k => (
+        <span key={k.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#D3DFF3', borderRadius: 99, padding: '0.15rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, color: '#1A2C4E', whiteSpace: 'nowrap' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: k.warna, flexShrink: 0 }} />
+          {k.nama}
+        </span>
+      ))}
+      {sisa > 0 && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 99, padding: '0.15rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, color: '#64748B', whiteSpace: 'nowrap' }}>
+          +{sisa}
+        </span>
+      )}
     </div>
   )
 }
@@ -1425,6 +1562,7 @@ const sCard:      CSSProperties = { background: '#fff', border: '1px solid #DBEA
 const sLbl:       CSSProperties = { display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '0.4rem' }
 const sInp:       CSSProperties = { width: '100%', border: '2px solid #a5a9af', borderRadius: 8, padding: '0.55rem 0.85rem', fontSize: '0.875rem', fontWeight: 600, color: '#000000', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
 const sDivider:   CSSProperties = { height: 1, background: '#F1F5F9', margin: '0 0 1.25rem' }
+const sErrorBox:  CSSProperties = { background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '0.6rem 0.875rem', fontSize: '0.8rem', fontWeight: 600 }
 const sBtnOutline:CSSProperties = { background: '#fff', border: '1.5px solid #CBD5E1', color: '#475569', borderRadius: 6, padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
 const sBtnYellow: CSSProperties = { background: '#F7DD7D', color: '#1A2C4E', border: 'none', padding: '0.55rem 1.1rem', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }
 const sIcon:      CSSProperties = { background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B', borderRadius: 6, padding: '0.3rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }

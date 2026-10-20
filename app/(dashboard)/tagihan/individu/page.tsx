@@ -13,23 +13,29 @@ import { SkeletonKomponenIndividu } from '@/components/skeleton/SkeletonTagihan'
 interface KelasItem   { id: string; nama: string; jenjang: string }
 interface SiswaResult { id: string; nama: string; kelas_id: string; kelas_nama: string; kelas_jenjang: string; kelas_warna: string | null }
 
+// Komponen yang ada di paket kelas siswa tidak ditambahkan: nominal individunya MENGGANTI
+// nominal paket untuk siswa itu (lib/hitungUlangTagihan gabungKomponenSiswa, 20 Okt 2026)
 interface KomponenItem {
   id: string; nama: string; warna: string; nominal_default: number | null
+  /** Ada di paket kelas mana pun pada tahun ajaran aktif */
+  di_paket: boolean
 }
 
 interface AssignRow {
-  siswa_id: string; nama: string; kelas_nama: string; kelas_warna: string | null; nominal: string
+  siswa_id: string; nama: string; kelas_id: string; kelas_nama: string; kelas_warna: string | null; nominal: string
 }
 
 interface KomponenGrouped {
   komponen_id: string; nama: string; warna: string; nominal_default: number | null
-  inisial: string; siswa_count: number; kelas_list: string
+  inisial: string; siswa_count: number; kelas_list: string; di_paket: boolean
 }
 
 interface SiswaAssignRow {
   id: string; komponen_id: string; siswa_id: string
-  siswa_nama: string; inisial: string; kelas_nama: string; kelas_warna: string | null
+  siswa_nama: string; inisial: string; kelas_id: string; kelas_nama: string; kelas_warna: string | null
   komponen_nama: string; nominal: number; nominal_default: number | null
+  /** Nominal paket kelas siswa yang diganti; null = komponen tambahan (tidak ada di paket kelasnya) */
+  nominal_paket: number | null
   disesuaikan: boolean
 }
 
@@ -67,6 +73,8 @@ export default function IndividuPage() {
   const [sekolahId,    setSekolahId]    = useState('')
   const [kelasList,    setKelasList]    = useState<KelasItem[]>([])
   const [komponenList, setKomponenList] = useState<KomponenItem[]>([])
+  // kelas_id → (komponen_id → nominal paket), paket tahun ajaran aktif
+  const [nominalPaketKelas, setNominalPaketKelas] = useState<Map<string, Map<string, number>>>(new Map())
   const [assignedList, setAssignedList] = useState<KomponenGrouped[]>([])
   const [statData,     setStatData]     = useState({ komponen_aktif: 0, siswa_terdampak: 0, komponen_belum_dipakai: 0 })
   const [siswaList,         setSiswaList]         = useState<SiswaAssignRow[]>([])
@@ -99,42 +107,58 @@ export default function IndividuPage() {
   // ── Load ─────────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async (sid: string) => {
-    // Get paket IDs for this sekolah → filter paket komponen
-    const { data: pakets } = await supabase.from('paket').select('id').eq('sekolah_id', sid)
-    const paketIds = (pakets ?? []).map((p: { id: string }) => p.id)
+    // Komponen terikat tahun ajaran: pilihan di form hanya dari periode aktif (periode lama
+    // punya komponen bernama sama), dan paket yang nominalnya diganti juga paket periode ini
+    const { data: taData } = await supabase
+      .from('tahun_ajaran').select('nama').eq('sekolah_id', sid).eq('is_aktif', true).maybeSingle()
+    const tahunAjaran = (taData as { nama: string } | null)?.nama ?? ''
 
-    let paketKompIds = new Set<string>()
-    if (paketIds.length > 0) {
-      const { data: pk } = await supabase.from('paket_komponen').select('komponen_id').in('paket_id', paketIds)
-      paketKompIds = new Set((pk ?? []).map((r: { komponen_id: string }) => r.komponen_id))
+    const [{ data: pakets }, { data: allKomps }] = await Promise.all([
+      supabase
+        .from('paket')
+        .select('paket_kelas(kelas_id), paket_komponen(komponen_id, nominal)')
+        .eq('sekolah_id', sid).eq('tahun_ajaran', tahunAjaran).limit(100),
+      supabase
+        .from('komponen_tagihan')
+        .select('id, nama, kelas_warna, nominal_default, tahun_ajaran')
+        .eq('sekolah_id', sid).order('nama').limit(200),
+    ])
+
+    type PaketRaw = { paket_kelas: { kelas_id: string }[]; paket_komponen: { komponen_id: string; nominal: number }[] }
+    const paketKelas = new Map<string, Map<string, number>>()
+    for (const p of (pakets ?? []) as unknown as PaketRaw[]) {
+      const nominal = new Map(p.paket_komponen.map(pk => [pk.komponen_id, pk.nominal]))
+      for (const pk of p.paket_kelas) paketKelas.set(pk.kelas_id, nominal)
     }
+    const diPaket = new Set([...paketKelas.values()].flatMap(m => [...m.keys()]))
+    setNominalPaketKelas(paketKelas)
 
-    // Non-paket komponen
-    const { data: allKomps } = await supabase
-      .from('komponen_tagihan')
-      .select('id, nama, kelas_warna, nominal_default')
-      .eq('sekolah_id', sid).order('nama').limit(100)
+    type KompRaw = { id: string; nama: string; kelas_warna: string | null; nominal_default: number | null; tahun_ajaran: string | null }
+    const semuaKomponen = ((allKomps ?? []) as KompRaw[]).map(k => ({
+      item: { id: k.id, nama: k.nama, warna: k.kelas_warna ?? '#1A2C4E', nominal_default: k.nominal_default, di_paket: diPaket.has(k.id) } as KomponenItem,
+      tahun_ajaran: k.tahun_ajaran,
+    }))
+    const pilihan = semuaKomponen
+      .filter(k => !tahunAjaran || k.tahun_ajaran === tahunAjaran)
+      .map(k => k.item)
 
-    type KompRaw = { id: string; nama: string; kelas_warna: string | null; nominal_default: number | null }
-    const nonPaket: KomponenItem[] = ((allKomps ?? []) as KompRaw[])
-      .filter(k => !paketKompIds.has(k.id))
-      .map(k => ({ id: k.id, nama: k.nama, warna: k.kelas_warna ?? '#1A2C4E', nominal_default: k.nominal_default }))
-
-    setKomponenList(nonPaket)
+    setKomponenList(pilihan)
 
     // Load assignments (flat + grouped)
     const { data: assigns } = await supabase
       .from('siswa_komponen_individu')
-      .select('id, komponen_id, siswa_id, nominal, siswa:siswa_id(nama, kelas:kelas_id(nama, warna)), komponen:komponen_id(nama, nominal_default)')
+      .select('id, komponen_id, siswa_id, nominal, siswa:siswa_id(nama, kelas_id, kelas:kelas_id(nama, warna)), komponen:komponen_id(nama, nominal_default)')
       .eq('sekolah_id', sid).limit(1000)
 
     type AssignRaw = {
       id: string; komponen_id: string; siswa_id: string; nominal: number
-      siswa: { nama: string; kelas: { nama: string; warna: string | null } | null } | null
+      siswa: { nama: string; kelas_id: string | null; kelas: { nama: string; warna: string | null } | null } | null
       komponen: { nama: string; nominal_default: number | null } | null
     }
 
-    const kompMap = new Map(nonPaket.map(k => [k.id, k]))
+    // Semua periode, bukan hanya pilihan di form: komponen individu periode lama masih
+    // ikut ditagihkan, jadi harus tetap terlihat (dan bisa dihapus) di sini
+    const kompMap = new Map(semuaKomponen.map(k => [k.item.id, k.item]))
 
     // Group by komponen for main card
     const groupMap = new Map<string, { siswa_ids: Set<string>; kelas_names: Set<string> }>()
@@ -154,6 +178,7 @@ export default function IndividuPage() {
           inisial: getInisial(k.nama),
           siswa_count: g.siswa_ids.size,
           kelas_list: [...g.kelas_names].sort().join(', '),
+          di_paket: k.di_paket,
         }
       })
 
@@ -165,9 +190,11 @@ export default function IndividuPage() {
       .map(a => ({
         id: a.id, komponen_id: a.komponen_id, siswa_id: a.siswa_id,
         siswa_nama: a.siswa!.nama, inisial: getInisial(a.siswa!.nama),
+        kelas_id: a.siswa!.kelas_id ?? '',
         kelas_nama: a.siswa!.kelas?.nama ?? '—', kelas_warna: a.siswa!.kelas?.warna ?? null,
         komponen_nama: a.komponen!.nama, nominal: a.nominal,
         nominal_default: a.komponen!.nominal_default,
+        nominal_paket: paketKelas.get(a.siswa!.kelas_id ?? '')?.get(a.komponen_id) ?? null,
         disesuaikan: a.komponen!.nominal_default !== null && a.nominal !== a.komponen!.nominal_default,
       }))
 
@@ -180,7 +207,8 @@ export default function IndividuPage() {
     setStatData({
       komponen_aktif:         grouped.length,
       siswa_terdampak:        allSiswaIds.size,
-      komponen_belum_dipakai: nonPaket.filter(k => !assignedKompIds.has(k.id)).length,
+      // Belum dipakai = tidak di paket mana pun dan belum di-assign ke siswa
+      komponen_belum_dipakai: pilihan.filter(k => !k.di_paket && !assignedKompIds.has(k.id)).length,
     })
   }, [])
 
@@ -210,10 +238,19 @@ export default function IndividuPage() {
 
   const uniqueJenjang = [...new Set(kelasList.map(k => k.jenjang).filter(Boolean))]
 
+  // Komponen acuan nominal awal: komponen yang sedang diedit, atau komponen pertama yang dipilih
+  const kompAcuanId = editKomponenId ?? komponenList.find(k => fKomponen.has(k.id))?.id ?? null
+  /** Nominal paket kelas siswa untuk komponen acuan; null = komponen itu bukan bagian paket kelasnya */
+  const nominalPaketAcuan = (kelasId: string): number | null =>
+    (kompAcuanId ? nominalPaketKelas.get(kelasId)?.get(kompAcuanId) : undefined) ?? null
+  const komponenPaketTerpilih = komponenList.filter(k => fKomponen.has(k.id) && k.di_paket)
+
   const openForm = () => {
     setEditKomponenId(null)
     setFormClosing(false); setShowForm(true)
-    setFKomponen(new Set(komponenList.map(k => k.id)))
+    // Mulai kosong: satu nominal per siswa dipakai untuk semua komponen terpilih, jadi
+    // memilih semua (termasuk SPP dan komponen paket lain) hampir pasti keliru
+    setFKomponen(new Set())
     setFJenjang(uniqueJenjang[0] ?? '')
     setFSearch(''); setFResults([]); setFRows([]); setEditingIdx(null)
   }
@@ -227,7 +264,7 @@ export default function IndividuPage() {
     const existing = siswaList.filter(r => r.komponen_id === k.komponen_id)
     setFRows(existing.map(s => ({
       siswa_id: s.siswa_id, nama: s.siswa_nama,
-      kelas_nama: s.kelas_nama, kelas_warna: s.kelas_warna,
+      kelas_id: s.kelas_id, kelas_nama: s.kelas_nama, kelas_warna: s.kelas_warna,
       nominal: String(s.nominal),
     })))
   }
@@ -259,10 +296,13 @@ export default function IndividuPage() {
 
   const addSiswa = (s: SiswaResult) => {
     if (fRows.find(r => r.siswa_id === s.id)) return
-    const firstKomp = komponenList.find(k => fKomponen.has(k.id))
+    // Mulai dari nominal paket kelasnya (mis. SPP 200rb, lalu diubah ke 250rb); komponen
+    // tambahan mulai dari nominal default komponen
+    const nominalDefault = komponenList.find(k => k.id === kompAcuanId)?.nominal_default
+      ?? assignedList.find(k => k.komponen_id === kompAcuanId)?.nominal_default
     setFRows(prev => [...prev, {
-      siswa_id: s.id, nama: s.nama, kelas_nama: s.kelas_nama, kelas_warna: s.kelas_warna,
-      nominal: String(firstKomp?.nominal_default ?? 0),
+      siswa_id: s.id, nama: s.nama, kelas_id: s.kelas_id, kelas_nama: s.kelas_nama, kelas_warna: s.kelas_warna,
+      nominal: String(nominalPaketAcuan(s.kelas_id) ?? nominalDefault ?? 0),
     }])
     setFSearch(''); setFResults([])
   }
@@ -394,7 +434,7 @@ export default function IndividuPage() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '0.6rem' }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1A2C4E' }}>Pilih komponen</div>
-                    <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Hanya menampilkan komponen yang belum masuk paket manapun</div>
+                    <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Komponen bertanda <strong>Paket</strong> mengganti nominal paket siswa itu, bukan ditambahkan</div>
                   </div>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                     <button onClick={() => setFKomponen(new Set(komponenList.map(k => k.id)))} style={sBtnOutline}>Pilih Semua</button>
@@ -403,20 +443,29 @@ export default function IndividuPage() {
                 </div>
                 <div style={{ border: '1px solid #E2E8F0', borderRadius: 8, padding: '0.75rem 1rem', minHeight: 52, maxHeight: 96, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignContent: 'flex-start' }}>
                   {komponenList.length === 0
-                    ? <span style={{ fontSize: '0.82rem', color: '#94A3B8' }}>Semua komponen sudah masuk paket</span>
+                    ? <span style={{ fontSize: '0.82rem', color: '#94A3B8' }}>Belum ada komponen tagihan di tahun ajaran ini</span>
                     : komponenList.map(k => {
                         const sel = fKomponen.has(k.id)
                         return (
                           <button key={k.id} onClick={() => {
                             const n = new Set(fKomponen); if (sel) n.delete(k.id); else n.add(k.id); setFKomponen(n)
-                          }} style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', border: sel ? 'none' : '1.5px solid #CBD5E1', background: sel ? k.warna : '#fff', color: sel ? '#fff' : '#475569', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                          }} style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', border: sel ? 'none' : '1.5px solid #CBD5E1', background: sel ? k.warna : '#fff', color: sel ? '#fff' : '#475569', fontFamily: 'inherit', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {k.nama}
+                            {k.di_paket && (
+                              <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0 6px', borderRadius: 20, background: sel ? 'rgba(255,255,255,0.25)' : '#EEF2FF', color: sel ? '#fff' : '#1A2C4E' }}>Paket</span>
+                            )}
                           </button>
                         )
                       })
                   }
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '0.4rem' }}>ⓘ {fKomponen.size} dari {komponenList.length} komponen terpilih</div>
+                {komponenPaketTerpilih.length > 0 && (
+                  <div style={{ fontSize: '0.78rem', color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: '0.5rem 0.75rem', marginTop: '0.5rem', lineHeight: 1.5 }}>
+                    {komponenPaketTerpilih.map(k => k.nama).join(', ')} ada di paket kelas: nominal siswa di bawah <strong>menggantikan</strong> nominal paketnya, termasuk tagihan bulan ini yang belum lunas.
+                    {fKomponen.size > 1 && <> Nominal yang sama dipakai untuk semua komponen terpilih.</>}
+                  </div>
+                )}
               </div>}
               <div style={sDivider} />
 
@@ -500,6 +549,9 @@ export default function IndividuPage() {
                                   </button>
                                 </div>
                               )}
+                              {nominalPaketAcuan(r.kelas_id) !== null && (
+                                <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>Paket kelas: {fRp(nominalPaketAcuan(r.kelas_id)!)}</div>
+                              )}
                             </td>
                             <td style={{ padding: '0.55rem 0.5rem' }}>
                               <button onClick={() => { setFRows(prev => prev.filter((_, j) => j !== i)); if (editingIdx === i) setEditingIdx(null) }}
@@ -512,7 +564,7 @@ export default function IndividuPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>ⓘ Nominal default mengikuti komponen, tapi bisa diubah per siswa kapan saja</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>ⓘ Nominal awal mengikuti paket kelas siswa (atau nominal default komponen), dan bisa diubah per siswa</div>
                 </>
               )}
 
@@ -540,7 +592,7 @@ export default function IndividuPage() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem 2rem 4rem', textAlign: 'center' }}>
             <Puzzle size={68} strokeWidth={0.9} color="#CBD5E1" style={{ marginBottom: '1rem' }} />
             <div style={{ fontWeight: 700, fontSize: '1.3rem', color: '#6F788A', marginBottom: '0.35rem' }}>Belum ada komponen tambahan</div>
-            <div style={{ fontSize: '1rem', color: '#94A3B8', maxWidth: 320, lineHeight: 1.6 }}>Assign komponen opsional seperti ekskul ke siswa tertentu</div>
+            <div style={{ fontSize: '1rem', color: '#94A3B8', maxWidth: 320, lineHeight: 1.6 }}>Assign komponen opsional seperti ekskul, atau ganti nominal paket (mis. SPP) untuk siswa tertentu</div>
           </div>
         </div>
       )}
@@ -601,6 +653,9 @@ export default function IndividuPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--navy-dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{k.nama}</span>
                         <span style={{ background: k.warna, color: '#fff', fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>{k.siswa_count} siswa</span>
+                        {k.di_paket && (
+                          <span title="Nominal siswa ini menggantikan nominal paket kelasnya" style={{ background: '#EEF2FF', color: '#1A2C4E', fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>Ganti paket</span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         Kelas: {k.kelas_list || <span style={{ color: '#8a8e94' }}>—</span>}
@@ -713,7 +768,12 @@ export default function IndividuPage() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#1A2C4E' }}>{fRp(r.nominal)}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#1A2C4E' }}>
+                        {fRp(r.nominal)}
+                        {r.nominal_paket !== null && (
+                          <div style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 500, marginTop: 1 }}>Mengganti paket {fRp(r.nominal_paket)}</div>
+                        )}
+                      </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <span style={{ background: r.kelas_warna ?? '#E2E8F0', color: '#fff', fontSize: '0.78rem', fontWeight: 700, padding: '2px 10px', borderRadius: 6 }}>{r.kelas_nama}</span>
                       </td>
@@ -806,6 +866,7 @@ export default function IndividuPage() {
                 {[
                   { label: 'Komponen',       value: viewSiswaItem.komponen_nama },
                   { label: 'Nominal',        value: fRp(viewSiswaItem.nominal) },
+                  { label: 'Nominal paket kelas', value: viewSiswaItem.nominal_paket != null ? `${fRp(viewSiswaItem.nominal_paket)} (diganti)` : 'Tidak ada di paket' },
                   { label: 'Nominal default', value: viewSiswaItem.nominal_default != null ? fRp(viewSiswaItem.nominal_default) : '—' },
                   { label: 'Status',         value: viewSiswaItem.disesuaikan ? 'Disesuaikan' : 'Default' },
                   { label: 'Kelas',          value: viewSiswaItem.kelas_nama },
@@ -838,6 +899,11 @@ export default function IndividuPage() {
                   style={{ ...sInp, fontSize: '1rem', fontWeight: 700 }}
                   placeholder="0"
                 />
+                {editSiswaItem.nominal_paket != null && (
+                  <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '0.35rem' }}>
+                    Menggantikan nominal paket kelas: {fRp(editSiswaItem.nominal_paket)}
+                  </div>
+                )}
                 {editSiswaItem.nominal_default != null && (
                   <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '0.35rem' }}>
                     Nominal default: {fRp(editSiswaItem.nominal_default)}
