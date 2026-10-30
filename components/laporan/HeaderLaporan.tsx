@@ -10,11 +10,13 @@ export interface JejakLaporan { label: string; href?: string }
  * Judul halaman laporan di setiap level drill-down, dengan jejak
  * Sekolah › Jenjang › Kelas di atasnya. `kanan` berisi filter dan aksi halaman.
  */
-export function HeaderLaporan({ judul, subjudul, jejak, kanan }: {
+export function HeaderLaporan({ judul, subjudul, jejak, kanan, ikon }: {
   judul:    string
   subjudul: string
   jejak?:   JejakLaporan[]
   kanan?:   ReactNode
+  /** Ikon di kotak navy; bawaan grafik batang */
+  ikon?:    ReactNode
 }) {
   return (
     <div style={{ marginBottom: '1.75rem' }}>
@@ -31,9 +33,12 @@ export function HeaderLaporan({ judul, subjudul, jejak, kanan }: {
         </nav>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* Judul yang mengalah saat ruang sempit (subjudulnya boleh turun baris), supaya
+            filter yang melebar (FilterPeriode) tidak menjatuhkan seluruh grup kanan ke
+            baris baru. Baru di bawah ±340 px judul ikut membungkus. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: '1 1 340px', minWidth: 0 }}>
           <div style={{ width: 60, height: 60, background: '#1A2C4E', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '2px 3px 10px rgba(18, 47, 102, 0.54)' }}>
-            <BarChart2 size={30} color="#ffffff" />
+            {ikon ?? <BarChart2 size={30} color="#ffffff" />}
           </div>
           <div>
             <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--navy-dark)', fontFamily: 'var(--font-dm-sans), sans-serif', margin: 0, lineHeight: 1.2 }}>
@@ -44,7 +49,8 @@ export function HeaderLaporan({ judul, subjudul, jejak, kanan }: {
             </p>
           </div>
         </div>
-        {kanan && <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>{kanan}</div>}
+        {/* Kalau tetap harus turun baris (layar sempit), grupnya rata kanan */}
+        {kanan && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.625rem', flexWrap: 'wrap', marginLeft: 'auto' }}>{kanan}</div>}
       </div>
     </div>
   )

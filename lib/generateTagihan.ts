@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ambilPerPotong, ambilSemua } from './ambilSemua'
-import { komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from './komponenTagihan'
+import { komponenDitagihkan, bangunRiwayatTagih, TA_PERIODE_SELECT, type PeriodeTahunAjaran, type RiwayatTagih } from './komponenTagihan'
 import { gabungKomponenSiswa, potonganPerKomponen, type PotonganBeasiswa } from './hitungUlangTagihan'
 
 // Penerbitan tagihan bulanan: satu tagihan per siswa aktif yang belum punya tagihan pada
@@ -34,6 +34,41 @@ type RiwayatRow        = { siswa_id: string; bulan: number; tahun: number; tagih
 export const kelasTanpaPaket = <K extends { id: string }>(
   semuaKelas: K[], kelasBerpaket: { has(id: string): boolean },
 ): K[] => semuaKelas.filter(k => !kelasBerpaket.has(k.id))
+
+/** Komponen yang bisa masuk rincian tagihan: dari paket kelas atau komponen individu siswa */
+export interface KomponenTerbit {
+  komponen_id: string
+  nominal:     number
+  nama:        string
+  jenis:       string
+}
+
+/**
+ * Rincian tagihan satu siswa untuk satu bulan — satu-satunya aturan penerbitan, dipakai
+ * runGenerate dan isian tunggakan awal (/api/tagihan/tunggakan-awal): paket kelas dengan
+ * nominal diganti komponen individu, hanya komponen yang ditagihkan bulan itu (rutin,
+ * atau per semester / sekali bayar yang belum pernah ditagih dalam cakupannya), lalu
+ * potongan beasiswa per komponen.
+ */
+export function rancangRincianSiswa(a: {
+  siswaId:  string
+  bulan:    number
+  tahun:    number
+  paket:    KomponenTerbit[]
+  individu: KomponenTerbit[]
+  beasiswa: PotonganBeasiswa[]
+  ta:       PeriodeTahunAjaran | null
+  riwayat:  RiwayatTagih
+}): { komponen: KomponenTerbit[]; potongan: number[]; total: number } {
+  // Komponen individu yang juga ada di paket mengganti nominal paketnya, bukan ditambahkan
+  const komponen = gabungKomponenSiswa(a.paket, a.individu)
+    .filter(k => komponenDitagihkan(k.jenis, a.bulan, a.tahun, a.ta, a.siswaId, k.komponen_id, a.riwayat))
+  // Potongan juga dicatat per komponen, supaya wali bisa membayar komponen satu per satu
+  // dengan harga sesudah beasiswa
+  const potongan = potonganPerKomponen(komponen, a.beasiswa)
+  const total    = Math.max(0, komponen.reduce((s, k) => s + k.nominal, 0) - potongan.total)
+  return { komponen, potongan: potongan.perKomponen, total }
+}
 
 export async function runGenerate(
   db: SupabaseClient, sid: string, tahunAjaran: string, bulan: number, tahun: number,
@@ -136,24 +171,20 @@ export async function runGenerate(
     const komps = kelasToKomponen.get(siswa.kelas_id)
     if (!komps || komps.length === 0) continue
 
-    const bolehTagih = (k: { jenis: string; komponen_id: string }) =>
-      komponenDitagihkan(k.jenis, bulan, tahun, ta, siswa.id, k.komponen_id, riwayat)
+    const rincian = rancangRincianSiswa({
+      siswaId: siswa.id, bulan, tahun, paket: komps,
+      individu: siswaIndividuMap.get(siswa.id) ?? [],
+      beasiswa: siswaBeasiswaMap.get(siswa.id) ?? [],
+      ta, riwayat,
+    })
+    if (rincian.komponen.length === 0) continue
 
-    // Komponen individu yang juga ada di paket mengganti nominal paketnya, bukan ditambahkan
-    const allKomps = gabungKomponenSiswa(komps, siswaIndividuMap.get(siswa.id) ?? []).filter(bolehTagih)
-    if (allKomps.length === 0) continue
-
-    // Potongan juga dicatat per komponen, supaya wali bisa membayar komponen satu per satu
-    // dengan harga sesudah beasiswa
-    const potongan = potonganPerKomponen(allKomps, siswaBeasiswaMap.get(siswa.id) ?? [])
-
-    const total = Math.max(0, allKomps.reduce((s, k) => s + k.nominal, 0) - potongan.total)
     // kelas_id, tahun_ajaran_id, dan jatuh_tempo sengaja tidak dikirim — trigger
     // database tagihan_isi_snapshot mengisinya dari siswa, rentang tahun ajaran,
     // dan tanggal jatuh tempo paket kelasnya
-    toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: total, status: 'belum_bayar' })
-    allKomps.forEach((k, i) => itemsByTempId.push({
-      komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, potongan: potongan.perKomponen[i], siswa_id: siswa.id,
+    toInsert.push({ sekolah_id: sid, siswa_id: siswa.id, bulan, tahun, total_nominal: rincian.total, status: 'belum_bayar' })
+    rincian.komponen.forEach((k, i) => itemsByTempId.push({
+      komponen_id: k.komponen_id, nama_komponen: k.nama, nominal: k.nominal, potongan: rincian.potongan[i], siswa_id: siswa.id,
     }))
   }
 

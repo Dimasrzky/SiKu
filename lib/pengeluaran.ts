@@ -1,11 +1,12 @@
 import { tanggalWIB } from './metrikLaporan'
 import { BULAN_PANJANG } from './formatLaporan'
 
-// Pengeluaran sekolah — subfitur 'pengeluaran' (lib/fiturSekolah). Kolomnya mengikuti
-// format laporan pengeluaran sekolah: Jenis (kategori buatan bendahara), Keterangan
-// Barang, Volume, Satuan, Biaya Satuan, Jumlah. Volume dan Satuan sama-sama berupa
-// angka + nama satuan ("18 hari", "4 buah"), keduanya opsional. Pemasukan di ringkasan
-// kas = pembayaran SPP yang tercatat di SiKu, tanpa saldo awal atau pemasukan lain.
+// Pengeluaran sekolah — subfitur 'pengeluaran' (lib/fiturSekolah). Sejak 27 Okt 2026:
+// Jenis (kategori buatan bendahara), Nama, Tanggal, Volume (angka) + Satuan (teks, opsional),
+// Biaya Satuan, Jumlah (Volume × Biaya Satuan, boleh diubah kalau beda dengan nota), dan
+// sumber dana: komponen tagihan yang membiayainya, berjumlah tepat sama dengan Jumlah
+// (lib/kasKomponen). Data sebelum itu memakai dua besaran — Volume "18 hari" × Satuan
+// "14 guru" (kolom kuantitas*) — dan tetap ditampilkan apa adanya sampai diubah.
 
 export const BUCKET_FOTO_PENGELUARAN = 'bukti-pengeluaran'
 
@@ -15,6 +16,14 @@ export interface KategoriPengeluaran {
   urutan: number
 }
 
+/** Satu komponen yang membiayai sebuah pengeluaran (tabel pengeluaran_sumber_dana) */
+export interface SumberDana {
+  /** Komponen tagihan saat dicatat — hanya untuk warna; kas dikelompokkan menurut nama */
+  komponen_id:   string | null
+  nama_komponen: string
+  nominal:       number
+}
+
 export interface Pengeluaran {
   id:               string
   kategori_id:      string
@@ -22,16 +31,20 @@ export interface Pengeluaran {
   keterangan:       string
   volume:           number | null
   volume_satuan:    string | null
+  /** Besaran kedua format lama ("14 guru"); null untuk data sejak 27 Okt 2026 */
   kuantitas:        number | null
   kuantitas_satuan: string | null
   biaya_satuan:     number | null
   jumlah:           number
   foto_path:        string | null
   created_at:       string
+  sumber_dana:      SumberDana[]
 }
 
 export const KATEGORI_SELECT    = 'id, nama, urutan'
 export const PENGELUARAN_SELECT = 'id, kategori_id, tanggal, keterangan, volume, volume_satuan, kuantitas, kuantitas_satuan, biaya_satuan, jumlah, foto_path, created_at'
+/** Beserta sumber dananya — butuh tabel pengeluaran_sumber_dana (SQL 27 Okt 2026) */
+export const PENGELUARAN_SELECT_SUMBER = `${PENGELUARAN_SELECT}, sumber_dana:pengeluaran_sumber_dana(komponen_id, nama_komponen, nominal)`
 
 export const MAKS_KETERANGAN   = 200
 export const MAKS_NAMA_SATUAN  = 30
@@ -39,13 +52,14 @@ export const MAKS_NAMA_KATEGORI = 60
 
 const angkaAtauNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
 
-/** Baris dari PostgREST: numeric/bigint bisa datang sebagai string */
-export const bacaPengeluaran = (b: Pengeluaran): Pengeluaran => ({
+/** Baris dari PostgREST: numeric/bigint bisa datang sebagai string; sumber dana bisa belum ada */
+export const bacaPengeluaran = (b: Omit<Pengeluaran, 'sumber_dana'> & { sumber_dana?: SumberDana[] | null }): Pengeluaran => ({
   ...b,
   volume:       angkaAtauNull(b.volume),
   kuantitas:    angkaAtauNull(b.kuantitas),
   biaya_satuan: angkaAtauNull(b.biaya_satuan),
   jumlah:       Number(b.jumlah),
+  sumber_dana:  (b.sumber_dana ?? []).map(s => ({ komponen_id: s.komponen_id, nama_komponen: s.nama_komponen, nominal: Number(s.nominal) })),
 })
 
 export const urutkanKategori = (daftar: KategoriPengeluaran[]): KategoriPengeluaran[] =>
@@ -64,6 +78,20 @@ export function teksBesaran(angka: number | null, satuan: string | null): string
   const a = angka.toLocaleString('id-ID', { maximumFractionDigits: 2 })
   return s ? `${a} ${s}` : a
 }
+
+/** Dicatat dengan format lama dua besaran (Volume "18 hari" × Satuan "14 guru") */
+export const formatLama = (p: Pick<Pengeluaran, 'kuantitas' | 'kuantitas_satuan'>): boolean =>
+  p.kuantitas !== null || !!p.kuantitas_satuan?.trim()
+
+/** Kolom Volume: angkanya saja; format lama ditampilkan utuh "18 hari × 14 guru" */
+export const teksVolume = (p: Pick<Pengeluaran, 'volume' | 'volume_satuan' | 'kuantitas' | 'kuantitas_satuan'>): string =>
+  formatLama(p)
+    ? [teksBesaran(p.volume, p.volume_satuan), teksBesaran(p.kuantitas, p.kuantitas_satuan)].filter(Boolean).join(' × ')
+    : p.volume === null ? '' : p.volume.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+
+/** Kolom Satuan: nama satuannya; kosong untuk format lama (sudah di kolom Volume) */
+export const teksSatuan = (p: Pick<Pengeluaran, 'volume_satuan' | 'kuantitas' | 'kuantitas_satuan'>): string =>
+  formatLama(p) ? '' : p.volume_satuan?.trim() ?? ''
 
 // ── Isian formulir ───────────────────────────────────────────────────────────
 
@@ -156,50 +184,28 @@ export interface KelompokPengeluaran {
 }
 
 /**
- * Pengeluaran dikelompokkan per kategori menurut urutan kategori. Kategori tanpa
- * pengeluaran tetap tampil, seperti baris kosong di format laporan sekolah.
+ * Pengeluaran dikelompokkan per kategori menurut urutan kategori. Hanya kategori yang punya
+ * pengeluaran (keputusan user 27 Okt 2026); kategori lain tidak ditampilkan. Pengeluaran
+ * yang kategorinya tidak ada lagi di daftar dikelompokkan sebagai "Tanpa jenis".
  */
 export function kelompokkanPerKategori(kategori: KategoriPengeluaran[], baris: Pengeluaran[]): KelompokPengeluaran[] {
   const perKategori = new Map<string, Pengeluaran[]>()
   for (const b of baris) perKategori.set(b.kategori_id, [...(perKategori.get(b.kategori_id) ?? []), b])
-  return urutkanKategori(kategori).map(k => {
-    const isi = (perKategori.get(k.id) ?? []).sort((a, b) =>
-      new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()
-      || new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const dikenal = new Set(kategori.map(k => k.id))
+  const tanpaJenis = baris.filter(b => !dikenal.has(b.kategori_id))
+  const urutTanggal = (a: Pengeluaran, b: Pengeluaran) =>
+    new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()
+    || new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  const kelompok = urutkanKategori(kategori).map(k => {
+    const isi = (perKategori.get(k.id) ?? []).sort(urutTanggal)
     return { kategori: k, baris: isi, total: isi.reduce((s, b) => s + b.jumlah, 0) }
   })
-}
-
-// ── Ringkasan kas ────────────────────────────────────────────────────────────
-
-export interface BarisKas extends Bulan {
-  pemasukan:   number
-  pengeluaran: number
-  selisih:     number
-  /** Akumulasi selisih sejak bulan pertama periode */
-  saldo:       number
-}
-
-export function hitungRingkasanKas(
-  daftarBulan: Bulan[],
-  pembayaran: { tanggal_bayar: string; jumlah: number }[],
-  pengeluaran: { tanggal: string; jumlah: number }[],
-): BarisKas[] {
-  const masuk  = new Map<string, number>()
-  const keluar = new Map<string, number>()
-  for (const p of pembayaran) {
-    const k = kunciBulan(bulanDari(p.tanggal_bayar))
-    masuk.set(k, (masuk.get(k) ?? 0) + Number(p.jumlah))
+  if (tanpaJenis.length > 0) {
+    kelompok.push({
+      kategori: { id: '', nama: 'Tanpa jenis', urutan: Number.MAX_SAFE_INTEGER },
+      baris:    tanpaJenis.sort(urutTanggal),
+      total:    tanpaJenis.reduce((s, b) => s + b.jumlah, 0),
+    })
   }
-  for (const p of pengeluaran) {
-    const k = kunciBulan(bulanDari(p.tanggal))
-    keluar.set(k, (keluar.get(k) ?? 0) + Number(p.jumlah))
-  }
-  let saldo = 0
-  return daftarBulan.map(b => {
-    const pemasukan = masuk.get(kunciBulan(b)) ?? 0
-    const keluarBln = keluar.get(kunciBulan(b)) ?? 0
-    saldo += pemasukan - keluarBln
-    return { ...b, pemasukan, pengeluaran: keluarBln, selisih: pemasukan - keluarBln, saldo }
-  })
+  return kelompok.filter(k => k.baris.length > 0)
 }

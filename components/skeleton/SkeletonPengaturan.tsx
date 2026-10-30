@@ -77,7 +77,32 @@ export const SkeletonPengaturan = () => (
         <Isian label="Jenjang Sekolah" lebar={80} />
         <Isian label="No. WhatsApp Resmi" lebar={150} />
         <Isian label="Yayasan" lebar="50%" />
+        <Isian label="Email Sekolah" lebar="55%" />
+        <Isian label="Nama Kepala Sekolah" lebar="60%" />
+        <Isian label="Nama Ketua Yayasan" lebar="50%" />
         <Isian label="Alamat Sekolah" lebar="45%" penuh />
+        <Isian label="Kota/Kabupaten" lebar={90} />
+        <div style={{ alignSelf: 'center', marginBottom: '1rem' }}>
+          <BlokTeks lebar="90%" ukuran="0.75rem" />
+          <BlokTeks lebar="70%" ukuran="0.75rem" />
+        </div>
+        {/* Logo kop laporan: dua kotak unggah (components/pengaturan/LogoKop) */}
+        <div style={{ gridColumn: '1 / -1', marginBottom: '0.25rem' }}>
+          <span style={{ ...sLabel, marginBottom: 6 }}>Logo Kop Laporan</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1.5rem' }}>
+            {['Logo Yayasan', 'Logo Sekolah'].map(label => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', border: '1.5px solid var(--border)', borderRadius: 10, background: '#F9FAFB' }}>
+                <Blok lebar={72} tinggi={72} sudut={8} />
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--navy-dark)' }}>{label}</div>
+                  <BlokTeks lebar={170} ukuran="0.74rem" style={{ marginTop: 2 }} />
+                  <Blok lebar={92} tinggi={29} sudut={8} style={{ marginTop: 8 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <BlokTeks lebar={420} ukuran="0.74rem" style={{ marginTop: 6 }} />
+        </div>
       </div>
     </Bagian>
 

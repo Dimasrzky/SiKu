@@ -14,7 +14,7 @@ import {
 import {
   WARNA_LAPORAN as WARNA, sBarisKartu, sBingkai, sIkonKartu, sJudulKartu, sJudulPanel, sKartu, sKepalaKartu, sSubjudulPanel,
 } from '@/components/laporan/gayaLaporan'
-import { Blok, BlokDonat, BlokTeks, KepalaHalaman, KerangkaHalaman, LEBAR_NAMA, giliran } from './Blok'
+import { Blok, BlokDonat, BlokTeks, KepalaHalaman, KerangkaHalaman, LEBAR_FILTER_PERIODE, LEBAR_NAMA, giliran } from './Blok'
 
 // Kerangka halaman Laporan — utama, Jenjang, Kelas, dan Siswa. Masing-masing meniru
 // page.tsx di app/(dashboard)/laporan; ubah bersama halamannya.
@@ -34,7 +34,7 @@ const KepalaLaporan = ({ judul, subjudul, jejak = [], kanan }: { judul: ReactNod
           : <span style={i === jejak.length - 1 ? { color: '#0F172A', fontWeight: 700 } : { color: '#3C75B7', fontWeight: 600 }}>{b}</span>}
       </span>
     ))}
-    kanan={kanan ?? <><Blok lebar={200} tinggi={42} sudut={8} /><Blok lebar={180} tinggi={42} sudut={8} /></>} />
+    kanan={kanan ?? <Blok lebar={LEBAR_FILTER_PERIODE} tinggi={40} sudut={9} />} />
 )
 
 /** Subjudul level Jenjang/Kelas/Siswa berisi label filter periode — belum diketahui */
@@ -115,7 +115,7 @@ const BarisRincian = ({ warna, label }: { warna: string; label: string }) => (
 export const SkeletonLaporan = () => (
   <KerangkaHalaman label="Laporan">
     <KepalaLaporan judul="Laporan" subjudul="Analisis keuangan dan unduhan laporan per periode"
-      kanan={<><Blok lebar={200} tinggi={42} sudut={8} /><Blok lebar={180} tinggi={42} sudut={8} /><Blok lebar={232} tinggi={39} sudut={8} /></>} />
+      kanan={<><Blok lebar={LEBAR_FILTER_PERIODE} tinggi={40} sudut={9} /><Blok lebar={232} tinggi={39} sudut={8} /></>} />
 
     <div className="laporan-utama" style={{ ...sBingkai, padding: '1.5rem 1.875rem 2.5rem', gap: '1.75rem', fontFamily: 'var(--font-dm-sans), sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.625rem' }}>

@@ -7,7 +7,9 @@ import { supabase } from '@/lib/supabase'
 import { BANK_REKENING } from '@/lib/bankRekening'
 import { JABATAN } from '@/lib/jabatan'
 import { HARI_PENGINGAT, SELECT_JADWAL_PENGINGAT, saklarHari, type BarisJadwalPengingat, type KolomHariPengingat } from '@/lib/pengingat/jadwal'
+import { muatLogoSekolah, type IsiLogo } from '@/lib/logoSekolahKlien'
 import { SkeletonPengaturan } from '@/components/skeleton/SkeletonPengaturan'
+import { LogoKop } from '@/components/pengaturan/LogoKop'
 
 function bankLogoSrc(bank: string): string {
   return `/image/${encodeURIComponent(bank)}.png`
@@ -44,6 +46,20 @@ interface UserData {
   idUser:       string
 }
 
+const POLA_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Kolom baru di tabel sekolah belum dibuat — SQL kop laporan belum dijalankan */
+const kolomBelumAda = (e: { code?: string; message?: string } | null): boolean =>
+  !!e && (e.code === '42703' || e.code === 'PGRST204' || /column/i.test(e.message ?? ''))
+
+// Kolom Profil Sekolah ditambahkan bertahap lewat SQL kop laporan (31 Okt 2026: email,
+// lalu isian tanda tangan). Selama SQL tahap terbaru belum dijalankan, profil tetap
+// dimuat dan disimpan dengan kolom yang sudah ada — dari tahap terlengkap ke dasar.
+const KOLOM_SEKOLAH_DASAR = 'nama, no_wa, alamat, yayasan'
+const KOLOM_SEKOLAH_TAHAP = ['email, nama_kepala_sekolah, nama_ketua_yayasan, kota', 'email', '']
+/** Label isian yang ikut tiap tahap, untuk pesan kalau tidak tersimpan */
+const LABEL_KOLOM_TAHAP = [['nama kepala sekolah', 'nama ketua yayasan', 'kota/kabupaten'], ['email sekolah']]
+
 function formatWA(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 13)
   if (digits.length <= 3) return digits
@@ -56,9 +72,9 @@ function formatWA(raw: string): string {
   return parts.join('-')
 }
 
-function Section({ title, desc, action, children }: { title: string; desc?: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Section({ id, title, desc, action, children }: { id?: string; title: string; desc?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ background:'#fff', border:'1px solid var(--border)', borderRadius:12, padding:'1.5rem', marginBottom:'1rem' }}>
+    <div id={id} style={{ background:'#fff', border:'1px solid var(--border)', borderRadius:12, padding:'1.5rem', marginBottom:'1rem', scrollMarginTop: 16 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'1rem', borderBottom:'1px solid #F1F5F9' }}>
         <div>
           <div style={{ fontWeight:700, fontSize:'0.95rem', color:'var(--navy-dark)' }}>{title}</div>
@@ -81,6 +97,8 @@ function ViewField({ label, value, muted=false }: { label: string; value: string
         fontSize:'0.875rem', fontWeight:500,
         color: (muted || !value) ? '#9CA3AF' : 'var(--text-dark)',
         background:'#F9FAFB',
+        // Alamat boleh beberapa baris (pemisah baris di kop laporan)
+        whiteSpace:'pre-line',
       }}>
         {value || '—'}
       </div>
@@ -88,27 +106,38 @@ function ViewField({ label, value, muted=false }: { label: string; value: string
   )
 }
 
-function FormField({ label, value, onChange, defaultValue='', type='text', disabled=false }: {
+function FormField({ label, value, onChange, defaultValue='', type='text', disabled=false, baris, placeholder }: {
   label: string; value?: string; onChange?: (v: string) => void
   defaultValue?: string; type?: string; disabled?: boolean
+  /** Isi beberapa baris (textarea); hanya untuk isian terkontrol */
+  baris?: number; placeholder?: string
 }) {
   const controlled = value !== undefined
+  const gaya: React.CSSProperties = {
+    width:'100%', padding:'0.65rem 0.9rem',
+    border:'1.5px solid var(--border)', borderRadius:8,
+    fontSize:'0.875rem', color: disabled ? '#9CA3AF' : 'var(--text-dark)',
+    fontWeight:500,
+    background: disabled ? '#F9FAFB' : '#fff',
+    fontFamily:'inherit', outline:'none',
+  }
   return (
     <div style={{ marginBottom:'1rem' }}>
       <label style={{ display:'block', fontSize:'0.78rem', fontWeight:600, color:'var(--text-mid)', marginBottom:4 }}>{label}</label>
-      <input
-        type={type}
-        {...(controlled ? { value, onChange: e => onChange?.(e.target.value) } : { defaultValue })}
-        disabled={disabled}
-        style={{
-          width:'100%', padding:'0.65rem 0.9rem',
-          border:'1.5px solid var(--border)', borderRadius:8,
-          fontSize:'0.875rem', color: disabled ? '#9CA3AF' : 'var(--text-dark)',
-          fontWeight:500,
-          background: disabled ? '#F9FAFB' : '#fff',
-          fontFamily:'inherit', outline:'none',
-        }}
-      />
+      {baris ? (
+        <textarea
+          rows={baris} value={value ?? ''} onChange={e => onChange?.(e.target.value)}
+          disabled={disabled} placeholder={placeholder}
+          style={{ ...gaya, resize:'vertical', lineHeight:1.5, display:'block' }}
+        />
+      ) : (
+        <input
+          type={type}
+          {...(controlled ? { value, onChange: e => onChange?.(e.target.value) } : { defaultValue })}
+          disabled={disabled} placeholder={placeholder}
+          style={gaya}
+        />
+      )}
     </div>
   )
 }
@@ -203,7 +232,13 @@ export default function PengaturanPage() {
   const [copyToast,    setCopyToast]    = useState(false)
   const [toastLeaving, setToastLeaving] = useState(false)
   const [editingProfil,  setEditingProfil]  = useState(false)
-  const [profilForm,     setProfilForm]     = useState({ namaSekolah: '', jenjang: '', alamat: '', yayasan: '' })
+  const [profilForm,     setProfilForm]     = useState({
+    namaSekolah: '', jenjang: '', alamat: '', yayasan: '', email: '', kepala: '', ketuaYayasan: '', kota: '',
+  })
+  // Logo kop laporan (data URL) — dimuat terpisah supaya halaman tidak menunggu gambarnya
+  const [logo,           setLogo]           = useState<IsiLogo>({ yayasan: null, sekolah: null })
+  const [memuatLogo,     setMemuatLogo]     = useState(true)
+  const [galatLogo,      setGalatLogo]      = useState('')
   const [teleponInput,   setTeleponInput]   = useState('')
   const [editingAkun,    setEditingAkun]    = useState(false)
   const [akunForm,       setAkunForm]       = useState({ nama: '', noWa: '', npsn: '' })
@@ -247,9 +282,27 @@ export default function PengaturanPage() {
       const p       = pData       as PRow       | null
 
       const sekolahId = profile?.sekolah_id ?? ''
+      // Kolom yang belum dibuat di database dilewati — lihat KOLOM_SEKOLAH_TAHAP
+      const bacaSekolah = async () => {
+        for (const tambahan of KOLOM_SEKOLAH_TAHAP) {
+          const kolom: string = [KOLOM_SEKOLAH_DASAR, tambahan].filter(Boolean).join(', ')
+          const hasil = await supabase.from('sekolah').select(kolom).eq('id', sekolahId).single()
+          if (!tambahan || !kolomBelumAda(hasil.error)) return hasil
+        }
+        return { data: null, error: null }
+      }
+      const muatLogo = async () => {
+        const hasil = await muatLogoSekolah()
+        if (hasil.error !== null) setGalatLogo(hasil.error)
+        else setLogo(hasil.data)
+        setMemuatLogo(false)
+      }
+      if (sekolahId) void muatLogo()
+      else setMemuatLogo(false)
+
       const [{ data: sekolahData }, { data: rekeningData }, { data: logData }, jadwalRes] = sekolahId
         ? await Promise.all([
-            supabase.from('sekolah').select('nama, no_wa, alamat, yayasan').eq('id', sekolahId).single(),
+            bacaSekolah(),
             supabase.from('rekening').select('id, bank, no_rek, atas_nama')
               .eq('sekolah_id', sekolahId).eq('jenis', 'transfer').eq('aktif', true)
               .order('urutan', { ascending: true }).limit(1).maybeSingle(),
@@ -262,7 +315,10 @@ export default function PengaturanPage() {
           ])
         : [{ data: null }, { data: null }, { data: null }, { data: null, error: null }]
 
-      type SekolahRow  = { nama: string; no_wa: string; alamat: string | null; yayasan: string | null }
+      type SekolahRow  = {
+        nama: string; no_wa: string; alamat: string | null; yayasan: string | null; email?: string | null
+        nama_kepala_sekolah?: string | null; nama_ketua_yayasan?: string | null; kota?: string | null
+      }
       type RekeningDb  = { id: string; bank: string; no_rek: string; atas_nama: string }
       type LogDb       = { nama_pengubah: string | null; created_at: string }
       const sk = sekolahData as SekolahRow | null
@@ -290,6 +346,10 @@ export default function PengaturanPage() {
         jenjang:     p?.jenjang_sekolah  ?? '',
         alamat:      sk?.alamat ?? '',
         yayasan:     sk?.yayasan ?? '',
+        email:       sk?.email ?? '',
+        kepala:       sk?.nama_kepala_sekolah ?? '',
+        ketuaYayasan: sk?.nama_ketua_yayasan ?? '',
+        kota:         sk?.kota ?? '',
       })
       setAkunForm({
         nama:    profile?.nama    ?? auth.nama    ?? '',
@@ -311,10 +371,24 @@ export default function PengaturanPage() {
     // Kerangka dilepas juga saat pemuatan gagal — isian kosong lebih berguna daripada
     // kerangka yang tidak pernah hilang
     const muat = async () => {
-      try { await load() } finally { setMemuat(false) }
+      try {
+        await load()
+      } finally {
+        // Datang dari pop up "kop laporan belum lengkap": form Profil Sekolah langsung dibuka
+        if (window.location.hash === '#profil-sekolah') setEditingProfil(true)
+        setMemuat(false)
+      }
     }
     muat()
   }, [])
+
+  // …lalu digulir ke Profil Sekolah begitu halaman tampil. Tandanya dibuang dari alamat
+  // supaya memuat ulang halaman tidak membuka form lagi.
+  useEffect(() => {
+    if (memuat || window.location.hash !== '#profil-sekolah') return
+    document.getElementById('profil-sekolah')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+  }, [memuat])
 
   const handleSave = () => {
     setSavedLeaving(false)
@@ -335,15 +409,39 @@ export default function PengaturanPage() {
       setSaveError('Data belum termuat, coba refresh halaman.')
       return
     }
+    const email = profilForm.email.trim()
+    if (email && !POLA_EMAIL.test(email)) {
+      setSaveError('Format email sekolah tidak valid.')
+      return
+    }
     setSaving(true)
     setSaveError('')
     const noWaRaw = teleponInput ? '+62' + teleponInput.replace(/-/g, '') : ''
+    // Baris kosong di alamat dibuang; baris baru dipakai sebagai pemisah baris di kop
+    const alamat = profilForm.alamat.split(/\r?\n/).map(b => b.trim()).filter(Boolean).join('\n')
 
-    const [{ error: errSekolah }, { error: errPengaturan }, { error: errProfiles }] = await Promise.all([
-      supabase
-        .from('sekolah')
-        .update({ nama: profilForm.namaSekolah, no_wa: noWaRaw, alamat: profilForm.alamat, yayasan: profilForm.yayasan })
-        .eq('id', userData.idSekolah),
+    const kepala       = profilForm.kepala.trim()
+    const ketuaYayasan = profilForm.ketuaYayasan.trim()
+    const kota         = profilForm.kota.trim()
+
+    // Kolom yang belum dibuat di database dilewati (lihat KOLOM_SEKOLAH_TAHAP): isian
+    // lain tetap tersimpan. `tahap` = berapa tahap kolom terbaru yang terpaksa dilewati.
+    const dataSekolah = { nama: profilForm.namaSekolah, no_wa: noWaRaw, alamat, yayasan: profilForm.yayasan }
+    const tambahanTahap: Record<string, string | null>[] = [
+      { email: email || null, nama_kepala_sekolah: kepala || null, nama_ketua_yayasan: ketuaYayasan || null, kota: kota || null },
+      { email: email || null },
+      {},
+    ]
+    const simpanSekolah = async () => {
+      for (let tahap = 0; tahap < tambahanTahap.length; tahap++) {
+        const hasil = await supabase.from('sekolah').update({ ...dataSekolah, ...tambahanTahap[tahap] }).eq('id', userData.idSekolah)
+        if (tahap === tambahanTahap.length - 1 || !kolomBelumAda(hasil.error)) return { error: hasil.error, tahap }
+      }
+      return { error: null, tahap: 0 }
+    }
+
+    const [{ error: errSekolah, tahap }, { error: errPengaturan }, { error: errProfiles }] = await Promise.all([
+      simpanSekolah(),
       supabase
         .from('pengaturan')
         .upsert(
@@ -361,13 +459,28 @@ export default function PengaturanPage() {
     if (err) {
       setSaveError(err.message)
     } else {
+      // Isian yang kolomnya belum ada dikosongkan lagi, supaya layar sama dengan database
+      const ttdTersimpan = tahap === 0
+      setProfilForm(f => ({
+        ...f, alamat,
+        email:        tahap <= 1 ? email : '',
+        kepala:       ttdTersimpan ? kepala : '',
+        ketuaYayasan: ttdTersimpan ? ketuaYayasan : '',
+        kota:         ttdTersimpan ? kota : '',
+      }))
+      const isiTerlewat = [
+        ...(!ttdTersimpan && (kepala || ketuaYayasan || kota) ? LABEL_KOLOM_TAHAP[0] : []),
+        ...(tahap >= 2 && email ? LABEL_KOLOM_TAHAP[1] : []),
+      ]
       const authRaw = localStorage.getItem('siku_auth')
       if (authRaw) {
         const newValue = JSON.stringify({ ...JSON.parse(authRaw), sekolah: profilForm.namaSekolah })
         localStorage.setItem('siku_auth', newValue)
         window.dispatchEvent(new StorageEvent('storage', { key: 'siku_auth', newValue }))
       }
-      setSaveError('')
+      setSaveError(isiTerlewat.length > 0
+        ? `Profil tersimpan, tetapi ${isiTerlewat.join(', ')} belum bisa disimpan karena kolomnya belum dibuat di database. Jalankan SQL kop laporan terlebih dahulu.`
+        : '')
       setEditingProfil(false)
       handleSave()
     }
@@ -751,7 +864,7 @@ export default function PengaturanPage() {
       )}
 
       {/* Profil Sekolah */}
-      <Section title="Profil Sekolah" desc="Informasi dasar sekolah yang ditampilkan di laporan dan tagihan" action={
+      <Section id="profil-sekolah" title="Profil Sekolah" desc="Informasi dasar sekolah yang ditampilkan di laporan dan tagihan" action={
         editingProfil ? (
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={() => { setEditingProfil(false); setSaveError('') }} disabled={saving}
@@ -838,14 +951,59 @@ export default function PengaturanPage() {
             <ViewField label="Yayasan" value={profilForm.yayasan} />
           )}
 
+          {editingProfil ? (
+            <FormField label="Email Sekolah" type="email" value={profilForm.email} placeholder="contoh: sekolah@gmail.com"
+              onChange={v => setProfilForm(f => ({ ...f, email: v }))} />
+          ) : (
+            <ViewField label="Email Sekolah" value={profilForm.email} />
+          )}
+
+          {/* Penanda tangan laporan PDF (bendahara = Nama Lengkap di Akun Pengguna) */}
+          {editingProfil ? (
+            <FormField label="Nama Kepala Sekolah" value={profilForm.kepala} placeholder="Nama lengkap beserta gelar"
+              onChange={v => setProfilForm(f => ({ ...f, kepala: v }))} />
+          ) : (
+            <ViewField label="Nama Kepala Sekolah" value={profilForm.kepala} />
+          )}
+
+          {editingProfil ? (
+            <FormField label="Nama Ketua Yayasan" value={profilForm.ketuaYayasan} placeholder="Nama lengkap beserta gelar"
+              onChange={v => setProfilForm(f => ({ ...f, ketuaYayasan: v }))} />
+          ) : (
+            <ViewField label="Nama Ketua Yayasan" value={profilForm.ketuaYayasan} />
+          )}
+
           <div style={{ gridColumn:'1 / -1' }}>
             {editingProfil ? (
-              <FormField label="Alamat Sekolah" value={profilForm.alamat}
-                onChange={v => setProfilForm(f => ({ ...f, alamat: v }))} />
+              <>
+                <FormField label="Alamat Sekolah" value={profilForm.alamat} baris={2}
+                  onChange={v => setProfilForm(f => ({ ...f, alamat: v }))} />
+                <div style={{ marginTop:'-0.6rem', marginBottom:'1rem', fontSize:'0.75rem', color:'var(--text-muted)' }}>
+                  Tekan Enter untuk memulai baris baru — pemisah baris ini dipakai di kop laporan.
+                </div>
+              </>
             ) : (
               <ViewField label="Alamat Sekolah" value={profilForm.alamat} />
             )}
           </div>
+
+          {editingProfil ? (
+            <FormField label="Kota/Kabupaten" value={profilForm.kota} placeholder="contoh: Bantul"
+              onChange={v => setProfilForm(f => ({ ...f, kota: v }))} />
+          ) : (
+            <ViewField label="Kota/Kabupaten" value={profilForm.kota} />
+          )}
+          <div style={{ alignSelf: 'center', marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Ditulis di atas tanda tangan laporan, mis. &ldquo;{profilForm.kota.trim() || 'Bantul'}, 31 Oktober 2026&rdquo;.
+          </div>
+
+          <LogoKop
+            logo={logo}
+            memuat={memuatLogo}
+            galatMuat={galatLogo}
+            onBerubah={(jenis, dataUrl) => setLogo(l => ({ ...l, [jenis]: dataUrl }))}
+            onTersimpan={handleSave}
+          />
         </div>
 
         {saveError && (

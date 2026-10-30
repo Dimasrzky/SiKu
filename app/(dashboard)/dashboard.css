@@ -41,6 +41,11 @@
   justify-content: center;
   flex-shrink: 0;
 }
+/* Ada logo sekolah: tanpa kotak latar dan garis tepi, logo transparan tampil apa adanya */
+.sidebar-school-avatar--logo {
+  background: transparent;
+  border-color: transparent;
+}
 
 .sidebar-brand {
   display: flex;
@@ -1029,6 +1034,79 @@ html[data-setup]:not([data-setup~="tahun_ajaran"])     [data-kunci="tahun_ajaran
 html[data-setup]:not([data-setup~="komponen_tagihan"]) [data-kunci="komponen_tagihan"] .kerangka-saat-terbuka,
 html[data-setup]:not([data-setup~="buat_kelas"])       [data-kunci="buat_kelas"] .kerangka-saat-terbuka,
 html[data-setup]:not([data-setup~="import_siswa"])     [data-kunci="import_siswa"] .kerangka-saat-terbuka { display: none; }
+
+
+/* ═══════════════════════════════════════════
+   FILTER PERIODE (components/laporan/FilterPeriode, DropdownFilter)
+   Tombol "Filter Periode" yang melebar menjadi dropdown — Laporan & Pengeluaran.
+═══════════════════════════════════════════ */
+.fp-wadah { transition: width 380ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Efek tekan: mengecil sebentar saat diklik, kembali memantul halus */
+.fp-tekan { transition: transform 160ms cubic-bezier(0.3, 0.7, 0.4, 1), background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.fp-tekan:active { transform: scale(0.95); transition-duration: 80ms; }
+.fp-tekan:focus { outline: none; }
+.fp-tekan:focus-visible { outline: 2px solid #3C75B7; outline-offset: 2px; }
+.fp-tombol:hover { background-color: #24395F !important; box-shadow: 0 4px 12px rgba(26, 44, 78, 0.28); }
+.fp-silang:hover { background-color: #F1F5F9 !important; color: #1A2C4E !important; }
+.fp-dropdown:hover { border-color: #CBD5E1 !important; }
+
+/* Daftar pilihan dropdown muncul turun memudar dari pojok kanan atas */
+@keyframes fp-daftar { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
+.fp-daftar { animation: fp-daftar 200ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: top right; }
+.fp-pilihan { transition: background-color 120ms ease; }
+.fp-pilihan:hover { background-color: #F1F5F9 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-wadah, .fp-wadah * { transition-duration: 1ms !important; transition-delay: 0ms !important; }
+  .fp-daftar { animation: none; }
+  .fp-tekan:active { transform: none; }
+}
+
+
+/* ═══════════════════════════════════════════
+   PENGELUARAN (app/(dashboard)/laporan/pengeluaran, components/pengeluaran)
+═══════════════════════════════════════════ */
+@keyframes pg-muncul { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes pg-masuk  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pg-muncul { animation: pg-muncul 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Form Catat Pengeluaran: turun membuka, naik saat dilipat (tingginya diatur halaman) */
+@keyframes pg-turun { from { opacity: 0; transform: translateY(-18px); } to { opacity: 1; transform: none; } }
+@keyframes pg-naik  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-14px); } }
+.pg-turun { animation: pg-turun 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.pg-naik  { animation: pg-naik 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.pg-masuk  { animation: pg-masuk 300ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Tab Ringkasan Kas: riwayat di kiri, saldo per komponen di kanan; bertumpuk di layar sempit */
+.pg-kas-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(270px, 1fr); gap: 1.25rem; align-items: stretch; }
+/* Panel saldo setinggi tabel riwayat: pembungkusnya tidak ikut menentukan tinggi baris grid
+   (kartunya absolut di dalamnya), daftar komponennya digulir. Minimal setinggi ±3 komponen. */
+.pg-panel-saldo { position: relative; min-height: 380px; }
+.pg-panel-saldo > section { position: absolute; inset: 0; }
+.pg-panel-daftar { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+@media (max-width: 1100px) {
+  .pg-kas-grid { grid-template-columns: minmax(0, 1fr); }
+  /* Bertumpuk: panel setinggi isinya, paling banyak 5 komponen lalu digulir */
+  .pg-panel-saldo { min-height: 0; }
+  .pg-panel-saldo > section { position: static; }
+  .pg-panel-daftar { max-height: 415px; }
+}
+
+/* Penggeser kartu sumber dana: tipis, ibu jari navy */
+.pg-gulir { scrollbar-width: thin; scrollbar-color: #1A2C4E #E2E8F0; }
+.pg-gulir::-webkit-scrollbar { height: 7px; }
+.pg-gulir::-webkit-scrollbar-track { background: #E2E8F0; border-radius: 7px; }
+.pg-gulir::-webkit-scrollbar-thumb { background: #1A2C4E; border-radius: 7px; }
+
+/* Gulir tegak panel saldo per komponen: tipis dan samar */
+.pg-gulir-tegak { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
+.pg-gulir-tegak::-webkit-scrollbar { width: 6px; }
+.pg-gulir-tegak::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-muncul, .pg-masuk, .pg-turun, .pg-naik { animation: none; }
+}
 
 
 /* ═══════════════════════════════════════════

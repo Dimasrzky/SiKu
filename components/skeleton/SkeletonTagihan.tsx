@@ -40,7 +40,13 @@ export const SkeletonTagihanAktif = ({ catatan }: { catatan?: string }) => (
   <KerangkaHalaman label="Tagihan Aktif">
     <KepalaHalaman kecil ikon={<Image src="/icons/IconMoney.png" width={30} height={30} alt="" />}
       judul="Tagihan Aktif" subjudul="Ringkasan tagihan dan status pembayaran siswa saat ini"
-      kanan={<Blok lebar={232} tinggi={40} sudut={10} />} />
+      kanan={
+        // Input Tunggakan (bertepi 2px, jarak kanan 0.8rem) + Catat Pembayaran Manual
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <Blok lebar={167} tinggi={40} sudut={10} style={{ marginRight: '0.8rem' }} />
+          <Blok lebar={232} tinggi={40} sudut={10} />
+        </div>
+      } />
 
     {catatan && (
       <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, width: 'fit-content', background: '#fff', borderRadius: 20, padding: '0.4rem 0.95rem', marginBottom: '1rem', fontSize: '0.82rem', fontWeight: 600, color: '#1A2C4E', boxShadow: '0 1px 3px rgba(0,0,0,0.07)' }}>

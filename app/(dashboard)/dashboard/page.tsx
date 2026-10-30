@@ -12,7 +12,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { ambilSemua } from '@/lib/ambilSemua'
 import { buildPesanTagihanText, buildWaMeLink } from '@/lib/templates/waTagihan'
-import { lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
+import { batasJatuhTempo, lewatJatuhTempo, statusEfektif, tanpaKewajiban } from '@/lib/statusTagihan'
 import { periodeIndex, TA_PERIODE_SELECT, type PeriodeTahunAjaran } from '@/lib/komponenTagihan'
 import { pesanPenahanTerbit, statusPenerbitan } from '@/lib/statusPenerbitan'
 import { sisaTagihan, tunggakanSebelum } from '@/lib/tagihanTertagih'
@@ -70,11 +70,6 @@ function getLast6Months(): Array<{ bulan: string; tahun: number; short: string }
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
     return { bulan: BULAN_NAMES[d.getMonth()], tahun: d.getFullYear(), short: BULAN_SHORT[d.getMonth()] }
   })
-}
-
-function daysLeftInMonth(): number {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate()
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -618,10 +613,20 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     actionLabel: 'Kirim Pengingat', actionHref: '/tagihan/aktif?status=menunggak',
   })
 
-  const sisa = daysLeftInMonth()
-  if (sisa <= 5 && totalSiswaRef > 0 && pctIni < 80) insights.push({
+  // Hitung mundur ke jatuh tempo terdekat tagihan bulan ini yang belum lunas (jatuh tempo
+  // per paket, bisa bergeser saat paket diubah — lib/jatuhTempo), bukan ke akhir bulan.
+  // Rumus hari sama dengan lencana H-n di Tagihan Aktif. Yang sudah lewat jatuh tempo
+  // masuk insight tunggakan di atas.
+  const batasTerdekat = tagihanIni
+    .filter(t => t.status !== 'lunas' && !tanpaKewajiban(t.total_nominal) && !lewatJatuhTempo(t, now))
+    .reduce<number | null>((min, t) => {
+      const batas = batasJatuhTempo(t).getTime()
+      return min === null || batas < min ? batas : min
+    }, null)
+  const sisa = batasTerdekat === null ? null : Math.max(0, Math.floor((batasTerdekat - now.getTime()) / (1000 * 60 * 60 * 24)))
+  if (sisa !== null && sisa <= 5 && totalSiswaRef > 0 && pctIni < 80) insights.push({
     id: 'akhir-bulan', level: 'merah',
-    judul: 'Akhir bulan kritis',
+    judul: 'Jatuh tempo kritis',
     desc: `Sisa ${sisa} hari, tingkat pembayaran baru ${Math.round(pctIni)}%.`,
     sub: 'Kirim pengingat massal ke siswa yang belum membayar.',
     actionLabel: 'Kirim Pengingat', actionHref: '/tagihan/aktif?status=belum_bayar',

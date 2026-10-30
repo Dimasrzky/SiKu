@@ -15,6 +15,13 @@ const css = (u: Ukuran) => (typeof u === 'number' ? `${u}px` : u)
 /** Lebar bergiliran supaya baris kerangka tidak seragam */
 export const giliran = <T,>(daftar: readonly T[], i: number): T => daftar[i % daftar.length]
 
+/**
+ * Tombol "Filter Periode" yang masih tertutup (components/laporan/FilterPeriode) — Laporan
+ * dan Pengeluaran. Diukur di Chrome. Tautan yang membawa filter selain bawaan membuka
+ * dropdown-nya, tapi kerangka memakai keadaan tertutup, yang paling sering.
+ */
+export const LEBAR_FILTER_PERIODE = 153
+
 /** Lebar nama siswa di baris tabel kerangka — kira-kira nama lengkap dua sampai tiga kata */
 export const LEBAR_NAMA = [136, 108, 148, 120, 96, 142, 114, 128, 102, 134] as const
 

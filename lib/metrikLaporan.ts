@@ -304,7 +304,7 @@ export interface TitikTren {
   bulan:    number
   tahun:    number
   /**
-   * Yang perlu ditagih di bulan ini: tagihan yang jatuh tempo di bulan ini ditambah
+   * Yang perlu ditagih di bulan ini: tagihan bulan ini ditambah
    * `tunggakanLama`. Tunggakan yang sama ikut di setiap bulan sesudahnya, jadi nilai
    * ini tidak boleh dijumlahkan antarbulan.
    */
@@ -314,7 +314,7 @@ export interface TitikTren {
    * sampai sekarang belum dibayar, termasuk yang jatuh tempo sebelum rentang grafik.
    */
   tunggakanLama: number
-  /** Terbayar untuk tagihan yang jatuh tempo di bulan ini — kapan pun uangnya masuk, dibatasi nilai tagihan */
+  /** Terbayar untuk tagihan bulan ini — kapan pun uangnya masuk, dibatasi nilai tagihan */
   terbayar: number
   /** Ketepatan waktu tagihan bulan ini (0–100); null kalau belum ada yang lewat jatuh tempo */
   ketepatanWaktu: number | null
@@ -323,8 +323,11 @@ export interface TitikTren {
 }
 
 /**
- * Dikelompokkan menurut bulan jatuh tempo, bukan tanggal uang diterima. Karena itu
- * batang bulan lalu masih bisa naik ketika tunggakannya dilunasi belakangan.
+ * Dikelompokkan menurut BULAN TAGIHANNYA, bukan tanggal uang diterima dan bukan bulan
+ * jatuh tempo (keputusan user 30 Okt 2026): tagihan Oktober yang jatuh temponya digeser
+ * ke 15 November tetap di batang Oktober, dan baru ikut batang-batang sesudahnya sebagai
+ * tunggakan setelah 15 November lewat. Batang bulan lalu masih bisa naik ketika
+ * tunggakannya dilunasi belakangan.
  *
  * Tagihan tiap bulan digabung dengan tunggakan bulan-bulan sebelumnya yang masih
  * belum dibayar (adalahTunggakan — sisa cicilan ikut), sehingga bulan terakhir
@@ -352,12 +355,13 @@ export function trenTagihanRealisasi<T extends TagihanMetrik>(
 
   const indeks   = new Map(titik.map((p, i) => [`${p.tahun}-${p.bulan}`, i]))
   const perBulan = titik.map((): T[] => [])
-  // Sisa tunggakan per bulan jatuh tempo — dari semua baris, termasuk yang jatuh
-  // tempo sebelum rentang grafik: utang lama tidak hilang karena keluar dari grafik
+  // Sisa tunggakan per bulan tagihan — dari semua baris, termasuk tagihan sebelum
+  // rentang grafik: utang lama tidak hilang karena keluar dari grafik. Hanya yang sudah
+  // lewat jatuh tempo (adalahTunggakan) yang terbawa ke batang-batang sesudahnya.
   const tunggakanPerPeriode = new Map<number, number>()
   for (const t of rows) {
     if (tanpaKewajiban(t.total_nominal)) continue
-    const [tahun, bulan] = tanggalWIB(batasJatuhTempo(t)).split('-').map(Number)
+    const { bulan, tahun } = t
     if (adalahTunggakan(t, sekarang)) {
       const periode = periodeIndex(bulan, tahun)
       tunggakanPerPeriode.set(periode, (tunggakanPerPeriode.get(periode) ?? 0) + sisaTagihan(t))

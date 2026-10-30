@@ -33,6 +33,9 @@ import {
 } from '@/lib/kemitraan'
 import { bacaFiturSaya, fiturLokal, hapusFiturLokal, simpanFiturLokal, type KodeFitur } from '@/lib/fiturSekolah'
 import { KUNCI_LANGKAH_SETUP } from '@/lib/langkahSetup'
+import {
+  KUNCI_LOGO_SIDEBAR, hapusLogoSidebarLokal, segarkanLogoSidebar, siapkanLogo, simpanLogoSidebar, unggahLogoSekolah,
+} from '@/lib/logoSekolahKlien'
 import { SkeletonShell } from '@/components/skeleton/SkeletonShell'
 import './dashboard.css'
 
@@ -40,6 +43,10 @@ interface AuthUser { nama: string; sekolah: string; avatar: string; role?: strin
 
 function getAuthRaw() { return localStorage.getItem('siku_auth') }
 function getAuthRawServer() { return null }
+
+const dengarStorage = (cb: () => void) => { window.addEventListener('storage', cb); return () => window.removeEventListener('storage', cb) }
+/** Salinan kecil logo sekolah (lib/logoSekolahKlien) — sama dengan logo kanan di kop laporan */
+function getLogoRaw() { try { return localStorage.getItem(KUNCI_LOGO_SIDEBAR) } catch { return null } }
 
 /* ─── Reset Demo Popup ──────────────────────────────────────────── */
 
@@ -401,36 +408,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Subfitur khusus sekolah (lib/fiturSekolah) — dipasang tim Equanusa lewat dasbor admin
   const [fitur,         setFitur]         = useState<KodeFitur[]>([])
   const [avatarHover,   setAvatarHover]   = useState(false)
+  const [unggahLogo,    setUnggahLogo]    = useState(false)
+  const [galatLogo,     setGalatLogo]     = useState('')
   const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  // Gambar di sidebar = logo sekolah dari Pengaturan (logo kanan kop laporan), PNG
+  // transparan tanpa latar. Mengganti lewat sidebar memakai jalur unggah yang sama,
+  // jadi Pengaturan, kop laporan, dan sidebar selalu sama.
+  const logoRaw = useSyncExternalStore(dengarStorage, getLogoRaw, getAuthRawServer)
+  const logoSekolah = (() => {
+    try { return logoRaw ? (JSON.parse(logoRaw) as { gambar: string | null }).gambar : null } catch { return null }
+  })()
+
+  useEffect(() => { void segarkanLogoSidebar() }, [])
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-
-    const img = new window.Image()
-    const url = URL.createObjectURL(file)
-    img.onload = async () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 80; canvas.height = 80
-      const ctx = canvas.getContext('2d')!
-      const size = Math.min(img.width, img.height)
-      ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 80, 80)
-      URL.revokeObjectURL(url)
-      const base64 = canvas.toDataURL('image/jpeg', 0.85)
-
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (!authUser) return
-      await supabase.from('profiles').update({ avatar: base64 }).eq('id', authUser.id)
-
-      const authRaw = localStorage.getItem('siku_auth')
-      if (authRaw) {
-        const newValue = JSON.stringify({ ...JSON.parse(authRaw), avatar: base64 })
-        localStorage.setItem('siku_auth', newValue)
-        window.dispatchEvent(new StorageEvent('storage', { key: 'siku_auth', newValue }))
-      }
+    setUnggahLogo(true)
+    setGalatLogo('')
+    try {
+      const siap = await siapkanLogo(file)
+      if (siap.error !== null) { setGalatLogo(siap.error); return }
+      const hasil = await unggahLogoSekolah('sekolah', siap.data)
+      if (hasil.error !== null) { setGalatLogo(hasil.error); return }
+      await simpanLogoSidebar(hasil.data.path, hasil.data.dataUrl)
+    } finally {
+      setUnggahLogo(false)
     }
-    img.src = url
   }
 
   // Bail-out pattern: auto-open saat masuk section, auto-close saat keluar
@@ -535,6 +541,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
     hapusFiturLokal()
+    hapusLogoSidebarLokal()
     router.push('/')
   }
 
@@ -557,17 +564,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* ── Header ── */}
         <div className="sidebar-header">
           <div
-            className="sidebar-school-avatar"
-            style={{ position:'relative', cursor:'pointer', overflow:'hidden' }}
+            className={`sidebar-school-avatar${logoSekolah ? ' sidebar-school-avatar--logo' : ''}`}
+            style={{ position:'relative', cursor: unggahLogo ? 'progress' : 'pointer', overflow:'hidden', opacity: unggahLogo ? 0.6 : 1 }}
+            title={galatLogo || 'Ganti logo sekolah'}
             onMouseEnter={() => setAvatarHover(true)}
             onMouseLeave={() => setAvatarHover(false)}
-            onClick={() => avatarInputRef.current?.click()}
+            onClick={() => { if (!unggahLogo) avatarInputRef.current?.click() }}
           >
-            {user?.avatar?.startsWith('data:') || user?.avatar?.startsWith('http') ? (
+            {logoSekolah ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.avatar} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+              <img src={logoSekolah} alt="Logo sekolah" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
             ) : schoolInitial}
-            {avatarHover && (
+            {avatarHover && !unggahLogo && (
               <div style={{
                 position:'absolute', inset:0, borderRadius:10,
                 background:'rgba(0, 0, 0, 0.25)',
@@ -579,7 +587,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             )}
           </div>
-          <input ref={avatarInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarChange} />
+          <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display:'none' }} onChange={handleAvatarChange} />
           <div className="sidebar-brand">
             <Image
               src="/image/LogoSiKuBaru.png"

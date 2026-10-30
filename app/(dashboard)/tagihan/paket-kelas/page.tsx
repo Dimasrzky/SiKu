@@ -588,10 +588,29 @@ export default function PaketPerKelasPage() {
         : Promise.resolve(),
     ])
 
+    // Jatuh tempo berubah → semua tagihan bulan berjalan ikut, termasuk yang lunas (lib/jatuhTempo).
+    // Hanya saat berubah: tanggal yang sudah lewat didorong ke bulan berikutnya.
+    if (keTanggalJatuhTempo(editJatuhTempo) !== editTarget.tanggal_jatuh_tempo) {
+      await sinkronJatuhTempo(editTarget.id)
+    }
+
     await loadPaket(sekolahId, activeTahunAjaran)
     setEditTarget(null)
     setEditSaving(false)
     triggerRecalculate()
+  }
+
+  const sinkronJatuhTempo = async (paketId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    try {
+      await fetch('/api/tagihan/jatuh-tempo', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paket_id: paketId }),
+      })
+    } catch {
+      // Paket tetap tersimpan; tagihan bulan ini memakai jatuh tempo lama sampai diubah lagi
+    }
   }
 
   if (loading) return <SkeletonPaketKelas />
@@ -923,9 +942,6 @@ export default function PaketPerKelasPage() {
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 500 }}>
                     <CalendarDays size={14} /> Jatuh tempo: {labelJatuhTempo(p.tanggal_jatuh_tempo).toLowerCase()}
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', color: '#64748B', fontWeight: 500 }}>
-                    <Pencil size={14} /> Tidak ada override
                   </span>
                 </div>
               </div>

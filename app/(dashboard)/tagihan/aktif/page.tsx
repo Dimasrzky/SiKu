@@ -25,6 +25,7 @@ import { TandaTerkirim, tandaKirim } from '@/components/TandaTerkirim'
 import { Blok, BlokTeks, giliran } from '@/components/skeleton/Blok'
 import { SkeletonTagihanAktif } from '@/components/skeleton/SkeletonTagihan'
 import { usePengingatManual } from '@/lib/usePengingatManual'
+import { ModalTunggakanAwal, type SiswaTunggakan } from '@/components/ModalTunggakanAwal'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,8 @@ function TagihanAktifContent() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   // Konfirmasi "Ingatkan semua" — hanya untuk sekolah yang memakai antrean pengingat
   const [showIngatkanSemua, setShowIngatkanSemua] = useState(false)
+  // Modal Input Tunggakan
+  const [showTunggakanModal,  setShowTunggakanModal]  = useState(false)
   const [detailSiswa,     setDetailSiswa]     = useState<SiswaTagihanRow | null>(null)
 
   // Modal 1 — Catat Pembayaran
@@ -781,7 +784,7 @@ function TagihanAktifContent() {
   const keteranganPeriode = [tahunAjaran && `TA ${tahunAjaran}`, labelRentang(ringkasanPeriode.awal, ringkasanPeriode.akhir)]
     .filter(Boolean).join(' · ')
 
-  const anyModalOpen = showCatatModal || showDetailModal || showIngatkanSemua
+  const anyModalOpen = showCatatModal || showDetailModal || showIngatkanSemua || showTunggakanModal
 
   // Satu tombol untuk dua cara: antrean (TombolIngatkan) atau wa.me. Selama belum
   // diketahui sekolah ini memakai yang mana, tombolnya tampil tetapi belum bisa diklik.
@@ -1088,6 +1091,14 @@ function TagihanAktifContent() {
     await selectCatatSiswa(siswa)
   }
 
+  // ── Input Tunggakan ──────────────────────────────────────────────────────────
+
+  // Siswa yang bisa dipilih di modal: siswa aktif di tabel bulan ini, urut nama
+  const siswaTunggakan: SiswaTunggakan[] = tagihanList
+    .filter(t => !t.is_alumni)
+    .map(t => ({ id: t.siswa_id, nama: t.nama, nis: t.nis === '-' ? null : t.nis, kelas_nama: t.kelas_nama }))
+    .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+
   const catatSiap  = catatSelected !== null && catatMuat === 'siap'
   const catatSudah = catatRiwayat.reduce((s, r) => s + r.jumlah, 0)
   const catatSisa  = catatTagihan ? Math.max(0, catatTagihan.total_nominal - catatSudah) : 0
@@ -1139,13 +1150,23 @@ function TagihanAktifContent() {
         </div>
 
         {tagihanList.length > 0 && (
-          <button
-            onClick={() => { if (!anyModalOpen) setShowCatatModal(true) }}
-            disabled={anyModalOpen}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.2rem', fontSize: '0.82rem', fontWeight: 700, cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-            <ClipboardList size={15} />
-            Catat Pembayaran Manual
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {/* Tunggakan dari bulan sebelum sekolah memakai SiKu (lib/tunggakanAwal) */}
+            <button
+              onClick={() => { if (!anyModalOpen) setShowTunggakanModal(true) }}
+              disabled={anyModalOpen}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: '0.8rem', background: '#1A2C4E', color: '#fff', border: '2px solid #1A2C4E', borderRadius: 10, padding: '0.5rem 0.8rem', fontSize: '0.82rem', fontWeight: 700, cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+              <Image src="/icons/Input.png" width={15} height={15} alt="" />
+              Input Tunggakan
+            </button>
+            <button
+              onClick={() => { if (!anyModalOpen) setShowCatatModal(true) }}
+              disabled={anyModalOpen}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, padding: '0.6rem 1.2rem', fontSize: '0.82rem', fontWeight: 700, cursor: anyModalOpen ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: anyModalOpen ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+              <ClipboardList size={15} />
+              Catat Pembayaran Manual
+            </button>
+          </div>
         )}
       </div>
 
@@ -1977,7 +1998,7 @@ function TagihanAktifContent() {
             })()}
 
             {/* Actions */}
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button onClick={() => setShowDetailModal(false)} style={sBtnSecondary}>Tutup</button>
               {/* Bulan ini lunas tapi masih menunggak: tunggakannya tetap bisa dicatat */}
               {(detailSiswa.status !== 'lunas' || detailSiswa.tunggakan > 0) && (
@@ -1988,6 +2009,16 @@ function TagihanAktifContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Modal: Input Tunggakan ──────────────────────────────────────────── */}
+      {showTunggakanModal && (
+        <ModalTunggakanAwal
+          tahunAjaran={tahunAjaran}
+          daftarSiswa={siswaTunggakan}
+          onTutup={() => setShowTunggakanModal(false)}
+          onTersimpan={() => { void loadTagihan(sekolahId, bulanIni, tahunIni) }}
+        />
       )}
 
     </div>

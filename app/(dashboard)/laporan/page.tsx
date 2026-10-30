@@ -2,11 +2,14 @@
 
 import { useState, useMemo, Suspense } from 'react'
 import Image from 'next/image'
-import * as XLSX from 'xlsx'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { BarChart2, Database, AlertTriangle, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import type { DataKop } from '@/lib/kopLaporan'
+import { ATAS_KOP, JARAK_ISI, judulLaporanPdf, pasangKopSemuaHalaman, tandaTanganPdf, tataKop } from '@/lib/kopPdf'
+import { useKopLaporan } from '@/lib/useKopLaporan'
+import { ModalKopBelumLengkap } from '@/components/laporan/ModalKopBelumLengkap'
 import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, batasJatuhTempo, tanpaKewajiban, type StatusTagihan, type WaktuTagihan } from '@/lib/statusTagihan'
 import {
   hitungRingkasan, hitungPemasukan, umurTunggakan, trenTagihanRealisasi, adalahTunggakan,
@@ -114,55 +117,46 @@ interface TabelEkspor {
   /** Tanpa ekstensi — .xlsx / .pdf ditambahkan sesuai format */
   namaFile:     string
   namaSheet:    string
-  /** Judul dan keterangan cakupan di kop PDF */
+  /** Judul dan keterangan cakupan di bawah kop */
   judul:        string
   keterangan:   string
-  namaSekolah:  string
+  /** Kop sekolah, sudah diperiksa lengkap oleh useKopLaporan */
+  kop:          DataKop
   headers:      string[]
   baris:        (string | number)[][]
   /** Lebar kolom Excel (wch) */
   lebarKolom:   number[]
-  /** Indeks kolom Rupiah: angka mentah di Excel, "Rp …" rata kanan dan dijumlah di PDF */
+  /** Indeks kolom Rupiah: angka di Excel (format Rp), "Rp …" rata kanan dan dijumlah di PDF */
   kolomRupiah?: number[]
 }
 
 /**
  * Tulis satu tabel laporan sebagai Excel atau PDF dari baris yang SAMA, supaya isi
- * kedua format tidak mungkin berselisih. PDF: kop sekolah, lanskap otomatis untuk
- * tabel lebar, baris total untuk kolom Rupiah, dan nomor halaman.
+ * kedua format tidak mungkin berselisih. Keduanya berkop sekolah. PDF: kop di setiap
+ * halaman, lanskap otomatis untuk tabel lebar, baris total untuk kolom Rupiah, dan
+ * nomor halaman.
  */
-function unduhTabel(t: TabelEkspor): void {
+async function unduhTabel(t: TabelEkspor): Promise<void> {
+  const lanskap = t.headers.length > 8
+
   if (t.format === 'excel') {
-    const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.baris])
-    ws['!cols'] = t.lebarKolom.map(wch => ({ wch }))
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, t.namaSheet)
-    XLSX.writeFile(wb, `${t.namaFile}.xlsx`)
+    // ExcelJS berat — baru dimuat saat tombol Excel diklik
+    const { bukuExcelBaru, lembarBerkop, tulisTabelExcel, simpanExcel } = await import('@/lib/eksporExcel')
+    const wb = await bukuExcelBaru()
+    const { ws, baris } = lembarBerkop(wb, t.kop, {
+      nama: t.namaSheet, lebarKolom: t.lebarKolom, judul: t.judul, keterangan: t.keterangan, lanskap,
+    })
+    tulisTabelExcel(ws, baris, { kepala: t.headers, baris: t.baris, kolomRupiah: t.kolomRupiah })
+    await simpanExcel(wb, t.namaFile)
     return
   }
 
-  const doc = new jsPDF({ orientation: t.headers.length > 8 ? 'landscape' : 'portrait' })
+  const doc = new jsPDF({ orientation: lanskap ? 'landscape' : 'portrait' })
   const lebarHalaman  = doc.internal.pageSize.getWidth()
   const tinggiHalaman = doc.internal.pageSize.getHeight()
   const navy: [number, number, number] = [26, 44, 78]
-  const kini = new Date()
-
-  let y = 16
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(14)
-  doc.text(teksPdf(t.namaSekolah || 'Sekolah'), lebarHalaman / 2, y, { align: 'center' })
-  y += 7
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11)
-  doc.text(teksPdf(t.judul), lebarHalaman / 2, y, { align: 'center' })
-  y += 6
-  doc.setFontSize(9); doc.setTextColor(100)
-  doc.text(teksPdf(t.keterangan), lebarHalaman / 2, y, { align: 'center' })
-  y += 5
-  doc.text(
-    `Dibuat pada ${kini.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}, ${kini.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`,
-    lebarHalaman / 2, y, { align: 'center' },
-  )
-  doc.setTextColor(0)
-  y += 6
+  const kop = tataKop(doc, t.kop, { atas: ATAS_KOP, kiri: 10, kanan: lebarHalaman - 10 })
+  const y   = judulLaporanPdf(doc, kop.bawah, t.judul, t.keterangan)
 
   const rupiah = new Set(t.kolomRupiah ?? [])
   const kanan  = { halign: 'right' as const }
@@ -194,15 +188,19 @@ function unduhTabel(t: TabelEkspor): void {
     headStyles: { fillColor: navy, fontSize: 8 },
     footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
     styles:     { fontSize: 8, cellPadding: 1.5 },
-    margin:     { left: 10, right: 10 },
+    // Halaman lanjutan mulai di bawah kop
+    margin:     { left: 10, right: 10, top: kop.bawah + JARAK_ISI },
   })
+
+  tandaTanganPdf(doc, t.kop.tandaTangan, { y: getFinalY(doc), kiri: 10, kanan: lebarHalaman - 10, atasHalaman: kop.bawah + JARAK_ISI })
 
   const jumlahHalaman = doc.getNumberOfPages()
   for (let p = 1; p <= jumlahHalaman; p++) {
     doc.setPage(p)
-    doc.setFontSize(8); doc.setTextColor(120)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(120)
     doc.text(`Halaman ${p} dari ${jumlahHalaman}`, lebarHalaman - 10, tinggiHalaman - 8, { align: 'right' })
   }
+  pasangKopSemuaHalaman(doc, kop)
   doc.save(`${t.namaFile}.pdf`)
 }
 
@@ -322,9 +320,11 @@ export default function LaporanPage() {
 function LaporanContent() {
   // Data dan filter dipakai bersama semua level drill-down — lib/useDataLaporan
   // dan lib/useFilterLaporan. Filter tinggal di URL (?ta=&periode=).
-  const { sekolahId, namaSekolah, loading, rows: metrikRows, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
+  const { sekolahId, loading, rows: metrikRows, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
   const filter = useFilterLaporan(activeTA, archivedTAs, sekarang)
   const { taTerpilih, selectedFilter, dalamPeriode, qsFilter } = filter
+  // Setiap unduhan (PDF dan Excel) memeriksa kelengkapan kop sekolah lebih dulu
+  const { siapkanKop, pesanKop, tutupPesanKop } = useKopLaporan(sekolahId)
 
   const [exportingTransaksi, setExportingTransaksi] = useState(false)
   const [exportingTunggakan, setExportingTunggakan] = useState(false)
@@ -480,6 +480,9 @@ function LaporanContent() {
 
     setExportingTransaksi(true)
     try {
+      const kop = await siapkanKop(format)
+      if (!kop) return
+
       const NESTED_SELECT = 'id, bulan, tahun, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))'
 
       // pembayaran.tagihan_id tidak terdaftar sebagai foreign key di PostgREST schema cache,
@@ -578,13 +581,13 @@ function LaporanContent() {
       rows.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime())
 
       const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
-      unduhTabel({
+      await unduhTabel({
         format,
         namaFile:    `Laporan_Transaksi_${periodeLabel}`,
         namaSheet:   'Laporan Transaksi',
         judul:       'Laporan Transaksi',
         keterangan:  `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel} (menurut tanggal transaksi)`,
-        namaSekolah,
+        kop,
         headers:     ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', 'Nominal', 'Biaya Admin', 'Total Bayar', 'Status'],
         baris:       rows.map((r, i) => [
           i + 1,
@@ -627,6 +630,9 @@ function LaporanContent() {
 
     setExportingTunggakan(true)
     try {
+      const kop = await siapkanKop(format)
+      if (!kop) return
+
       const [{ data: tagihanData, error }, paketByKelas] = await Promise.all([
         supabase
           .from('tagihan')
@@ -660,13 +666,13 @@ function LaporanContent() {
         return
       }
 
-      unduhTabel({
+      await unduhTabel({
         format,
         namaFile:    `Laporan_Tunggakan_${formatDateLocal(now)}`,
         namaSheet:   'Laporan Tunggakan',
         judul:       'Laporan Tunggakan',
         keterangan:  `Semua tunggakan yang sudah lewat jatuh tempo per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
-        namaSekolah,
+        kop,
         headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', 'Nominal Tunggakan', 'Jatuh Tempo', 'Status'],
         baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode, r.nominal, r.jatuhTempo, r.status]),
         lebarKolom:  [5, 14, 24, 10, 32, 16, 18, 14, 14],
@@ -687,6 +693,9 @@ function LaporanContent() {
 
     setExportingSiswaAktif(true)
     try {
+      const kop = await siapkanKop(format)
+      if (!kop) return
+
       const [{ data: pengData }, { data: siswaData, error }] = await Promise.all([
         supabase.from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle(),
         supabase
@@ -732,13 +741,13 @@ function LaporanContent() {
         return
       }
 
-      unduhTabel({
+      await unduhTabel({
         format,
         namaFile:    `Laporan_Siswa_Aktif_${formatDateLocal(now)}`,
         namaSheet:   'Siswa Aktif',
         judul:       'Laporan Data Siswa Aktif',
         keterangan:  `Data per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} · termasuk siswa pindah/keluar (Nonaktif)`,
-        namaSekolah,
+        kop,
         headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Angkatan', 'Nama Orang Tua', 'No. WhatsApp', 'Status'],
         baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.kelas, r.angkatan, r.namaOrtu, r.noWa, r.status]),
         lebarKolom:  [5, 14, 24, 10, 12, 22, 16, 12],
@@ -760,6 +769,9 @@ function LaporanContent() {
 
     setExportingAlumni(true)
     try {
+      const kop = await siapkanKop(format)
+      if (!kop) return
+
       const [{ data: pengData }, { data: alumniData, error: alumniErr }] = await Promise.all([
         supabase.from('pengaturan').select('jenjang_sekolah').eq('sekolah_id', sekolahId).maybeSingle(),
         supabase
@@ -820,13 +832,13 @@ function LaporanContent() {
         })
         .sort((a, b) => a.tahunLulus.localeCompare(b.tahunLulus) || a.nama.localeCompare(b.nama, 'id'))
 
-      unduhTabel({
+      await unduhTabel({
         format,
         namaFile:    `Laporan_Alumni_${formatDateLocal(now)}`,
         namaSheet:   'Laporan Alumni',
         judul:       'Laporan Alumni',
         keterangan:  'Seluruh alumni yang lulus · total dari semua tagihan sejak masuk hingga lulus',
-        namaSekolah,
+        kop,
         headers:     ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', 'Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan', 'Status Pelunasan'],
         baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus, r.totalTagihan, r.totalBayar, r.sisa, r.status]),
         lebarKolom:  [5, 14, 24, 10, 12, 16, 16, 16, 16],
@@ -848,6 +860,9 @@ function LaporanContent() {
 
     setExportingKeuanganTahunan(true)
     try {
+      const kop = await siapkanKop(format)
+      if (!kop) return
+
       const [{ data: taData, error: taErr }, { data: tagihanData, error: tagihanErr }, { data: pembData, error: pembErr }] = await Promise.all([
         supabase
           .from('tahun_ajaran')
@@ -894,13 +909,13 @@ function LaporanContent() {
         }
       })
 
-      unduhTabel({
+      await unduhTabel({
         format,
         namaFile:    `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}`,
         namaSheet:   'Keuangan Tahunan',
         judul:       'Laporan Keuangan Tahunan',
         keterangan:  'Semua tahun ajaran · target = tagihan yang terbit, realisasi = yang sudah dibayar',
-        namaSekolah,
+        kop,
         headers:     ['No', 'Tahun Ajaran', 'Total Target', 'Total Realisasi', 'Total Tunggakan', 'Jumlah Transaksi', 'Status Audit'],
         baris:       rows.map((r, i) => [i + 1, r.tahunAjaran, r.totalTarget, r.totalRealisasi, r.totalTunggakan, r.jumlahTransaksi, r.statusAudit]),
         lebarKolom:  [5, 14, 16, 16, 16, 16, 14],
@@ -925,32 +940,24 @@ function LaporanContent() {
 
     setGeneratingUtama(true)
     try {
-      const { data: sekolahData } = await supabase.from('sekolah').select('nama').eq('id', sekolahId).maybeSingle()
-      const namaSekolah = (sekolahData as { nama?: string } | null)?.nama ?? 'Sekolah'
+      const dataKop = await siapkanKop('pdf')
+      if (!dataKop) return
 
       const doc = new jsPDF()
       const pageWidth = doc.internal.pageSize.getWidth()
       const navy: [number, number, number] = [26, 44, 78]
-      let y = 18
-
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(15)
-      doc.text(namaSekolah, pageWidth / 2, y, { align: 'center' })
-      y += 7
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(11)
-      doc.text('Laporan Utama', pageWidth / 2, y, { align: 'center' })
-      y += 6
-      doc.setFontSize(9); doc.setTextColor(100)
-      doc.text(`Periode: ${selectedFilter.label} - ${selectedFilter.sublabel}`, pageWidth / 2, y, { align: 'center' })
-      y += 5
-      doc.text(
-        `Dibuat pada ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}, ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`,
-        pageWidth / 2, y, { align: 'center' }
-      )
-      doc.setTextColor(0)
-      y += 8
+      // Tabel di dokumen ini memakai margin bawaan jspdf-autotable (40 pt); ujung garis
+      // kop disamakan dengan tepi tabelnya
+      const tepi = 40 / doc.internal.scaleFactor
+      const kop  = tataKop(doc, dataKop, { atas: ATAS_KOP, kiri: tepi, kanan: pageWidth - tepi })
+      // Halaman baru (manual maupun tabel bersambung) mulai di bawah kop
+      const awalHalaman = kop.bawah + JARAK_ISI
+      const margin = { top: awalHalaman }
+      let y = judulLaporanPdf(doc, kop.bawah, 'Laporan Utama', `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel}`) + 2
 
       autoTable(doc, {
         startY: y,
+        margin,
         head: [['Ringkasan', 'Nilai']],
         body: [
           ['Total Pemasukan', fmt(pemasukan.total)],
@@ -976,18 +983,20 @@ function LaporanContent() {
       y += 4
       autoTable(doc, {
         startY: y,
+        margin,
         head: [['Status', 'Jumlah Tagihan']],
         body: komposisiTagihan.map(d => [d.label, String(d.value)]),
         theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
       })
       y = getFinalY(doc) + 10
 
-      if (y > 250) { doc.addPage(); y = 18 }
+      if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
       doc.text('Tagihan vs Realisasi per Bulan Jatuh Tempo (12 Bulan Terakhir)', 14, y)
       y += 4
       autoTable(doc, {
         startY: y,
+        margin,
         // Tagihan tiap bulan sudah digabung dengan tunggakan bulan sebelumnya; kolom
         // "Termasuk Tunggakan" memperlihatkan porsinya supaya tidak dijumlahkan antarbulan
         head: [['Bulan', 'Tagihan', 'Termasuk Tunggakan', 'Terbayar', 'Pelunasan']],
@@ -1002,12 +1011,13 @@ function LaporanContent() {
       })
       y = getFinalY(doc) + 10
 
-      if (y > 250) { doc.addPage(); y = 18 }
+      if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
       doc.text('Umur Tunggakan (semua tunggakan per hari ini)', 14, y)
       y += 4
       autoTable(doc, {
         startY: y,
+        margin,
         // Tiap rentang sudah digabung dengan tunggakan yang lebih lama; kolom "Termasuk
         // Lebih Lama" memperlihatkan porsinya supaya nominal tidak dijumlahkan antarbaris
         head: [['Umur', 'Nominal', 'Termasuk Lebih Lama', 'Jumlah Siswa', 'Jumlah Tagihan']],
@@ -1020,12 +1030,13 @@ function LaporanContent() {
       y = getFinalY(doc) + 10
 
       if (jenjangData.length > 0) {
-        if (y > 250) { doc.addPage(); y = 18 }
+        if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
         doc.text('Pelunasan per Jenjang (tagihan jatuh tempo)', 14, y)
         y += 4
         autoTable(doc, {
           startY: y,
+          margin,
           head: [['Jenjang', 'Tingkat Pelunasan', 'Terbayar', 'Nilai Jatuh Tempo']],
           body: jenjangData.map(j => [j.jenjang, teksPdf(fmtPersen(j.pct)), fmt(j.terbayar), fmt(j.nilai)]),
           theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
@@ -1034,18 +1045,21 @@ function LaporanContent() {
       }
 
       if (komponenData.length > 0) {
-        if (y > 250) { doc.addPage(); y = 18 }
+        if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
         doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
         doc.text('Komponen Paling Banyak Belum Dibayar', 14, y)
         y += 4
         autoTable(doc, {
           startY: y,
+          margin,
           head: [['Komponen', 'Jumlah Tagihan', 'Total Nominal']],
           body: komponenData.map(k => [k.nama, String(k.jumlah), fmt(k.total)]),
           theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
         })
       }
 
+      tandaTanganPdf(doc, dataKop.tandaTangan, { y: getFinalY(doc), kiri: tepi, kanan: pageWidth - tepi, atasHalaman: awalHalaman })
+      pasangKopSemuaHalaman(doc, kop)
       const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
       doc.save(`Laporan_Utama_${periodeLabel}.pdf`)
     } finally {
@@ -1249,6 +1263,9 @@ function LaporanContent() {
           </div>
         </div>
       )}
+
+      {/* ── Pop up kop sekolah belum lengkap / gagal dimuat ── */}
+      {pesanKop && <ModalKopBelumLengkap pesan={pesanKop} onTutup={tutupPesanKop} />}
 
     </div>
   )
