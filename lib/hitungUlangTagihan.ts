@@ -9,7 +9,9 @@ import { komponenDitagihkan, type PeriodeTahunAjaran, type RiwayatTagih } from '
 // - komponen individu yang ditambahkan setelah tagihan terbit dicatat di rincian tagihan
 //   itu (tagihan_item), supaya tidak ditagihkan lagi bulan depan dan rincian = total;
 // - tagihan lunas dan tagihan bulan-bulan lalu tidak pernah diubah — beasiswa atau
-//   komponen baru untuk siswanya berlaku mulai tagihan berikutnya.
+//   komponen baru untuk siswanya berlaku mulai tagihan berikutnya. Satu pengecualian
+//   (2 Nov 2026): rincian tagihan bulan lalu yang tidak menjumlah ke totalnya karena hitung
+//   ulang versi lama diselaraskan, totalnya tetap (selaraskanRincianLama).
 //
 // Diputuskan 20 Okt 2026: komponen individu yang komponennya juga ada di paket kelas
 // siswa MENGGANTI nominal paket untuk siswa itu (mis. SPP 250rb, paket 200rb), bukan
@@ -91,6 +93,73 @@ export function potonganPerKomponen(
     perKomponen: perKomponen.map((p, i) => Math.min(Math.max(0, p), Math.max(0, rincian[i].nominal))),
     total,
   }
+}
+
+// ── Rincian tagihan bulan lalu dari hitung ulang versi lama ─────────────────
+// Sebelum 2 Okt 2026, hitung ulang menyentuh tagihan SEMUA bulan, tetapi hanya menulis
+// total_nominal: komponen individu dan potongan beasiswa masuk ke total tanpa dicatat di
+// tagihan_item. Rinciannya tidak lagi menjumlah ke total, sehingga tagihan itu hanya bisa
+// dibayar utuh di halaman bayar wali (lib/rincianKomponen). Tagihan bulan lalu tidak
+// dihitung ulang lagi, jadi rinciannya diselaraskan di sini — TOTALNYA TIDAK PERNAH DIUBAH.
+
+/** Total yang ditulis hitung ulang sebelum 2 Okt 2026, ditiru untuk mencari rinciannya */
+type CaraLama = { susulanDiPaket: boolean; potongSusulan: boolean }
+const CARA_LAMA: CaraLama[] = [
+  // Aturan sekarang: komponen individu yang ada di paket mengganti nominalnya (bukan
+  // tambahan), dan beasiswa memotong komponen susulan juga
+  { susulanDiPaket: false, potongSusulan: true },
+  // Aturan sebelum 2 Okt: semua komponen individu yang belum tercatat ditambahkan, dan
+  // beasiswa hanya memotong komponen yang sudah tercatat
+  { susulanDiPaket: true, potongSusulan: false },
+]
+
+/**
+ * Baris rincian yang membuat rincian tagihan bulan lalu kembali menjumlah ke totalnya:
+ * komponen individu yang hanya masuk total, dan potongan beasiswa per komponen. Hanya
+ * dikembalikan kalau hasilnya SAMA PERSIS dengan total yang tersimpan — beasiswa atau
+ * komponen individu yang sudah berubah sejak itu membuat tagihan dibiarkan apa adanya
+ * (tetap dibayar utuh), bukan ditebak. null = tidak ada yang perlu atau bisa diubah.
+ *
+ * Hanya untuk tagihan belum_bayar tanpa pembayaran maupun bukti yang menunggu.
+ */
+export function selaraskanRincianLama<K extends KomponenIndividu>(a: {
+  siswaId:        string
+  bulan:          number
+  tahun:          number
+  totalTersimpan: number
+  rincian:        (RincianTagihan & { potongan: number })[]
+  individu:       K[]
+  /** Komponen paket kelas siswa pada tahun ajaran aktif */
+  paket:          KomponenPaket[]
+  /** Beasiswa yang masih berlaku pada bulan tagihan itu */
+  beasiswa:       PotonganBeasiswa[]
+  ta:             PeriodeTahunAjaran | null
+  riwayat:        RiwayatTagih
+}): { susulan: K[]; potongan: number[] } | null {
+  if (a.rincian.length === 0) return null
+  const bersih = (baris: RincianTagihan[], potongan: number[]) =>
+    baris.reduce((s, i, idx) => s + i.nominal - (potongan[idx] ?? 0), 0)
+  if (bersih(a.rincian, a.rincian.map(i => i.potongan)) === a.totalTersimpan) return null
+
+  const tercatat = new Set(a.rincian.map(i => i.komponen_id).filter((id): id is string => !!id))
+  const diPaket  = new Set(a.paket.map(k => k.komponen_id))
+  const belum: K[] = []
+  for (const k of a.individu) {
+    if (tercatat.has(k.komponen_id)) continue
+    if (!komponenDitagihkan(k.jenis, a.bulan, a.tahun, a.ta, a.siswaId, k.komponen_id, a.riwayat)) continue
+    tercatat.add(k.komponen_id)
+    belum.push(k)
+  }
+
+  for (const cara of CARA_LAMA) {
+    const susulan = cara.susulanDiPaket ? belum : belum.filter(k => !diPaket.has(k.komponen_id))
+    const semua: RincianTagihan[] = [...a.rincian, ...susulan]
+    const { perKomponen } = potonganPerKomponen(cara.potongSusulan ? semua : a.rincian, a.beasiswa)
+    const potongan = semua.map((_, idx) => perKomponen[idx] ?? 0)
+    // NaN dari nominal yang hilang tidak pernah sama dengan total, jadi ikut tertolak
+    if (bersih(semua, potongan) === a.totalTersimpan) return { susulan, potongan }
+  }
+  return null
 }
 
 /** Tagihan yang boleh dihitung ulang: bulan berjalan dan belum lunas */
