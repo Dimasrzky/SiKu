@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { ambilSemua } from './ambilSemua'
 import { periodeIndex, type PeriodeTahunAjaran } from './komponenTagihan'
+import { tanggalWIB } from './metrikLaporan'
+import { lewatJatuhTempo } from './statusTagihan'
 
 // Nilai tagihan satu periode beserta uang yang sudah masuk — satu rumus untuk card
 // "Total tagihan periode ini" di Tagihan Aktif dan "Tingkat Pelunasan" di Pembayaran,
@@ -27,6 +29,11 @@ export const RINGKASAN_PERIODE_KOSONG: RingkasanPeriode = { total: 0, masuk: 0, 
  *
  * Uang masuk = pembayaran per tagihan dibatasi nilai tagihannya, sama dengan kolom
  * Terbayar di Laporan, sehingga cicilan yang belum lunas pun ikut terhitung.
+ *
+ * Tagihan bulan berjalan (bulan kalender WIB hari ini, bukan bulan yang sedang dilihat)
+ * baru ikut setelah jatuh temponya lewat — aturan yang sama dengan Total tunggakan di
+ * Dashboard dan Laporan (keputusan user 4 Nov 2026). Uangnya ikut tertunda: pembayaran
+ * di muka untuk tagihan itu baru tampil di "Sudah masuk" setelah jatuh tempo.
  */
 export async function muatRingkasanPeriode(
   sid: string,
@@ -43,9 +50,18 @@ export async function muatRingkasanPeriode(
   )
 
   // Diambil bertahap — satu permintaan bisa diam-diam terpotong di batas baris PostgREST
+  const sekarang = new Date()
+  const [tahunIni, bulanIni] = tanggalWIB(sekarang).split('-').map(Number)
+  const idxBerjalan = periodeIndex(bulanIni, tahunIni)
+
   const [tagihanRes, bayarRes] = await Promise.all([
-    ambilSemua<{ id: string; bulan: number; tahun: number; total_nominal: number }>((dari, sampai) => {
-      let q = supabase.from('tagihan').select('id, bulan, tahun, total_nominal').eq('sekolah_id', sid).lte('tahun', tahun)
+    ambilSemua<{
+      id: string; bulan: number; tahun: number; total_nominal: number; jatuh_tempo: string | null
+      siswa: { status: string } | null
+    }>((dari, sampai) => {
+      let q = supabase.from('tagihan')
+        .select('id, bulan, tahun, total_nominal, jatuh_tempo, siswa:siswa_id(status)')
+        .eq('sekolah_id', sid).lte('tahun', tahun)
       if (mulai) q = q.gte('tahun', mulai.getFullYear())
       return q.order('id').range(dari, sampai)
     }),
@@ -62,6 +78,7 @@ export async function muatRingkasanPeriode(
   for (const t of tagihanRes.data) {
     const idx = periodeIndex(t.bulan, t.tahun)
     if (idx < idxMulai || idx > idxAkhir) continue
+    if (idx === idxBerjalan && t.siswa?.status !== 'alumni' && !lewatJatuhTempo(t, sekarang)) continue
     ringkasan.total += t.total_nominal
     ringkasan.masuk += Math.min(dibayar.get(t.id) ?? 0, t.total_nominal)
     if (!ringkasan.awal  || idx < periodeIndex(ringkasan.awal.bulan,  ringkasan.awal.tahun))  ringkasan.awal  = { bulan: t.bulan, tahun: t.tahun }

@@ -459,21 +459,23 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     .map(t => ({ ...t, sisa: sisaTagihan(t) }))
     .filter(t => t.sisa > 0)
 
-  // "Lama" = tunggakan dari bulan-bulan sebelumnya saja — tagihan bulan berjalan
-  // yang belum lewat tempo tidak ikut dihitung di sini, itu bagian belumBayarNominal.
-  const tunggakanLamaRows    = tunggakanRows.filter(t => !(t.bulan === bulanIni && t.tahun === tahunIni))
-  const tunggakanLamaNominal = tunggakanLamaRows.reduce((s, t) => s + t.sisa, 0)
-
   // Jumlah siswa menunggak dihitung dari SEMUA tagihan menunggak, termasuk bulan ini
   // yang sudah lewat jatuh tempo — sama dengan isi filter Menunggak di Tagihan Aktif,
-  // tujuan tautan "Ingatkan sekarang". Nominalnya tetap dari tunggakan lama saja
-  // supaya tidak terhitung dua kali dengan belumBayarNominal.
+  // tujuan tautan "Ingatkan sekarang".
   const siswaMenunggak = new Set(tunggakanRows.map(t => t.siswa_id)).size
 
-  // "Total Tunggakan Aktif" = kewajiban bulan ini yang belum dibayar + tunggakan
-  // lama (bulan-bulan sebelumnya yang sudah lewat jatuh tempo), supaya angkanya
-  // mencerminkan seluruh kewajiban aktif, bukan cuma yang sudah menunggak.
-  const totalTunggakan = belumBayarNominal + tunggakanLamaNominal
+  // "Total Tunggakan Aktif" = sisa tagihan tahun ajaran aktif yang belum lunas: semua
+  // tagihan bulan-bulan lalu (sudah jatuh tempo atau belum, mis. tagihan Oktober yang
+  // jatuh tempo 15 November) + tagihan bulan ini yang jatuh temponya sudah lewat.
+  // Tagihan bulan ini yang belum jatuh tempo belum dihitung (keputusan user 4 Nov
+  // 2026). Sama dengan "Total tunggakan" di Laporan (lib/metrikLaporan hitungRingkasan).
+  const totalTunggakan = allTagihan
+    .filter(t => t.status !== 'lunas'
+      && dalamPeriodeAktif(t.bulan, t.tahun)
+      && (periodeIndex(t.bulan, t.tahun) < periodeIni
+        || (periodeIndex(t.bulan, t.tahun) === periodeIni
+          && (t.siswa?.status === 'alumni' || lewatJatuhTempo(t, now)))))
+    .reduce((s, t) => s + sisaTagihan({ total_nominal: t.total_nominal, terbayar: dibayarPerTagihan.get(t.id) ?? 0 }), 0)
 
   // ── Beasiswa ───────────────────────────────────────────────────────────────
   const activeBsSiswa    = bsProgs.flatMap(bs =>
@@ -519,15 +521,18 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
 
   // ── Tren 6 bulan ──────────────────────────────────────────────────────────
   // Tunggakan tiap bulan = tagihan bulan itu yang belum lunas + tunggakan bulan-bulan
-  // sebelumnya yang sampai sekarang belum dibayar. Bagian "sebelumnya" diambil dari
-  // tunggakanRows — aturan yang sama dengan kartu "Total Tunggakan Aktif" — sehingga
-  // batang bulan berjalan sama dengan angka di kartu itu. Polanya sama dengan
-  // "Tagihan vs realisasi" di Laporan.
+  // sebelumnya yang sudah lewat jatuh tempo dan sampai sekarang belum dibayar
+  // (tunggakanRows). Tagihan bulan lalu yang belum jatuh tempo tetap di batang
+  // bulannya sendiri (keputusan user 30 Okt 2026), dan tagihan bulan berjalan baru
+  // masuk batangnya setelah jatuh temponya lewat (keputusan user 4 Nov 2026). Sama
+  // dengan "Tagihan vs realisasi" di Laporan (lib/metrikLaporan trenTagihanRealisasi).
   const trenData: TrenItem[] = last6.map(({ short, bulan, tahun }, idx) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1)
     const b = d.getMonth() + 1
     const y = d.getFullYear()
-    const mRows = allTagihan.filter(t => t.bulan === b && t.tahun === y)
+    const berjalan = idx === last6.length - 1
+    const mRows = allTagihan.filter(t => t.bulan === b && t.tahun === y
+      && (!berjalan || t.siswa?.status === 'alumni' || lewatJatuhTempo(t, now)))
     const periode = periodeIndex(b, y)
     const tunggakanSebelumnya = tunggakanRows
       .filter(t => periodeIndex(t.bulan, t.tahun) < periode)
@@ -535,7 +540,7 @@ async function loadDashData(sid: string, siswaTotal: number): Promise<DashData> 
     return {
       short,
       bulanTahun: `${bulan} ${tahun}`,
-      berjalan:   idx === last6.length - 1,
+      berjalan,
       terkumpul: mRows.filter(t => t.status === 'lunas').reduce((s, t) => s + t.total_nominal, 0),
       tunggakan: mRows.filter(t => t.status !== 'lunas').reduce((s, t) => s + t.total_nominal, 0) + tunggakanSebelumnya,
     }

@@ -60,10 +60,10 @@ const BarisRincian = ({ warna, label, nilai, warnaNilai = WARNA.abu }: { warna: 
 )
 
 /**
- * Tiga kartu: tanpa Ketepatan waktu, dan Total tunggakan = belum jatuh tempo +
- * menunggak — sejalan dengan "Total Tunggakan Aktif" di Dashboard, yang juga memuat
- * tagihan bulan ini yang belum jatuh tempo. Tingkat pelunasan tetap hanya tagihan
- * yang sudah jatuh tempo.
+ * Tiga kartu: tanpa Ketepatan waktu, dan Total tunggakan = tagihan bulan lalu yang
+ * belum jatuh tempo + menunggak — sama dengan "Total Tunggakan Aktif" di Dashboard.
+ * Tagihan bulan berjalan baru ikut setelah jatuh temponya lewat (keputusan user
+ * 4 Nov 2026). Tingkat pelunasan tetap hanya tagihan yang sudah jatuh tempo.
  */
 export const KartuRingkasanUtama = ({ ringkasan, pemasukan }: {
   ringkasan: RingkasanMetrik

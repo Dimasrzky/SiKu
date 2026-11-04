@@ -417,8 +417,9 @@ export default function PembayaranPage() {
 
   const stats = useMemo(() => {
     // Tingkat pelunasan dan sisanya memakai seluruh periode — tunggakan bulan-bulan
-    // sebelumnya digabung dengan tagihan bulan ini — hitungan yang sama dengan card
-    // "Total tagihan periode ini" di Tagihan Aktif. Persen = uang masuk ÷ nilai tagihan.
+    // sebelumnya digabung dengan tagihan bulan ini yang sudah jatuh tempo — hitungan yang
+    // sama dengan card "Total tagihan periode ini" di Tagihan Aktif (lib/ringkasanPeriode).
+    // Persen = uang masuk ÷ nilai tagihan.
     const pctLunas      = ringkasanPeriode.total > 0 ? Math.round(ringkasanPeriode.masuk / ringkasanPeriode.total * 100) : 0
     const sisBelumMasuk = Math.max(0, ringkasanPeriode.total - ringkasanPeriode.masuk)
     // Pemasukan = uang yang masuk bulan ini, tagihan bulan apa pun — sama dengan isi tabel

@@ -97,7 +97,12 @@ export interface RingkasanMetrik {
   terbayarJatuhTempo: number
   /** 0–100; null kalau belum ada tagihan yang jatuh tempo */
   tingkatPelunasan:   number | null
-  /** Sisa belum dibayar dari tagihan yang belum jatuh tempo */
+  /**
+   * Sisa belum dibayar dari tagihan BULAN-BULAN LALU yang belum jatuh tempo (mis.
+   * tagihan Oktober yang jatuh tempo 15 November). Tagihan bulan berjalan yang belum
+   * jatuh tempo belum dihitung di mana pun (keputusan user 4 Nov 2026), jadi
+   * Total tunggakan = ini + tunggakanBerjalan.
+   */
   akanMasuk:          number
   tunggakanBerjalan:  number
   siswaMenunggak:     number
@@ -127,12 +132,14 @@ export function hitungRingkasan(rows: TagihanMetrik[], sekarang: Date): Ringkasa
   let nilaiJatuhTempo = 0, terbayarJatuhTempo = 0, akanMasuk = 0, tunggakanBerjalan = 0
   let jumlahDinilai = 0, jumlahTepatWaktu = 0, jumlahTelat = 0, totalHariTelat = 0
   const siswaMenunggak = new Set<string>()
+  const [tahunIni, bulanIni] = tanggalWIB(sekarang).split('-').map(Number)
+  const periodeIni = periodeIndex(bulanIni, tahunIni)
 
   for (const t of rows) {
     if (tanpaKewajiban(t.total_nominal)) continue
 
     if (!sudahJatuhTempo(t, sekarang)) {
-      if (!sudahLunas(t)) akanMasuk += sisaTagihan(t)
+      if (!sudahLunas(t) && periodeIndex(t.bulan, t.tahun) < periodeIni) akanMasuk += sisaTagihan(t)
       continue
     }
 
@@ -329,6 +336,10 @@ export interface TitikTren {
  * tunggakan setelah 15 November lewat. Batang bulan lalu masih bisa naik ketika
  * tunggakannya dilunasi belakangan.
  *
+ * Tagihan BULAN BERJALAN baru masuk batangnya setelah jatuh temponya lewat (keputusan
+ * user 4 Nov 2026): tanggal 4 November batang November masih kosong, terisi sesudah
+ * 15 November. Tagihan bulan-bulan lalu tetap tampil di batangnya walau belum jatuh tempo.
+ *
  * Tagihan tiap bulan digabung dengan tunggakan bulan-bulan sebelumnya yang masih
  * belum dibayar (adalahTunggakan — sisa cicilan ikut), sehingga bulan terakhir
  * menunjukkan seluruh kewajiban yang masih terbuka. Tunggakannya dibaca per saat ini:
@@ -368,6 +379,7 @@ export function trenTagihanRealisasi<T extends TagihanMetrik>(
     }
     const i = indeks.get(`${tahun}-${bulan}`)
     if (i === undefined) continue
+    if (titik[i].berjalan && !sudahJatuhTempo(t, sekarang)) continue
     titik[i].tagihan  += t.total_nominal
     titik[i].terbayar += Math.min(t.terbayar, t.total_nominal)
     perBulan[i].push(t)
