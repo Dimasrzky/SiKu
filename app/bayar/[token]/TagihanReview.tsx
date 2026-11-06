@@ -111,7 +111,9 @@ export default function TagihanReview({
   }
 
   const diTautan  = blok.find(b => b.diTautan) ?? null
+  // Bulan-bulan sebelumnya yang belum lunas; yang belum jatuh tempo bukan tunggakan
   const tunggakan = blok.filter(b => !b.diTautan)
+  const adaBelumTempo = tunggakan.some(b => b.belumJatuhTempo)
 
   return (
     <div>
@@ -167,7 +169,7 @@ export default function TagihanReview({
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#F0FDF4', border: '2px solid #BBF7D0', borderRadius: 8, padding: '0.65rem 0.9rem', marginBottom: '1.25rem', fontSize: UKURAN_BARIS, color: '#166534', lineHeight: 1.5 }}>
               <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
-                Tagihan <strong>{BULAN_NAMES[lunasDiTautan.bulan]} {lunasDiTautan.tahun}</strong> sudah lunas. Masih ada tunggakan bulan sebelumnya di bawah ini.
+                Tagihan <strong>{BULAN_NAMES[lunasDiTautan.bulan]} {lunasDiTautan.tahun}</strong> sudah lunas. Masih ada {adaBelumTempo ? 'tagihan bulan sebelumnya yang belum lunas' : 'tunggakan bulan sebelumnya'} di bawah ini.
               </span>
             </div>
           )}
@@ -190,14 +192,14 @@ export default function TagihanReview({
             <div style={{ marginBottom: '1.25rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <AlertTriangle size={14} color="#D97706" />
-                <span style={{ ...sJudulBagian, color: '#92400E' }}>Tunggakan bulan sebelumnya</span>
+                <span style={{ ...sJudulBagian, color: '#92400E' }}>{adaBelumTempo ? 'Tagihan bulan sebelumnya' : 'Tunggakan bulan sebelumnya'}</span>
               </div>
               <div style={{ border: '2px solid #FDE68A', background: '#FFFBEB', borderRadius: 8, padding: '0.25rem 1rem', maxHeight: 360, overflowY: 'auto' }}>
                 {tunggakan.map((b, i) => (
                   <div key={b.tagihan_id} style={{ padding: '0.35rem 0', borderTop: i > 0 ? '1.5px solid #FDE68A' : 'none' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, paddingTop: 4 }}>
                       <span style={{ fontWeight: 800, fontSize: UKURAN_BARIS, color: '#92400E' }}>
-                        {BULAN_NAMES[b.bulan]} {b.tahun} <span style={{ fontWeight: 600 }}>&middot; sisa {formatRp(b.sisa)}</span>
+                        {BULAN_NAMES[b.bulan]} {b.tahun} <span style={{ fontWeight: 600 }}>&middot; sisa {formatRp(b.sisa)}{b.belumJatuhTempo ? ' · belum jatuh tempo' : ''}</span>
                       </span>
                       <TombolSemua kunci={kunciBlok(b)} dipilih={dipilih} ubah={ubah} warna="#92400E" />
                     </div>

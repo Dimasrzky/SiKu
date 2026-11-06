@@ -126,7 +126,7 @@ async function periksaUlang(db: SupabaseClient, job: JobAntre, kini: Date, o: Op
   // Otomatis: tagihan yang diingatkan + tunggakan lamanya. Manual: seluruh tunggakan.
   let ringkasan = p.ringkasan
   if (job.source === 'otomatis') {
-    const otomatis = job.tagihan_id ? ringkasOtomatis(p.tagihan, job.tagihan_id, kini) : null
+    const otomatis = job.tagihan_id ? ringkasOtomatis(p.tagihan, job.tagihan_id) : null
     if (!otomatis) return { batal: 'tagihan sudah lunas' }
     ringkasan = otomatis
   } else if (ringkasan.tunggakan.length === 0) {

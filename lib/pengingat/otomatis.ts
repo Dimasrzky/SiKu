@@ -180,7 +180,7 @@ async function antrekanSekolah(
 
   const baris: JobOtomatisBaru[] = []
   for (const c of calon) {
-    const ringkasan = ringkasOtomatis(c.p.tagihan, c.tagihanId, sekarang)
+    const ringkasan = ringkasOtomatis(c.p.tagihan, c.tagihanId)
     if (!ringkasan) continue
     if (!lolosPembatas(c.p, pembatas.data, sekarang, konfig)) continue
     baris.push({

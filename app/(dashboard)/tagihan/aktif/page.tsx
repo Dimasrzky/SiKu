@@ -78,8 +78,13 @@ interface SiswaTagihanRow {
   total_ditagih: number
   /** Sisa tunggakan periode sebelumnya (lihat tunggakanSebelum); > 0 berarti Menunggak */
   tunggakan:     number
-  /** Rincian tunggakan per bulan, terlama dulu — untuk pesan pengingat WhatsApp */
-  tunggakanDaftar: TunggakanBulan[]
+  /** Sisa bulan-bulan sebelumnya yang belum lunas tapi belum jatuh tempo — ikut total_ditagih, bukan tunggakan */
+  belumTempoSebelum: number
+  /**
+   * Bulan-bulan sebelumnya yang belum lunas, terlama dulu, jatuh tempo atau belum — yang
+   * ditagih halaman bayar selain bulan ini; untuk pesan pengingat WhatsApp
+   */
+  sebelumnyaDaftar: TunggakanBulan[]
   status:        'belum_bayar' | 'lunas' | 'cicilan'
   /** Snapshot dari paket kelas saat tagihan dibuat — tiap kelas bisa berbeda */
   jatuh_tempo:   string | null
@@ -130,7 +135,7 @@ type BarisRincianDetail = {
 }
 /** Tunggakan satu bulan di modal detail, terlama dulu */
 type TunggakanDetail = { tagihan_id: string; bulan: number; tahun: number; sisa: number; perKomponen: boolean; baris: BarisRincianDetail[] }
-type TunggakanBulan    = { bulan: number; tahun: number; sisa: number }
+type TunggakanBulan    = { bulan: number; tahun: number; sisa: number; belumJatuhTempo: boolean }
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -507,15 +512,17 @@ function TagihanAktifContent() {
         terbayar:      terbayar.get(r.id) ?? 0,
         payment_token: r.payment_token,
       }
-      // Aturannya lib/tagihanTertagih, sama dengan halaman bayar wali: tunggakan = sisa
-      // total_nominal (sesudah potongan beasiswa, bukan jumlah tagihan_item) dari bulan-
-      // bulan sebelumnya, termasuk sisa cicilan yang lewat jatuh tempo. Tautannya menuju
-      // tagihan terbaru yang belum lunas, dan halaman bayarnya menagih total_ditagih.
-      const semua           = [...(lamaPerSiswa.get(siswaId) ?? []), ini]
-      const tunggakanDaftar = tagihanTertagih(semua, ini, sekarang).daftar
+      // Aturannya lib/tagihanTertagih, sama dengan halaman bayar wali: yang ditagih = sisa
+      // total_nominal (sesudah potongan beasiswa, bukan jumlah tagihan_item) bulan ini dan
+      // bulan-bulan sebelumnya yang belum lunas, jatuh tempo atau belum. Hanya yang sudah
+      // lewat jatuh tempo yang disebut tunggakan (Menunggak). Tautannya menuju tagihan
+      // terbaru yang belum lunas, dan halaman bayarnya menagih total_ditagih.
+      const semua            = [...(lamaPerSiswa.get(siswaId) ?? []), ini]
+      const periodeIni       = periodeIndex(bulan, tahun)
+      const sebelumnyaDaftar = tagihanTertagih(semua, ini).daftar
         .filter(t => t.id !== ini.id)
-        .map(t => ({ bulan: t.bulan, tahun: t.tahun, sisa: sisaTagihan(t) }))
-      const tautan          = tagihanTautan(semua)
+        .map(t => ({ bulan: t.bulan, tahun: t.tahun, sisa: sisaTagihan(t), belumJatuhTempo: !tunggakanSebelum(t, periodeIni, sekarang) }))
+      const tautan           = tagihanTautan(semua)
       return {
         tagihan_id:    r.id,
         siswa_id:      siswaId,
@@ -529,9 +536,10 @@ function TagihanAktifContent() {
         is_alumni:     r.siswa?.status === 'alumni',
         total_nominal: ini.total_nominal,
         sisa_bulan_ini: masihBersisa(ini) ? sisaTagihan(ini) : 0,
-        total_ditagih: tautan ? tagihanTertagih(semua, tautan, sekarang).total : 0,
-        tunggakan:     tunggakanDaftar.reduce((s, d) => s + d.sisa, 0),
-        tunggakanDaftar,
+        total_ditagih: tautan ? tagihanTertagih(semua, tautan).total : 0,
+        tunggakan:         sebelumnyaDaftar.filter(d => !d.belumJatuhTempo).reduce((s, d) => s + d.sisa, 0),
+        belumTempoSebelum: sebelumnyaDaftar.filter(d => d.belumJatuhTempo).reduce((s, d) => s + d.sisa, 0),
+        sebelumnyaDaftar,
         status:        (r.status === 'sebagian' ? 'cicilan' : r.status) as SiswaTagihanRow['status'],
         jatuh_tempo:   r.jatuh_tempo,
         no_wa:         r.siswa?.no_wa ?? '',
@@ -684,19 +692,19 @@ function TagihanAktifContent() {
       ? `${window.location.origin}/bayar/${t.payment_token}`
       : undefined
 
-    // Siswa yang punya tunggakan bulan lalu diingatkan dengan rincian tunggakannya
-    // (template yang sama dengan pengingat di Laporan). Sisa bulan ini ikut dicantumkan,
-    // juga kalau belum jatuh tempo: halaman bayar lewat tautan yang sama menagih bulan
-    // ini beserta seluruh tunggakan, jadi total pesan = total_ditagih.
+    // Siswa yang masih punya sisa bulan lalu diingatkan dengan rincian per bulan (template
+    // yang sama dengan pengingat di Laporan), bulan yang belum jatuh tempo ditandai. Sisa
+    // bulan ini ikut dicantumkan, juga kalau belum jatuh tempo: halaman bayar lewat tautan
+    // yang sama menagih bulan ini beserta bulan-bulan sebelumnya, jadi total pesan = total_ditagih.
     const bulanIniJatuhTempo = t.is_alumni || lewatJatuhTempo(waktuTagihan(t), now)
-    const content = t.tunggakanDaftar.length > 0
+    const content = t.sebelumnyaDaftar.length > 0
       ? buildPesanTunggakanText({
           namaWali:  t.nama_wali,
           namaSiswa: t.nama,
           kelasNama: t.kelas_nama,
           daftar:    t.sisa_bulan_ini > 0
-            ? [...t.tunggakanDaftar, { bulan: bulanIni, tahun: tahunIni, sisa: t.sisa_bulan_ini, belumJatuhTempo: !bulanIniJatuhTempo }]
-            : t.tunggakanDaftar,
+            ? [...t.sebelumnyaDaftar, { bulan: bulanIni, tahun: tahunIni, sisa: t.sisa_bulan_ini, belumJatuhTempo: !bulanIniJatuhTempo }]
+            : t.sebelumnyaDaftar,
           namaSekolah,
           paymentUrl,
         })
@@ -896,7 +904,7 @@ function TagihanAktifContent() {
     // belum punya tagihan bulan ini tetap bisa melunasi tunggakannya (id kosong = tanpa
     // tagihan bulan ini). Lengkap atau gagal: daftar yang terpotong menyembunyikan tunggakan.
     const [tertagih, riwayat] = await Promise.all([
-      muatTertagih(supabase, { id: t?.id ?? '', siswa_id: siswa.id, sekolah_id: sekolahId, bulan: bulanIni, tahun: tahunIni }, new Date()),
+      muatTertagih(supabase, { id: t?.id ?? '', siswa_id: siswa.id, sekolah_id: sekolahId, bulan: bulanIni, tahun: tahunIni }),
       muatRiwayat(),
     ])
     if (urutan !== catatMuatRef.current) return
@@ -1104,8 +1112,12 @@ function TagihanAktifContent() {
   const catatSisa  = catatTagihan ? Math.max(0, catatTagihan.total_nominal - catatSudah) : 0
   // Bulan ini (ada di daftar selama masih bersisa) dan tunggakan sebelumnya
   const catatIni            = catatDaftar.find(t => t.id === catatTagihan?.id) ?? null
+  // Bulan-bulan sebelumnya yang belum lunas — sebagian bisa saja belum jatuh tempo, dan
+  // itu bukan tunggakan, jadi labelnya menyesuaikan
   const catatTunggakan      = catatDaftar.filter(t => t.id !== catatTagihan?.id)
   const catatTotalTunggakan = catatTunggakan.reduce((s, t) => s + sisaTagihan(t), 0)
+  const catatBelumTempo     = (t: TagihanBayar) => !tunggakanSebelum(t, periodeIndex(bulanIni, tahunIni), now)
+  const catatAdaBelumTempo  = catatTunggakan.some(catatBelumTempo)
   // Komponen — atau tagihan utuh — yang masih bersisa, dalam urutan pembagian
   // (lib/rincianKomponen): bulan terlama dulu, lalu urutan komponen
   const catatUnits       = unitBayar(catatDaftar)
@@ -1449,13 +1461,18 @@ function TagihanAktifContent() {
                           )}
                         </td>
 
-                        {/* Total = yang ditagih halaman bayar wali: sisa bulan ini + tunggakan
-                            periode sebelumnya. Tanpa sisa sama sekali, nilai tagihan bulan ini. */}
+                        {/* Total = yang ditagih halaman bayar wali: sisa bulan ini + bulan-bulan
+                            sebelumnya yang belum lunas. Tanpa sisa sama sekali, nilai tagihan bulan ini. */}
                         <td style={{ ...sTd, fontWeight: 700, color: '#1A2C4E', fontVariantNumeric: 'tabular-nums' }}>
                           {formatRp(t.total_ditagih > 0 ? t.total_ditagih : t.total_nominal)}
                           {t.tunggakan > 0 && (
                             <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#B45309', marginTop: 2, whiteSpace: 'nowrap' }}>
                               termasuk tunggakan {formatRp(t.tunggakan)}
+                            </div>
+                          )}
+                          {t.belumTempoSebelum > 0 && (
+                            <div style={{ fontSize: '0.68rem', fontWeight: 600, color: '#64748B', marginTop: 2, whiteSpace: 'nowrap' }}>
+                              termasuk {t.sebelumnyaDaftar.filter(d => d.belumJatuhTempo).map(d => BULAN_NAMES[d.bulan]).join(', ')} {formatRp(t.belumTempoSebelum)}
                             </div>
                           )}
                         </td>
@@ -1664,7 +1681,7 @@ function TagihanAktifContent() {
                     {catatTunggakan.length > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem', fontSize: '0.875rem', color: '#92400E' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          <AlertTriangle size={13} color="#D97706" /> Tunggakan sebelumnya
+                          <AlertTriangle size={13} color="#D97706" /> {catatAdaBelumTempo ? 'Bulan sebelumnya' : 'Tunggakan sebelumnya'}
                         </span>
                         <span style={{ fontWeight: 700 }}>{formatRp(catatTotalTunggakan)}</span>
                       </div>
@@ -1681,7 +1698,7 @@ function TagihanAktifContent() {
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: 10, padding: '0.65rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: '#166534', lineHeight: 1.5 }}>
                     <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 2 }} />
                     <span>
-                      Tagihan <strong>{BULAN_NAMES[catatTagihan.bulan]} {catatTagihan.tahun}</strong> sudah lunas. Masih ada tunggakan bulan sebelumnya di bawah ini.
+                      Tagihan <strong>{BULAN_NAMES[catatTagihan.bulan]} {catatTagihan.tahun}</strong> sudah lunas. Masih ada {catatAdaBelumTempo ? 'tagihan bulan sebelumnya yang belum lunas' : 'tunggakan bulan sebelumnya'} di bawah ini.
                     </span>
                   </div>
                 )}
@@ -1700,19 +1717,19 @@ function TagihanAktifContent() {
                   </div>
                 )}
 
-                {/* Tunggakan bulan sebelumnya — terlama dulu, dipilih dengan cara yang sama */}
+                {/* Bulan-bulan sebelumnya yang belum lunas — terlama dulu, dipilih dengan cara yang sama */}
                 {catatTunggakan.length > 0 && (
                   <div style={{ marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '0.5rem' }}>
                       <AlertTriangle size={14} color="#D97706" />
-                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400E' }}>Tunggakan bulan sebelumnya</span>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400E' }}>{catatAdaBelumTempo ? 'Tagihan bulan sebelumnya' : 'Tunggakan bulan sebelumnya'}</span>
                     </div>
                     <div style={{ border: '1.5px solid #FDE68A', background: '#FFFBEB', borderRadius: 10, overflow: 'hidden', maxHeight: 340, overflowY: 'auto' }}>
                       {catatTunggakan.map((t, i) => (
                         <div key={t.id} style={{ borderTop: i > 0 ? '1.5px solid #FDE68A' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, padding: '0.6rem 1rem 0.1rem' }}>
                             <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#92400E' }}>
-                              {BULAN_NAMES[t.bulan]} {t.tahun} <span style={{ fontWeight: 600 }}>&middot; sisa {formatRp(sisaTagihan(t))}</span>
+                              {BULAN_NAMES[t.bulan]} {t.tahun} <span style={{ fontWeight: 600 }}>&middot; sisa {formatRp(sisaTagihan(t))}{catatBelumTempo(t) ? ' · belum jatuh tempo' : ''}</span>
                             </span>
                             <TombolSemuaCatat kunci={kunciTagihan(t)} dipilih={catatDipilih} ubah={ubahCatat} warna="#92400E" />
                           </div>
@@ -2000,8 +2017,8 @@ function TagihanAktifContent() {
             {/* Actions */}
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button onClick={() => setShowDetailModal(false)} style={sBtnSecondary}>Tutup</button>
-              {/* Bulan ini lunas tapi masih menunggak: tunggakannya tetap bisa dicatat */}
-              {(detailSiswa.status !== 'lunas' || detailSiswa.tunggakan > 0) && (
+              {/* Bulan ini lunas tapi bulan sebelumnya belum: sisanya tetap bisa dicatat */}
+              {(detailSiswa.status !== 'lunas' || detailSiswa.sebelumnyaDaftar.length > 0) && (
                 <button onClick={openCatatFromDetail} style={{ ...sBtnPrimary, gap: 6 }}>
                   <ClipboardList size={14} /> Catat Pembayaran
                 </button>

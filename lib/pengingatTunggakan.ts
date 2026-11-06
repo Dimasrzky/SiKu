@@ -33,9 +33,9 @@ export function tautanPengingatTunggakan(p: {
   if (!p.noWa || tunggakanSiswa(p.tagihan, p.sekarang).length === 0) return null
 
   // Tautan tagihan belum lunas terbaru. Pesannya merinci isi halaman bayar tautan itu —
-  // tunggakan sebelumnya beserta tagihan itu sendiri — supaya totalnya sama
+  // bulan-bulan sebelumnya yang belum lunas beserta tagihan itu sendiri — supaya totalnya sama
   const terbaru = tagihanTautan(p.tagihan)
-  const daftar  = terbaru ? tagihanTertagih(p.tagihan, terbaru, p.sekarang).daftar : []
+  const daftar  = terbaru ? tagihanTertagih(p.tagihan, terbaru).daftar : []
 
   const pesan = buildPesanTunggakanText({
     namaWali:    p.namaWali,

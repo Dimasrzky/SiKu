@@ -96,15 +96,20 @@ export function buildPesanTunggakanText(p: PesanTunggakanParams): string {
   const sekolah = p.namaSekolah || 'Admin Sekolah'
   const total   = p.daftar.reduce((s, d) => s + d.sisa, 0)
   const adaBelumJatuhTempo = p.daftar.some(d => d.belumJatuhTempo)
+  // Bulan lalu yang belum lunas tapi belum jatuh tempo juga ikut ditagih (6 Nov 2026),
+  // jadi daftarnya bisa saja belum ada yang lewat jatuh tempo sama sekali
+  const adaLewatJatuhTempo = p.daftar.some(d => !d.belumJatuhTempo)
 
   const lines = [
     `Assalamualaikum wr. wb.`,
     ``,
     `Yth. Bapak/Ibu *${wali}*`,
     ``,
-    adaBelumJatuhTempo
-      ? `Kami dari ${sekolah} mengingatkan tagihan pendidikan berikut, termasuk yang sudah melewati jatuh tempo:`
-      : `Kami dari ${sekolah} mengingatkan tagihan pendidikan yang sudah melewati jatuh tempo:`,
+    !adaLewatJatuhTempo
+      ? `Kami dari ${sekolah} mengingatkan tagihan pendidikan berikut:`
+      : adaBelumJatuhTempo
+        ? `Kami dari ${sekolah} mengingatkan tagihan pendidikan berikut, termasuk yang sudah melewati jatuh tempo:`
+        : `Kami dari ${sekolah} mengingatkan tagihan pendidikan yang sudah melewati jatuh tempo:`,
     ``,
     `*Nama Siswa* : ${p.namaSiswa}`,
     `*Kelas*       : ${p.kelasNama}`,

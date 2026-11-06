@@ -84,7 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Bukti dikaitkan ke tagihan terbaru yang dipilih wali, jadi semua pilihannya ada di
   // daftar tertagih tagihan itu. Sisanya dihitung ulang sekarang: sejak bukti diunggah
   // bisa saja ada pembayaran lain yang sudah dicatat.
-  const tertagih = await muatTertagih(supabase, tagihan, new Date())
+  const tertagih = await muatTertagih(supabase, tagihan)
   if (!tertagih.data) return gagal('Gagal memuat rincian tagihan.', 500)
 
   const semua   = unitBayar(tertagih.data.daftar)

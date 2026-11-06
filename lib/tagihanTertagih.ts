@@ -11,9 +11,12 @@ import { tanpaKewajiban } from './statusTagihan'
 // sama (keputusan 3 Okt 2026).
 //
 // Tautan menunjuk satu tagihan, `sasaran`. Yang ditagih = sisa sasaran + sisa seluruh
-// tunggakan dari bulan-bulan sebelumnya. Sisa = total_nominal (sesudah potongan beasiswa)
-// dikurangi pembayaran — bukan jumlah tagihan_item, yang dicatat sebelum potongan.
-// Tunggakan mengikuti adalahTunggakan, jadi sisa cicilan yang lewat jatuh tempo ikut.
+// tagihan bulan-bulan sebelumnya yang belum lunas, sudah jatuh tempo atau BELUM (keputusan
+// 6 Nov 2026: tagihan Oktober yang jatuh tempo 15 Nov harus bisa dibayar pada 6 Nov,
+// bukan terlewat sehingga uangnya tercatat untuk November). Sisa = total_nominal (sesudah
+// potongan beasiswa) dikurangi pembayaran — bukan jumlah tagihan_item, yang dicatat
+// sebelum potongan. Yang disebut TUNGGAKAN (status Menunggak, kartu tunggakan) tetap hanya
+// yang sudah lewat jatuh tempo: tunggakanSebelum / adalahTunggakan.
 // Dari daftar itu wali boleh memilih komponen mana yang dibayar dulu, dan mencicilnya
 // (lib/rincianKomponen, keputusan 11 Okt 2026).
 
@@ -28,9 +31,13 @@ export const sisaTagihan = (t: Pick<TagihanSisa, 'total_nominal' | 'terbayar'>):
 export const masihBersisa = (t: TagihanSisa): boolean =>
   t.status !== 'lunas' && !tanpaKewajiban(t.total_nominal) && sisaTagihan(t) > 0
 
-/** Tunggakan dari bulan-bulan sebelum `periode` (lihat periodeIndex) */
+/** Tunggakan dari bulan-bulan sebelum `periode` (lihat periodeIndex) — sudah lewat jatuh tempo */
 export const tunggakanSebelum = (t: TagihanSisa, periode: number, sekarang: Date): boolean =>
   periodeIndex(t.bulan, t.tahun) < periode && adalahTunggakan(t, sekarang)
+
+/** Tagihan bulan-bulan sebelum `periode` yang masih bersisa, sudah jatuh tempo atau belum */
+export const bersisaSebelum = (t: TagihanSisa, periode: number): boolean =>
+  periodeIndex(t.bulan, t.tahun) < periode && masihBersisa(t)
 
 const urutPeriode = (a: TagihanSisa, b: TagihanSisa) => periodeIndex(a.bulan, a.tahun) - periodeIndex(b.bulan, b.tahun)
 
@@ -46,7 +53,7 @@ export function tagihanTautan<T extends TagihanSisa>(tagihan: T[]): T | null {
 export interface Tertagih<T> {
   /** Baris sasaran sendiri, bersisa atau tidak; null kalau tidak ada di `tagihan` */
   sasaran: T | null
-  /** Tunggakan sebelumnya, terlama dulu, lalu sasaran sendiri kalau masih bersisa */
+  /** Bulan-bulan sebelumnya yang belum lunas, terlama dulu, lalu sasaran sendiri kalau masih bersisa */
   daftar:  T[]
   total:   number
 }
@@ -55,11 +62,10 @@ export interface Tertagih<T> {
 export function tagihanTertagih<T extends TagihanSisa>(
   tagihan: T[],
   sasaran: Pick<TagihanSisa, 'id' | 'bulan' | 'tahun'>,
-  sekarang: Date,
 ): Tertagih<T> {
   const periode = periodeIndex(sasaran.bulan, sasaran.tahun)
   const sendiri = tagihan.find(t => t.id === sasaran.id) ?? null
-  const lama    = tagihan.filter(t => t.id !== sasaran.id && tunggakanSebelum(t, periode, sekarang)).sort(urutPeriode)
+  const lama    = tagihan.filter(t => t.id !== sasaran.id && bersisaSebelum(t, periode)).sort(urutPeriode)
   const daftar  = sendiri && masihBersisa(sendiri) ? [...lama, sendiri] : lama
   return { sasaran: sendiri, daftar, total: daftar.reduce((s, t) => s + sisaTagihan(t), 0) }
 }
@@ -111,7 +117,6 @@ type TagihanBayarRaw = Omit<TagihanBayar, 'terbayar' | 'is_alumni' | 'rincian'> 
 export async function muatTertagih(
   db: SupabaseClient,
   sasaran: { id: string; siswa_id: string; sekolah_id: string; bulan: number; tahun: number },
-  sekarang: Date,
 ): Promise<{ data: Tertagih<TagihanBayar> | null; error: string | null }> {
   const tagihanRes = await ambilSemua<TagihanBayarRaw>((dari, sampai) => db
     .from('tagihan')
@@ -144,7 +149,7 @@ export async function muatTertagih(
       rincian:   rincianKomponen(t.total_nominal, t.tagihan_item ?? [], bayar),
     }
   })
-  return { data: tagihanTertagih(tagihan, sasaran, sekarang), error: null }
+  return { data: tagihanTertagih(tagihan, sasaran), error: null }
 }
 
 export interface BuktiMenunggu {

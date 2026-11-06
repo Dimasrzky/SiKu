@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   // Yang bisa dipilih = yang ditagih halaman bayar: sisa tagihan ini + tunggakan
   // sebelumnya. Tagihan di tautan yang sudah lunas masih bisa dipakai membayar tunggakannya.
   const sekarang = new Date()
-  const tertagih = await muatTertagih(supabase, tagihan, sekarang)
+  const tertagih = await muatTertagih(supabase, tagihan)
   if (!tertagih.data) return gagal('Gagal memuat rincian tagihan. Silakan coba lagi.', 500)
 
   const units = unitBayar(tertagih.data.daftar)

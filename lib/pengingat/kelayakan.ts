@@ -32,11 +32,11 @@ export function ringkasTunggakan<T extends TagihanPengingat>(tagihan: T[], sekar
   const tunggakan = tunggakanSiswa(tagihan, sekarang)
 
   // Tautan menuju tagihan terbaru yang belum lunas, juga kalau belum jatuh tempo
-  // (keputusan 3 Okt 2026): halaman bayarnya memuat tagihan itu beserta seluruh
-  // tunggakan sebelumnya, jadi total pesan = total halaman bayar = kolom Total di
+  // (keputusan 3 Okt 2026): halaman bayarnya memuat tagihan itu beserta seluruh bulan
+  // sebelumnya yang belum lunas, jadi total pesan = total halaman bayar = kolom Total di
   // Tagihan Aktif. Yang boleh diingatkan tetap hanya siswa yang punya tunggakan.
   const sasaran  = tagihanTautan(tagihan)
-  const tertagih = sasaran ? tagihanTertagih(tagihan, sasaran, sekarang) : null
+  const tertagih = sasaran ? tagihanTertagih(tagihan, sasaran) : null
 
   return {
     tunggakan,
@@ -48,17 +48,16 @@ export function ringkasTunggakan<T extends TagihanPengingat>(tagihan: T[], sekar
 
 /**
  * Pengingat otomatis untuk satu tagihan yang mendekati jatuh tempo: tagihan itu ditambah
- * tunggakan lamanya (keputusan 1 Okt 2026), dengan tautan ke tagihan itu sendiri.
+ * bulan-bulan sebelumnya yang belum lunas (keputusan 1 Okt 2026, diperluas 6 Nov 2026),
+ * dengan tautan ke tagihan itu sendiri.
  * null kalau tagihannya tidak perlu diingatkan lagi — sudah lunas, Rp 0, atau sudah dihapus.
  */
 export function ringkasOtomatis<T extends TagihanPengingat>(
-  tagihan: T[], tagihanId: string, sekarang: Date,
+  tagihan: T[], tagihanId: string,
 ): RingkasanTunggakan<T> | null {
   const sasaran = tagihan.find(t => t.id === tagihanId)
   if (!sasaran || !masihBersisa(sasaran)) return null
 
-  // Kalau pengirimannya tertunda sampai lewat jatuh tempo, sasaran sendiri sudah termasuk
-  // tunggakan — tagihanTertagih menghitungnya sekali saja
-  const { daftar, total } = tagihanTertagih(tagihan, sasaran, sekarang)
+  const { daftar, total } = tagihanTertagih(tagihan, sasaran)
   return { tunggakan: daftar, total, tertagih: daftar, tautan: tautanAktif(sasaran) }
 }

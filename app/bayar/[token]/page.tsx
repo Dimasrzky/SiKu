@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { createServiceClient } from '@/lib/supabase-service'
 import { kunciUnit, rentangRencana, unitBayar, type PilihanBayar } from '@/lib/rincianKomponen'
 import { muatBuktiMenunggu, muatTertagih, rincianSisa, sisaTagihan, type TagihanBayar } from '@/lib/tagihanTertagih'
+import { adalahTunggakan } from '@/lib/metrikLaporan'
 import { JABATAN } from '@/lib/jabatan'
 import BayarWizard from './BayarWizard'
 import BayarHeader from './BayarHeader'
@@ -70,8 +71,10 @@ export interface BlokTagihan {
   tagihan_id: string
   bulan:      number
   tahun:      number
-  /** Tagihan yang ditunjuk tautan ini; yang lain tunggakan bulan sebelumnya */
+  /** Tagihan yang ditunjuk tautan ini; yang lain bulan-bulan sebelumnya yang belum lunas */
   diTautan:   boolean
+  /** Belum lewat jatuh tempo — bulan sebelumnya seperti ini belum disebut tunggakan */
+  belumJatuhTempo: boolean
   sisa:       number
   /** null = tagihan ini dibayar utuh, dicentang lewat `kunciUtuh` */
   komponen:   KomponenPilih[] | null
@@ -145,7 +148,7 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
       .eq('sekolah_id', tagihan.sekolah_id).eq('jenis', 'transfer').eq('aktif', true)
       .order('urutan', { ascending: true }).limit(1).maybeSingle(),
     muatBuktiMenunggu(supabase, tagihan),
-    muatTertagih(supabase, tagihan, sekarang),
+    muatTertagih(supabase, tagihan),
   ])
 
   const sekolah  = sekolahData  as SekolahRow  | null
@@ -263,13 +266,15 @@ export default async function BayarPage({ params }: { params: Promise<{ token: s
     (nama_komponen, nominal) => ({ nama_komponen, nominal, warna: '#94A3B8' }),
   )
 
-  // Bulan-bulan yang masih bersisa: tunggakan terlama dulu, lalu tagihan di tautan ini.
-  // Wali memilih komponen mana yang dibayar sekarang (lib/rincianKomponen).
+  // Bulan-bulan yang masih bersisa: bulan sebelumnya terlama dulu (jatuh tempo atau
+  // belum), lalu tagihan di tautan ini. Wali memilih komponen mana yang dibayar sekarang
+  // (lib/rincianKomponen).
   const blok: BlokTagihan[] = tertagih.daftar.map(t => ({
     tagihan_id: t.id,
     bulan:      t.bulan,
     tahun:      t.tahun,
     diTautan:   t.id === tagihan.id,
+    belumJatuhTempo: !adalahTunggakan(t, sekarang),
     sisa:       sisaTagihan(t),
     komponen:   t.rincian.perKomponen
       ? t.rincian.komponen.map(k => ({
