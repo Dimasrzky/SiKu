@@ -1,21 +1,28 @@
 'use client'
 
-import { useState, useMemo, Suspense } from 'react'
+import { useState, useMemo, useEffect, useCallback, Suspense } from 'react'
 import Image from 'next/image'
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { BarChart2, Database, AlertTriangle, Download, Receipt, Users, GraduationCap, FileSpreadsheet, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import type { DataKop } from '@/lib/kopLaporan'
-import { ATAS_KOP, JARAK_ISI, judulLaporanPdf, pasangKopSemuaHalaman, tandaTanganPdf, tataKop } from '@/lib/kopPdf'
+import { unduhTabel, type FormatEkspor } from '@/lib/unduhTabelLaporan'
 import { useKopLaporan } from '@/lib/useKopLaporan'
 import { ModalKopBelumLengkap } from '@/components/laporan/ModalKopBelumLengkap'
-import { STATUS_TAGIHAN, statusEfektif, lewatJatuhTempo, batasJatuhTempo, tanpaKewajiban, type StatusTagihan, type WaktuTagihan } from '@/lib/statusTagihan'
+import { ModalPilihKomponen } from '@/components/laporan/ModalPilihKomponen'
+import { batasJatuhTempo, type WaktuTagihan } from '@/lib/statusTagihan'
 import {
   hitungRingkasan, hitungPemasukan, umurTunggakan, trenTagihanRealisasi, adalahTunggakan,
-  komposisiStatusSiswa, hitungSiswaLunas, jumlahSiswaTertunggak,
+  komposisiStatusSiswa, jumlahSiswaTertunggak,
 } from '@/lib/metrikLaporan'
-import { BULAN_PANJANG as BULAN_NAMES_FULL, formatRupiah as fmt, formatPersen as fmtPersen } from '@/lib/formatLaporan'
+import { komponenBelumDibayar, komposisiPerTagihan, ringkasPerJenjang, hitungMetrikUtama, type MetrikUtama } from '@/lib/laporanUtama'
+import { unduhLaporanUtamaPdf, type KolomUtama } from '@/lib/laporanUtamaPdf'
+import {
+  akhiranNamaFile, bagiBuktiKeKunci, bagiKeKunci, daftarOpsiKomponen, itemKas, jumlahDalam, kolomKomponen,
+  kunciItemKomponen, pilihanAwal, pisahPerKomponen, proyeksiSemua, rincianSemuaTagihan, simpanPilihanKomponen,
+  teksKomponen, type KolomKomponen, type PilihanKomponen,
+} from '@/lib/komponenLaporan'
+import type { ItemTagihanKas } from '@/lib/kasKomponen'
+import { tagihanBukti } from '@/lib/rincianKomponen'
+import { BULAN_PANJANG as BULAN_NAMES_FULL } from '@/lib/formatLaporan'
 import { useDataLaporan } from '@/lib/useDataLaporan'
 import { useFilterLaporan, monthsInRange } from '@/lib/useFilterLaporan'
 import { HeaderLaporan } from '@/components/laporan/HeaderLaporan'
@@ -86,6 +93,27 @@ function resolveJenisLabel(
   return jenisPembayaranLabel(items, bulan, tahun)
 }
 
+/**
+ * Label jenis untuk unduhan per komponen: hanya komponen yang `terima`. Kalau semua
+ * komponen tagihannya diterima, labelnya sama dengan unduhan biasa (nama paket).
+ */
+function resolveJenisTerpilih(
+  items: { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string; nama: string } | null }[],
+  bulan: number,
+  tahun: number,
+  kelasId: string | null,
+  paketByKelas: Map<string, PaketKelasInfo>,
+  terima: (kunci: string) => boolean,
+): string {
+  const masuk = items.filter(i => terima(kunciItemKomponen(i)))
+  if (masuk.length === items.length) return resolveJenisLabel(items, bulan, tahun, kelasId, paketByKelas)
+  return jenisPembayaranLabel(masuk, bulan, tahun)
+}
+
+/** Jumlah rupiah untuk kunci-kunci komponen tertentu */
+const jumlahKunci = (bagian: Map<string, number>, kunci: ReadonlySet<string>): number =>
+  [...bagian].reduce((s, [k, j]) => (kunci.has(k) ? s + j : s), 0)
+
 async function buildPaketByKelasMap(sekolahId: string): Promise<Map<string, PaketKelasInfo>> {
   const { data, error } = await supabase
     .from('paket')
@@ -102,106 +130,15 @@ async function buildPaketByKelasMap(sekolahId: string): Promise<Map<string, Pake
   return map
 }
 
-// Font bawaan jsPDF (helvetica) tidak menjamin tanda pisah en/em — kode PDF lama di
-// halaman ini pun sengaja memakai "-" biasa
-const teksPdf = (s: string) => s.replace(/[–—]/g, '-')
+/** Unduhan berisi rupiah — yang bisa dipilih komponennya */
+type JenisUnduhan = 'utama' | 'transaksi' | 'tunggakan' | 'alumni' | 'tahunan'
 
-function getFinalY(doc: jsPDF): number {
-  return (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 20
-}
-
-type FormatEkspor = 'excel' | 'pdf'
-
-interface TabelEkspor {
-  format:       FormatEkspor
-  /** Tanpa ekstensi — .xlsx / .pdf ditambahkan sesuai format */
-  namaFile:     string
-  namaSheet:    string
-  /** Judul dan keterangan cakupan di bawah kop */
-  judul:        string
-  keterangan:   string
-  /** Kop sekolah, sudah diperiksa lengkap oleh useKopLaporan */
-  kop:          DataKop
-  headers:      string[]
-  baris:        (string | number)[][]
-  /** Lebar kolom Excel (wch) */
-  lebarKolom:   number[]
-  /** Indeks kolom Rupiah: angka di Excel (format Rp), "Rp …" rata kanan dan dijumlah di PDF */
-  kolomRupiah?: number[]
-}
-
-/**
- * Tulis satu tabel laporan sebagai Excel atau PDF dari baris yang SAMA, supaya isi
- * kedua format tidak mungkin berselisih. Keduanya berkop sekolah. PDF: kop di setiap
- * halaman, lanskap otomatis untuk tabel lebar, baris total untuk kolom Rupiah, dan
- * nomor halaman.
- */
-async function unduhTabel(t: TabelEkspor): Promise<void> {
-  const lanskap = t.headers.length > 8
-
-  if (t.format === 'excel') {
-    // ExcelJS berat — baru dimuat saat tombol Excel diklik
-    const { bukuExcelBaru, lembarBerkop, tulisTabelExcel, simpanExcel } = await import('@/lib/eksporExcel')
-    const wb = await bukuExcelBaru()
-    const { ws, baris } = lembarBerkop(wb, t.kop, {
-      nama: t.namaSheet, lebarKolom: t.lebarKolom, judul: t.judul, keterangan: t.keterangan, lanskap,
-    })
-    tulisTabelExcel(ws, baris, { kepala: t.headers, baris: t.baris, kolomRupiah: t.kolomRupiah })
-    await simpanExcel(wb, t.namaFile)
-    return
-  }
-
-  const doc = new jsPDF({ orientation: lanskap ? 'landscape' : 'portrait' })
-  const lebarHalaman  = doc.internal.pageSize.getWidth()
-  const tinggiHalaman = doc.internal.pageSize.getHeight()
-  const navy: [number, number, number] = [26, 44, 78]
-  const kop = tataKop(doc, t.kop, { atas: ATAS_KOP, kiri: 10, kanan: lebarHalaman - 10 })
-  const y   = judulLaporanPdf(doc, kop.bawah, t.judul, t.keterangan)
-
-  const rupiah = new Set(t.kolomRupiah ?? [])
-  const kanan  = { halign: 'right' as const }
-  const body   = t.baris.map(b => b.map((sel, i) => (
-    rupiah.has(i) && typeof sel === 'number' ? { content: fmt(sel), styles: kanan } : teksPdf(String(sel))
-  )))
-
-  // Baris total: label "Total" membentang sampai kolom Rupiah pertama
-  const pertamaRp = rupiah.size > 0 ? Math.min(...rupiah) : -1
-  const foot = pertamaRp > 0
-    ? [[
-        { content: 'Total', colSpan: pertamaRp },
-        ...t.headers.slice(pertamaRp).map((_, j) => {
-          const i = pertamaRp + j
-          if (!rupiah.has(i)) return ''
-          const jumlah = t.baris.reduce((s, b) => s + (typeof b[i] === 'number' ? (b[i] as number) : 0), 0)
-          return { content: fmt(jumlah), styles: kanan }
-        }),
-      ]]
-    : undefined
-
-  autoTable(doc, {
-    startY:     y,
-    head:       [t.headers],
-    body,
-    foot,
-    showFoot:   'lastPage',
-    theme:      'grid',
-    headStyles: { fillColor: navy, fontSize: 8 },
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
-    styles:     { fontSize: 8, cellPadding: 1.5 },
-    // Halaman lanjutan mulai di bawah kop
-    margin:     { left: 10, right: 10, top: kop.bawah + JARAK_ISI },
-  })
-
-  tandaTanganPdf(doc, t.kop.tandaTangan, { y: getFinalY(doc), kiri: 10, kanan: lebarHalaman - 10, atasHalaman: kop.bawah + JARAK_ISI })
-
-  const jumlahHalaman = doc.getNumberOfPages()
-  for (let p = 1; p <= jumlahHalaman; p++) {
-    doc.setPage(p)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(120)
-    doc.text(`Halaman ${p} dari ${jumlahHalaman}`, lebarHalaman - 10, tinggiHalaman - 8, { align: 'right' })
-  }
-  pasangKopSemuaHalaman(doc, kop)
-  doc.save(`${t.namaFile}.pdf`)
+/** Keterangan dan akhiran nama berkas untuk unduhan per komponen */
+interface InfoKomponen {
+  /** " · Komponen: SPP" — ditempel ke keterangan */
+  keterangan: string
+  /** "_SPP" — ditempel ke nama berkas */
+  akhiran:    string
 }
 
 // Data sekolah demo cuma isi NIS, belum isi NISN — fallback ke NIS supaya kolom tidak kosong.
@@ -234,12 +171,23 @@ function getJatuhTempoTanggal(t: WaktuTagihan): string {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Rincian tagihan di unduhan — cukup untuk label jenis dan pembagian per komponen */
+interface ItemEkspor {
+  id:            string
+  komponen_id:   string | null
+  nama_komponen: string
+  nominal:       number
+  potongan:      number | null
+  komponen:      { jenis: string; nama: string } | null
+}
+const ITEM_EKSPOR_SELECT = 'tagihan_item(id, komponen_id, nama_komponen, nominal, potongan, komponen:komponen_id(jenis, nama))'
+
 interface ExportTagihanNested {
   id:           string
   bulan:        number
   tahun:        number
   siswa:        { nama: string; nis: string | null; nisn: string | null; kelas: { id: string; nama: string } | null } | null
-  tagihan_item: { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[]
+  tagihan_item: ItemEkspor[]
 }
 interface PembayaranExportRaw {
   id:             string
@@ -248,12 +196,23 @@ interface PembayaranExportRaw {
   tanggal_bayar:  string
   gateway_trx_id: string | null
   tagihan_id:     string
+  alokasi:        unknown
 }
 interface VerifikasiExportRaw {
   id:               string
   nominal_diajukan: number
   created_at:       string
+  tagihan_id:       string
+  pilihan:          unknown
   tagihan:          ExportTagihanNested | null
+}
+interface ItemBuktiRaw {
+  id:            string
+  tagihan_id:    string
+  nama_komponen: string
+  nominal:       number
+  potongan:      number | null
+  komponen:      { nama: string } | null
 }
 interface GatewayTrxRaw {
   ipaymu_trx_id:   string | null
@@ -267,7 +226,7 @@ interface TunggakanTagihanRaw {
   total_nominal: number
   jatuh_tempo:   string | null
   siswa:         { nama: string; nis: string | null; nisn: string | null; kelas: { id: string; nama: string } | null } | null
-  tagihan_item:  { komponen_id: string | null; nama_komponen: string; komponen: { jenis: string } | null }[]
+  tagihan_item:  ItemEkspor[]
 }
 interface ExportRow {
   tanggal:         string
@@ -277,6 +236,8 @@ interface ExportRow {
   jenisPembayaran: string
   metode:          string
   nominal:         number
+  /** Unduhan per komponen yang dipisah: nominal tiap kolom komponen */
+  perKolom:        number[]
   biayaAdmin:      number
   status:          string
 }
@@ -320,11 +281,41 @@ export default function LaporanPage() {
 function LaporanContent() {
   // Data dan filter dipakai bersama semua level drill-down — lib/useDataLaporan
   // dan lib/useFilterLaporan. Filter tinggal di URL (?ta=&periode=).
-  const { sekolahId, loading, rows: metrikRows, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
+  const { sekolahId, loading, rows: metrikRows, pembayaran, kelas, activeTA, archivedTAs, sekarang } = useDataLaporan()
   const filter = useFilterLaporan(activeTA, archivedTAs, sekarang)
   const { taTerpilih, selectedFilter, dalamPeriode, qsFilter } = filter
   // Setiap unduhan (PDF dan Excel) memeriksa kelengkapan kop sekolah lebih dulu
   const { siapkanKop, pesanKop, tutupPesanKop } = useKopLaporan(sekolahId)
+
+  // ── Pilihan komponen sebelum unduh (lib/komponenLaporan) — semua sekolah sejak 6 Nov 2026 ──
+
+  // Ejaan resmi dan warna komponen untuk daftar centang
+  const [komponenResmi, setKomponenResmi] = useState<{ nama: string; kelas_warna: string | null }[]>([])
+  useEffect(() => {
+    if (!sekolahId) return
+    let batal = false
+    const muat = async () => {
+      const { data, error } = await supabase.from('komponen_tagihan').select('nama, kelas_warna')
+        .eq('sekolah_id', sekolahId).order('created_at', { ascending: false }).limit(500)
+      if (error) console.error('[Laporan] gagal memuat komponen tagihan:', error)
+      if (!batal) setKomponenResmi((data ?? []) as { nama: string; kelas_warna: string | null }[])
+    }
+    void muat()
+    return () => { batal = true }
+  }, [sekolahId])
+
+  // Ditagih dan diterima per komponen untuk setiap tagihan
+  const rincianPerTagihan = useMemo(() => rincianSemuaTagihan(metrikRows, pembayaran), [metrikRows, pembayaran])
+  const opsiKomponen = useMemo(() => daftarOpsiKomponen(rincianPerTagihan.values(), komponenResmi), [rincianPerTagihan, komponenResmi])
+
+  const [mintaKomponen, setMintaKomponen] = useState<{ jenis: JenisUnduhan; judul: string; format: FormatEkspor; awal: PilihanKomponen } | null>(null)
+  // Stabil supaya pendengar tombol Esc di modal tidak dipasang ulang tiap render
+  const tutupPilihKomponen = useCallback(() => setMintaKomponen(null), [])
+
+  /** Keterangan + akhiran nama berkas; kosong untuk unduhan tanpa pilihan komponen */
+  const infoKomponen = (pilihan: PilihanKomponen | null): InfoKomponen => (pilihan
+    ? { keterangan: ` · Komponen: ${teksKomponen(pilihan, opsiKomponen)}`, akhiran: akhiranNamaFile(pilihan, opsiKomponen) }
+    : { keterangan: '', akhiran: '' })
 
   const [exportingTransaksi, setExportingTransaksi] = useState(false)
   const [exportingTunggakan, setExportingTunggakan] = useState(false)
@@ -383,94 +374,36 @@ function LaporanContent() {
   const komposisiSiswa = useMemo(() => komposisiStatusSiswa(periodTagihan, sekarang), [periodTagihan, sekarang])
 
   // Per tagihan — hanya untuk PDF Laporan Utama, yang tabel komposisinya masih
-  // berjudul "Jumlah Tagihan"
-  const komposisiTagihan = useMemo(() => {
-    // Aturan sama persis dengan halaman tagihan aktif, termasuk pengecualian alumni
-    const jumlah: Record<StatusTagihan, number> = { lunas: 0, cicilan: 0, belum_bayar: 0, menunggak: 0 }
-    for (const t of periodTagihan) {
-      jumlah[statusEfektif(t.status, lewatJatuhTempo(t, sekarang), t.is_alumni, t.total_nominal)] += 1
-    }
-    const { lunas, cicilan, belum_bayar: belumBayar, menunggak } = jumlah
-    return [
-      { label: STATUS_TAGIHAN.lunas.label,       value: lunas,      color: STATUS_TAGIHAN.lunas.solid       },
-      { label: STATUS_TAGIHAN.cicilan.label,     value: cicilan,    color: STATUS_TAGIHAN.cicilan.solid     },
-      { label: STATUS_TAGIHAN.belum_bayar.label, value: belumBayar, color: STATUS_TAGIHAN.belum_bayar.solid },
-      { label: STATUS_TAGIHAN.menunggak.label,   value: menunggak,  color: STATUS_TAGIHAN.menunggak.solid   },
-    ]
-  }, [periodTagihan, sekarang])
+  // berjudul "Jumlah Tagihan". Rumusnya di lib/laporanUtama, dipakai juga unduhan per komponen.
+  const komposisiTagihan = useMemo(() => komposisiPerTagihan(periodTagihan, sekarang), [periodTagihan, sekarang])
 
-  // Rumus yang sama dengan kartu tingkat pelunasan (Rupiah, hanya tagihan jatuh
-  // tempo), dikelompokkan menurut kelas saat tagihan dibuat — bukan kelas siswa
-  // sekarang, yang sudah bergeser setelah naik kelas. Tagihan tanpa snapshot kelas
-  // (tahun ajaran sebelum kolom itu ada) hanya ikut di angka sekolah.
-  const jenjangData = useMemo<(JenjangRingkas & { jenjang: string; terbayar: number; nilai: number })[]>(() => {
-    const perJenjang = new Map<string, typeof periodTagihan>()
-    for (const t of periodTagihan) {
-      const jenjang = t.kelas_id ? kelas.get(t.kelas_id)?.jenjang : undefined
-      if (!jenjang) continue
-      const daftar = perJenjang.get(jenjang)
-      if (daftar) daftar.push(t)
-      else perJenjang.set(jenjang, [t])
-    }
-    return Array.from(perJenjang.entries())
-      .map(([kode, rows]) => {
-        const r     = hitungRingkasan(rows, sekarang)
-        const siswa = hitungSiswaLunas(rows, sekarang)
-        return {
-          kode,
-          jenjang:      `Jenjang ${kode}`,
-          pct:          r.tingkatPelunasan,
-          terbayar:     r.terbayarJatuhTempo,
-          nilai:        r.nilaiJatuhTempo,
-          tunggakan:    r.tunggakanBerjalan,
-          siswaLunas:   siswa.lunas,
-          siswaDinilai: siswa.dinilai,
-        }
-      })
-      .sort((a, b) => a.kode.localeCompare(b.kode, 'id', { numeric: true }))
-  }, [periodTagihan, kelas, sekarang])
+  const jenjangData = useMemo<(JenjangRingkas & { jenjang: string; terbayar: number; nilai: number })[]>(
+    () => ringkasPerJenjang(periodTagihan, kelas, sekarang),
+    [periodTagihan, kelas, sekarang],
+  )
 
-  const komponenData = useMemo<(KomponenBelum & { jumlah: number })[]>(() => {
-    // Dikelompokkan per komponen_id dan diberi label nama hidup dari master komponen,
-    // bukan snapshot nama_komponen. Kalau memakai snapshot, komponen yang di-rename
-    // pecah jadi dua baris (nama lama dari tagihan lama, nama baru dari tagihan baru).
-    // Komponen yang sudah dihapus tidak punya komponen_id lagi — jatuh ke snapshot.
-    // `jumlah` = tagihan (dipakai PDF), `siswa` = siswa berbeda (dipakai kartu).
-    const byKomponen = new Map<string, { nama: string; jumlah: number; total: number; siswa: Set<string> }>()
-    for (const t of periodTagihan) {
-      if (t.status === 'lunas' || tanpaKewajiban(t.total_nominal)) continue
-      for (const item of t.tagihan_item) {
-        const kunci = item.komponen_id ?? `nama:${item.nama_komponen}`
-        const nama  = item.komponen?.nama ?? item.nama_komponen
-        const cur   = byKomponen.get(kunci) ?? { nama, jumlah: 0, total: 0, siswa: new Set<string>() }
-        cur.nama    = nama
-        cur.jumlah += 1
-        cur.total  += item.nominal
-        cur.siswa.add(t.siswa_id)
-        byKomponen.set(kunci, cur)
-      }
-    }
-    // Diurutkan berdasarkan nilai rupiah, bukan jumlah tagihan: setiap tagihan yang
-    // belum lunas memuat komponen yang sama, jadi jumlahnya selalu seri dan urutannya
-    // jatuh ke urutan penyisipan Map. Nilai rupiah juga yang ditonjolkan di kartu.
-    return Array.from(byKomponen.values())
-      .map(v => ({ nama: v.nama, jumlah: v.jumlah, total: v.total, siswa: v.siswa.size }))
-      .sort((a, b) => b.total - a.total || b.jumlah - a.jumlah)
-      .slice(0, 4)
-  }, [periodTagihan])
+  // `jumlah` = tagihan (dipakai PDF), `siswa` = siswa berbeda (dipakai kartu)
+  const komponenData = useMemo<(KomponenBelum & { jumlah: number })[]>(() => komponenBelumDibayar(periodTagihan), [periodTagihan])
 
   const hasData = periodTagihan.length > 0
 
   // ── Export Laporan Transaksi (Excel / PDF) ───────────────────────────────
 
-  const handleExportTransaksi = async (format: FormatEkspor) => {
+  // Per komponen: tiap pembayaran dibagi ke komponennya (aturan kas Pengeluaran); hanya
+  // pembayaran yang menyentuh komponen terpilih yang tampil, nominalnya bagian komponen itu
+  const handleExportTransaksi = async (format: FormatEkspor, pilihan: PilihanKomponen | null) => {
     if (!selectedFilter || !sekolahId) return
+    const pilih = pilihan ? new Set(pilihan.kunci) : null
+    const kolom = pilihan ? kolomKomponen(pilihan, opsiKomponen) : null
+    const pisah = !!pilihan && pisahPerKomponen(pilihan)
+    const info  = infoKomponen(pilihan)
+    const pesanKosong = pilihan ? 'Tidak ada transaksi komponen terpilih pada periode ini.' : 'Tidak ada transaksi pada periode ini.'
 
     const sortedMonths = [...selectedFilter.months].sort((a, b) => a.tahun - b.tahun || a.bulan - b.bulan)
     const first = sortedMonths[0]
     const last  = sortedMonths[sortedMonths.length - 1]
     if (!first || !last) {
-      setExportNotice('Tidak ada transaksi pada periode ini.')
+      setExportNotice(pesanKosong)
       return
     }
     // Rentang berdasarkan tanggal transaksi aktual (tanggal_bayar / created_at), bukan bulan tagihan —
@@ -483,7 +416,7 @@ function LaporanContent() {
       const kop = await siapkanKop(format)
       if (!kop) return
 
-      const NESTED_SELECT = 'id, bulan, tahun, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))'
+      const NESTED_SELECT = `id, bulan, tahun, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), ${ITEM_EKSPOR_SELECT}`
 
       // pembayaran.tagihan_id tidak terdaftar sebagai foreign key di PostgREST schema cache,
       // jadi tagihan tidak bisa di-embed langsung di sini — harus di-fetch terpisah lalu digabung manual
@@ -491,7 +424,7 @@ function LaporanContent() {
       const [{ data: pembData, error: pembErr }, { data: verifData, error: verifErr }, paketByKelas] = await Promise.all([
         supabase
           .from('pembayaran')
-          .select('id, jumlah, metode, tanggal_bayar, gateway_trx_id, tagihan_id')
+          .select('id, jumlah, metode, tanggal_bayar, gateway_trx_id, tagihan_id, alokasi')
           .eq('sekolah_id', sekolahId)
           .gte('tanggal_bayar', startIso)
           .lt('tanggal_bayar', endIso)
@@ -499,7 +432,7 @@ function LaporanContent() {
           .limit(5000),
         supabase
           .from('verifikasi_pembayaran')
-          .select(`id, nominal_diajukan, created_at, tagihan:tagihan_id(${NESTED_SELECT})`)
+          .select(`id, nominal_diajukan, created_at, tagihan_id, pilihan, tagihan:tagihan_id(${NESTED_SELECT})`)
           .eq('sekolah_id', sekolahId)
           .eq('status', 'menunggu')
           .gte('created_at', startIso)
@@ -540,55 +473,121 @@ function LaporanContent() {
         )
       }
 
+      // Bukti transfer dibagi menurut pilihan wali, yang bisa mencakup tagihan bulan lain —
+      // rincian semua tagihan itu dimuat sekali
+      const itemsBukti = new Map<string, ItemTagihanKas[]>()
+      if (pilih) {
+        const idBukti = Array.from(new Set(verifList.flatMap(v => tagihanBukti(v))))
+        if (idBukti.length > 0) {
+          const { data: itemData, error: itemErr } = await supabase
+            .from('tagihan_item')
+            .select('id, tagihan_id, nama_komponen, nominal, potongan, komponen:komponen_id(nama)')
+            .in('tagihan_id', idBukti)
+            .limit(5000)
+          if (itemErr) console.error('[Export Laporan Transaksi] gagal memuat rincian bukti transfer:', itemErr)
+          const perTagihan = new Map<string, ItemBuktiRaw[]>()
+          for (const i of (itemData ?? []) as unknown as ItemBuktiRaw[]) {
+            const daftar = perTagihan.get(i.tagihan_id)
+            if (daftar) daftar.push(i)
+            else perTagihan.set(i.tagihan_id, [i])
+          }
+          for (const [id, daftar] of perTagihan) itemsBukti.set(id, itemKas(daftar))
+        }
+      }
+
+      /** Bagian komponen terpilih dari satu transaksi; null kalau tidak menyentuhnya */
+      const bagianTerpilih = (bagian: Map<string, number>) => {
+        if (!pilih || !kolom) return null
+        const nominal = jumlahKunci(bagian, pilih)
+        if (nominal <= 0) return null
+        return {
+          nominal,
+          perKolom: kolom.map(k => jumlahKunci(bagian, k.kunci)),
+          terima:   (kunci: string) => pilih.has(kunci) && (bagian.get(kunci) ?? 0) > 0,
+        }
+      }
+
       const rows: ExportRow[] = []
 
       for (const p of pembList) {
         const tagihan = tagihanMap.get(p.tagihan_id)
         if (!tagihan) continue
+        const kelasId = tagihan.siswa?.kelas?.id ?? null
+        const biaya   = p.gateway_trx_id ? (feeMap.get(p.gateway_trx_id) ?? 0) : 0
+        let nominal   = p.jumlah
+        let perKolom: number[] = []
+        let jenis     = resolveJenisLabel(tagihan.tagihan_item, tagihan.bulan, tagihan.tahun, kelasId, paketByKelas)
+        let biayaAdmin = biaya
+        if (pilih) {
+          const b = bagianTerpilih(bagiKeKunci(p, itemKas(tagihan.tagihan_item)))
+          if (!b) continue
+          nominal  = b.nominal
+          perKolom = b.perKolom
+          jenis    = resolveJenisTerpilih(tagihan.tagihan_item, tagihan.bulan, tagihan.tahun, kelasId, paketByKelas, b.terima)
+          // Biaya admin satu transaksi dibagi sebanding bagian komponen terpilih
+          biayaAdmin = p.jumlah > 0 ? Math.round((biaya * b.nominal) / p.jumlah) : 0
+        }
         rows.push({
           tanggal:         p.tanggal_bayar,
           nisn:            nisnOrNis(tagihan.siswa),
           nama:            tagihan.siswa?.nama ?? '-',
           kelas:           tagihan.siswa?.kelas?.nama ?? '-',
-          jenisPembayaran: resolveJenisLabel(tagihan.tagihan_item, tagihan.bulan, tagihan.tahun, tagihan.siswa?.kelas?.id ?? null, paketByKelas),
+          jenisPembayaran: jenis,
           metode:          metodeLabel(p.metode),
-          nominal:         p.jumlah,
-          biayaAdmin:      p.gateway_trx_id ? (feeMap.get(p.gateway_trx_id) ?? 0) : 0,
+          nominal,
+          perKolom,
+          biayaAdmin,
           status:          'Berhasil',
         })
       }
 
       for (const v of verifList) {
         if (!v.tagihan) continue
+        const kelasId = v.tagihan.siswa?.kelas?.id ?? null
+        let nominal   = v.nominal_diajukan
+        let perKolom: number[] = []
+        let jenis     = resolveJenisLabel(v.tagihan.tagihan_item, v.tagihan.bulan, v.tagihan.tahun, kelasId, paketByKelas)
+        if (pilih) {
+          const b = bagianTerpilih(bagiBuktiKeKunci(v, itemsBukti))
+          if (!b) continue
+          nominal  = b.nominal
+          perKolom = b.perKolom
+          jenis    = resolveJenisTerpilih(v.tagihan.tagihan_item, v.tagihan.bulan, v.tagihan.tahun, kelasId, paketByKelas, b.terima)
+        }
         rows.push({
           tanggal:         v.created_at,
           nisn:            nisnOrNis(v.tagihan.siswa),
           nama:            v.tagihan.siswa?.nama ?? '-',
           kelas:           v.tagihan.siswa?.kelas?.nama ?? '-',
-          jenisPembayaran: resolveJenisLabel(v.tagihan.tagihan_item, v.tagihan.bulan, v.tagihan.tahun, v.tagihan.siswa?.kelas?.id ?? null, paketByKelas),
+          jenisPembayaran: jenis,
           metode:          'Transfer Manual',
-          nominal:         v.nominal_diajukan,
+          nominal,
+          perKolom,
           biayaAdmin:      0,
           status:          'Menunggu Verifikasi',
         })
       }
 
       if (rows.length === 0) {
-        setExportNotice('Tidak ada transaksi pada periode ini.')
+        setExportNotice(pesanKosong)
         return
       }
 
       rows.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime())
 
+      // Dipisah: kolom Nominal diganti satu kolom per komponen di bawah judul "Nominal"
+      const kolomNominal = pisah && kolom ? kolom.map(k => k.label) : ['Nominal']
+      const n = kolomNominal.length
       const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
       await unduhTabel({
         format,
-        namaFile:    `Laporan_Transaksi_${periodeLabel}`,
+        namaFile:    `Laporan_Transaksi_${periodeLabel}${info.akhiran}`,
         namaSheet:   'Laporan Transaksi',
         judul:       'Laporan Transaksi',
-        keterangan:  `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel} (menurut tanggal transaksi)`,
+        keterangan:  `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel} (menurut tanggal transaksi)${info.keterangan}`,
         kop,
-        headers:     ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', 'Nominal', 'Biaya Admin', 'Total Bayar', 'Status'],
+        headers:     ['No', 'Tanggal Transaksi', 'ID Transaksi', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Pembayaran', 'Metode', ...kolomNominal, 'Biaya Admin', 'Total Bayar', 'Status'],
+        grupKepala:  pisah ? [{ label: 'Nominal', dari: 8, jumlah: n }] : undefined,
         baris:       rows.map((r, i) => [
           i + 1,
           formatTanggalExcel(r.tanggal),
@@ -598,13 +597,13 @@ function LaporanContent() {
           r.kelas,
           r.jenisPembayaran,
           r.metode,
-          r.nominal,
+          ...(pisah ? r.perKolom : [r.nominal]),
           r.biayaAdmin,
           r.nominal + r.biayaAdmin,
           r.status,
         ]),
-        lebarKolom:  [5, 16, 16, 14, 24, 10, 26, 16, 14, 12, 14, 18],
-        kolomRupiah: [8, 9, 10],
+        lebarKolom:  [5, 16, 16, 14, 24, 10, 26, 16, ...kolomNominal.map(() => 14), 12, 14, 18],
+        kolomRupiah: Array.from({ length: n + 2 }, (_, i) => 8 + i),
       })
     } finally {
       setExportingTransaksi(false)
@@ -616,15 +615,34 @@ function LaporanContent() {
   // karena tunggakan bersifat akumulatif (piutang lintas bulan), bukan snapshot satu periode.
   // Isinya sama persis dengan kartu Umur tunggakan: predikat adalahTunggakan yang sama.
 
-  const handleExportTunggakan = async (format: FormatEkspor) => {
+  // Per komponen: tagihan diproyeksikan ke komponen terpilih lebih dulu, jadi tagihan yang
+  // SPP-nya sudah lunas tidak ikut walau komponen lainnya masih menunggak
+  const handleExportTunggakan = async (format: FormatEkspor, pilihan: PilihanKomponen | null) => {
     if (!sekolahId) return
+    const pilih = pilihan ? new Set(pilihan.kunci) : null
+    const kolom = pilihan ? kolomKomponen(pilihan, opsiKomponen) : null
+    const pisah = !!pilihan && pisahPerKomponen(pilihan)
+    const info  = infoKomponen(pilihan)
+    const pesanKosong = pilihan ? 'Tidak ada tunggakan komponen terpilih saat ini.' : 'Tidak ada tunggakan saat ini.'
 
-    const tunggakanRows     = metrikRows.filter(t => adalahTunggakan(t, sekarang))
+    const tunggakanRows     = (pilih ? proyeksiSemua(metrikRows, rincianPerTagihan, pilih) : metrikRows)
+      .filter(t => adalahTunggakan(t, sekarang))
     const tunggakanIds      = tunggakanRows.map(t => t.id)
     const terbayarPerTagihan = new Map(tunggakanRows.map(t => [t.id, t.terbayar]))
+    const proyeksiPerTagihan = new Map(tunggakanRows.map(t => [t.id, t]))
+
+    /** Sisa tiap kolom komponen satu tagihan */
+    const sisaPerKolom = (id: string): number[] => {
+      const r = rincianPerTagihan.get(id)
+      return (kolom ?? []).map(k => {
+        if (!r) return 0
+        const j = jumlahDalam(r, k.kunci)
+        return Math.max(0, j.ditagih - j.terbayar)
+      })
+    }
 
     if (tunggakanIds.length === 0) {
-      setExportNotice('Tidak ada tunggakan saat ini.')
+      setExportNotice(pesanKosong)
       return
     }
 
@@ -636,7 +654,7 @@ function LaporanContent() {
       const [{ data: tagihanData, error }, paketByKelas] = await Promise.all([
         supabase
           .from('tagihan')
-          .select('id, bulan, tahun, status, total_nominal, jatuh_tempo, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)),tagihan_item(komponen_id, nama_komponen, komponen:komponen_id(jenis))')
+          .select(`id, bulan, tahun, status, total_nominal, jatuh_tempo, siswa:siswa_id(nama, nis, nisn, kelas:kelas_id(id, nama)), ${ITEM_EKSPOR_SELECT}`)
           .in('id', tunggakanIds)
           .limit(5000),
         buildPaketByKelasMap(sekolahId),
@@ -647,36 +665,62 @@ function LaporanContent() {
       const detailList = (tagihanData ?? []) as unknown as TunggakanTagihanRaw[]
 
       const rows = detailList
-        .map(t => ({
-          nisn:       nisnOrNis(t.siswa),
-          nama:       t.siswa?.nama ?? '-',
-          kelas:      t.siswa?.kelas?.nama ?? '-',
-          jenis:      resolveJenisLabel(t.tagihan_item, t.bulan, t.tahun, t.siswa?.kelas?.id ?? null, paketByKelas),
-          periode:    `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}`,
-          nominal:    t.total_nominal - (terbayarPerTagihan.get(t.id) ?? 0),
-          jatuhTempo: getJatuhTempoTanggal(t),
-          status:     t.status === 'cicilan' ? 'Cicilan' : 'Belum Bayar',
-          bulan:      t.bulan,
-          tahun:      t.tahun,
-        }))
+        .map(t => {
+          const kelasId  = t.siswa?.kelas?.id ?? null
+          const proyeksi = proyeksiPerTagihan.get(t.id)
+          const perKolom = pisah ? sisaPerKolom(t.id) : []
+          const r        = rincianPerTagihan.get(t.id)
+          // Per komponen: yang disebut hanya komponen terpilih yang masih bersisa
+          const masihBersisa = (kunci: string) => {
+            const b = r?.komponen.get(kunci)
+            return !!pilih?.has(kunci) && !!b && b.ditagih > b.terbayar
+          }
+          return {
+            nisn:       nisnOrNis(t.siswa),
+            nama:       t.siswa?.nama ?? '-',
+            kelas:      t.siswa?.kelas?.nama ?? '-',
+            jenis:      pilih
+              ? resolveJenisTerpilih(t.tagihan_item, t.bulan, t.tahun, kelasId, paketByKelas, masihBersisa)
+              : resolveJenisLabel(t.tagihan_item, t.bulan, t.tahun, kelasId, paketByKelas),
+            periode:    `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}`,
+            nominal:    pisah
+              ? perKolom.reduce((s, x) => s + x, 0)
+              : pilih && proyeksi
+                ? proyeksi.total_nominal - proyeksi.terbayar
+                : t.total_nominal - (terbayarPerTagihan.get(t.id) ?? 0),
+            perKolom,
+            jatuhTempo: getJatuhTempoTanggal(t),
+            status:     (pilih ? proyeksi?.status : t.status) === 'cicilan' ? 'Cicilan' : 'Belum Bayar',
+            bulan:      t.bulan,
+            tahun:      t.tahun,
+          }
+        })
         .sort((a, b) => a.tahun - b.tahun || a.bulan - b.bulan || a.nama.localeCompare(b.nama, 'id'))
 
       if (rows.length === 0) {
-        setExportNotice('Tidak ada tunggakan saat ini.')
+        setExportNotice(pesanKosong)
         return
       }
 
+      // Dipisah: satu kolom per komponen + total, di bawah judul "Nominal Tunggakan"
+      const kolomNominal = pisah && kolom ? [...kolom.map(k => k.label), 'Total'] : ['Nominal Tunggakan']
+      const n = kolomNominal.length
       await unduhTabel({
         format,
-        namaFile:    `Laporan_Tunggakan_${formatDateLocal(now)}`,
+        namaFile:    `Laporan_Tunggakan_${formatDateLocal(now)}${info.akhiran}`,
         namaSheet:   'Laporan Tunggakan',
         judul:       'Laporan Tunggakan',
-        keterangan:  `Semua tunggakan yang sudah lewat jatuh tempo per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+        keterangan:  `Semua tunggakan yang sudah lewat jatuh tempo per ${now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}${info.keterangan}`,
         kop,
-        headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', 'Nominal Tunggakan', 'Jatuh Tempo', 'Status'],
-        baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode, r.nominal, r.jatuhTempo, r.status]),
-        lebarKolom:  [5, 14, 24, 10, 32, 16, 18, 14, 14],
-        kolomRupiah: [6],
+        headers:     ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Jenis Tunggakan', 'Bulan/Periode', ...kolomNominal, 'Jatuh Tempo', 'Status'],
+        grupKepala:  pisah ? [{ label: 'Nominal Tunggakan', dari: 6, jumlah: n }] : undefined,
+        baris:       rows.map((r, i) => [
+          i + 1, r.nisn, r.nama, r.kelas, r.jenis, r.periode,
+          ...(pisah ? [...r.perKolom, r.nominal] : [r.nominal]),
+          r.jatuhTempo, r.status,
+        ]),
+        lebarKolom:  [5, 14, 24, 10, 32, 16, ...kolomNominal.map(() => (pisah ? 15 : 18)), 14, 14],
+        kolomRupiah: Array.from({ length: n }, (_, i) => 6 + i),
       })
     } finally {
       setExportingTunggakan(false)
@@ -764,8 +808,13 @@ function LaporanContent() {
   // Angkatan = tahun lulus dikurangi jumlah level jenjang (pola sama dgn Laporan Siswa Aktif,
   // dihitung dari sisi lulus, bukan sisi aktif).
 
-  const handleExportAlumni = async (format: FormatEkspor) => {
+  // Per komponen: dihitung dari tagihan dan pembayaran yang sudah dimuat halaman ini
+  // (lib/komponenLaporan), bukan query total — totalnya perlu dipecah per komponen
+  const handleExportAlumni = async (format: FormatEkspor, pilihan: PilihanKomponen | null) => {
     if (!sekolahId) return
+    const kolom = pilihan ? kolomKomponen(pilihan, opsiKomponen) : null
+    const pisah = !!pilihan && pisahPerKomponen(pilihan)
+    const info  = infoKomponen(pilihan)
 
     setExportingAlumni(true)
     try {
@@ -796,27 +845,53 @@ function LaporanContent() {
         return
       }
 
-      const [{ data: tagihanData, error: tagihanErr }, { data: pembData, error: pembErr }] = await Promise.all([
-        supabase.from('tagihan').select('siswa_id, total_nominal').in('siswa_id', alumniIds).limit(20000),
-        supabase.from('pembayaran').select('siswa_id, jumlah').in('siswa_id', alumniIds).limit(20000),
-      ])
-      if (tagihanErr) console.error('[Export Laporan Alumni] gagal memuat tagihan:', tagihanErr)
-      if (pembErr)    console.error('[Export Laporan Alumni] gagal memuat pembayaran:', pembErr)
+      // Total tagihan, terbayar, dan sisa per alumni — satu kelompok per kolom komponen
+      type NilaiAlumni = { tagihan: number; bayar: number; sisa: number }
+      const nilaiPerAlumni = new Map<string, NilaiAlumni[]>()
 
-      const totalTagihanMap = new Map<string, number>()
-      for (const t of ((tagihanData ?? []) as { siswa_id: string; total_nominal: number }[])) {
-        totalTagihanMap.set(t.siswa_id, (totalTagihanMap.get(t.siswa_id) ?? 0) + t.total_nominal)
+      if (!kolom) {
+        const [{ data: tagihanData, error: tagihanErr }, { data: pembData, error: pembErr }] = await Promise.all([
+          supabase.from('tagihan').select('siswa_id, total_nominal').in('siswa_id', alumniIds).limit(20000),
+          supabase.from('pembayaran').select('siswa_id, jumlah').in('siswa_id', alumniIds).limit(20000),
+        ])
+        if (tagihanErr) console.error('[Export Laporan Alumni] gagal memuat tagihan:', tagihanErr)
+        if (pembErr)    console.error('[Export Laporan Alumni] gagal memuat pembayaran:', pembErr)
+
+        const totalTagihanMap = new Map<string, number>()
+        for (const t of ((tagihanData ?? []) as { siswa_id: string; total_nominal: number }[])) {
+          totalTagihanMap.set(t.siswa_id, (totalTagihanMap.get(t.siswa_id) ?? 0) + t.total_nominal)
+        }
+        const totalBayarMap = new Map<string, number>()
+        for (const p of ((pembData ?? []) as { siswa_id: string; jumlah: number }[])) {
+          totalBayarMap.set(p.siswa_id, (totalBayarMap.get(p.siswa_id) ?? 0) + p.jumlah)
+        }
+        for (const id of alumniIds) {
+          const tagihan = totalTagihanMap.get(id) ?? 0
+          const bayar   = totalBayarMap.get(id) ?? 0
+          nilaiPerAlumni.set(id, [{ tagihan, bayar, sisa: tagihan - bayar }])
+        }
+      } else {
+        const idAlumni = new Set(alumniIds)
+        for (const t of metrikRows) {
+          if (!idAlumni.has(t.siswa_id)) continue
+          const r = rincianPerTagihan.get(t.id)
+          if (!r) continue
+          const nilai = nilaiPerAlumni.get(t.siswa_id) ?? kolom.map(() => ({ tagihan: 0, bayar: 0, sisa: 0 }))
+          kolom.forEach((k, i) => {
+            const j = jumlahDalam(r, k.kunci)
+            nilai[i].tagihan += j.ditagih
+            nilai[i].bayar   += j.terbayar
+            nilai[i].sisa     = nilai[i].tagihan - nilai[i].bayar
+          })
+          nilaiPerAlumni.set(t.siswa_id, nilai)
+        }
       }
-      const totalBayarMap = new Map<string, number>()
-      for (const p of ((pembData ?? []) as { siswa_id: string; jumlah: number }[])) {
-        totalBayarMap.set(p.siswa_id, (totalBayarMap.get(p.siswa_id) ?? 0) + p.jumlah)
-      }
+      const nolSemua = (kolom ?? [null]).map(() => ({ tagihan: 0, bayar: 0, sisa: 0 }))
 
       const rows = alumniList
         .map(a => {
-          const totalTagihan  = totalTagihanMap.get(a.id) ?? 0
-          const totalBayar    = totalBayarMap.get(a.id) ?? 0
-          const sisa          = totalTagihan - totalBayar
+          const nilai         = nilaiPerAlumni.get(a.id) ?? nolSemua
+          const sisa          = nilai.reduce((s, v) => s + v.sisa, 0)
           const tahunLulusNum = a.tahun_lulus ? parseInt(a.tahun_lulus, 10) : null
           const angkatan      = tahunLulusNum ? String(tahunLulusNum - jenjangLevels.length) : '-'
           return {
@@ -824,25 +899,31 @@ function LaporanContent() {
             nama:       a.nama,
             angkatan,
             tahunLulus: a.tahun_lulus ?? '-',
-            totalTagihan,
-            totalBayar,
-            sisa,
+            nilai,
             status: sisa === 0 ? 'Lunas' : 'Belum Lunas',
           }
         })
         .sort((a, b) => a.tahunLulus.localeCompare(b.tahunLulus) || a.nama.localeCompare(b.nama, 'id'))
 
+      // Dipisah: kelompok Tagihan/Terbayar/Sisa di bawah nama tiap komponen
+      const kelompok   = pisah && kolom ? kolom : null
+      const kolomNilai = kelompok ? kelompok.flatMap(() => ['Tagihan', 'Terbayar', 'Sisa']) : ['Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan']
       await unduhTabel({
         format,
-        namaFile:    `Laporan_Alumni_${formatDateLocal(now)}`,
+        namaFile:    `Laporan_Alumni_${formatDateLocal(now)}${info.akhiran}`,
         namaSheet:   'Laporan Alumni',
         judul:       'Laporan Alumni',
-        keterangan:  'Seluruh alumni yang lulus · total dari semua tagihan sejak masuk hingga lulus',
+        keterangan:  `Seluruh alumni yang lulus · total dari semua tagihan sejak masuk hingga lulus${info.keterangan}`,
         kop,
-        headers:     ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', 'Total Tagihan', 'Total Terbayar', 'Sisa Tunggakan', 'Status Pelunasan'],
-        baris:       rows.map((r, i) => [i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus, r.totalTagihan, r.totalBayar, r.sisa, r.status]),
-        lebarKolom:  [5, 14, 24, 10, 12, 16, 16, 16, 16],
-        kolomRupiah: [5, 6, 7],
+        headers:     ['No', 'NISN', 'Nama Siswa', 'Angkatan', 'Tahun Lulus', ...kolomNilai, 'Status Pelunasan'],
+        grupKepala:  kelompok?.map((k, i) => ({ label: k.label, dari: 5 + i * 3, jumlah: 3 })),
+        baris:       rows.map((r, i) => [
+          i + 1, r.nisn, r.nama, r.angkatan, r.tahunLulus,
+          ...r.nilai.flatMap(v => [v.tagihan, v.bayar, v.sisa]),
+          r.status,
+        ]),
+        lebarKolom:  [5, 14, 24, 10, 12, ...kolomNilai.map(() => (kelompok ? 14 : 16)), 16],
+        kolomRupiah: kolomNilai.map((_, i) => 5 + i),
       })
     } finally {
       setExportingAlumni(false)
@@ -855,8 +936,14 @@ function LaporanContent() {
   // dihitung dari tagihan yg bulan/tahunnya masuk rentang tahun ajaran tsb (pola monthsInRange
   // yang sama dipakai utk filter dropdown periode).
 
-  const handleExportKeuanganTahunan = async (format: FormatEkspor) => {
+  // Per komponen: target/realisasi dipecah lewat rincian per tagihan yang sudah dimuat halaman
+  // ini; transaksi dihitung kalau sebagian uangnya jatuh ke komponen terpilih
+  const handleExportKeuanganTahunan = async (format: FormatEkspor, pilihan: PilihanKomponen | null) => {
     if (!sekolahId) return
+    const pilih = pilihan ? new Set(pilihan.kunci) : null
+    const kolom = pilihan ? kolomKomponen(pilihan, opsiKomponen) : null
+    const pisah = !!pilihan && pisahPerKomponen(pilihan)
+    const info  = infoKomponen(pilihan)
 
     setExportingKeuanganTahunan(true)
     try {
@@ -890,36 +977,71 @@ function LaporanContent() {
       const paidMap = new Map<string, number>()
       for (const p of pembList) paidMap.set(p.tagihan_id, (paidMap.get(p.tagihan_id) ?? 0) + p.jumlah)
 
+      type NilaiTahun = { target: number; realisasi: number; tunggakan: number }
+
+      /** Per komponen: dari tagihan yang sudah dimuat halaman, dipecah per kolom komponen */
+      const nilaiPerKomponen = (monthSet: Set<string>, pilih: ReadonlySet<string>, kolom: KolomKomponen[]) => {
+        const nilai: NilaiTahun[] = kolom.map(() => ({ target: 0, realisasi: 0, tunggakan: 0 }))
+        let jumlahTransaksi = 0
+        for (const t of metrikRows) {
+          if (!monthSet.has(periodKey(t.bulan, t.tahun))) continue
+          const r = rincianPerTagihan.get(t.id)
+          if (!r) continue
+          kolom.forEach((k, i) => {
+            const j = jumlahDalam(r, k.kunci)
+            nilai[i].target    += j.ditagih
+            nilai[i].realisasi += j.terbayar
+          })
+          jumlahTransaksi += r.bayar.filter(disentuh => [...disentuh].some(kunci => pilih.has(kunci))).length
+        }
+        for (const v of nilai) v.tunggakan = v.target - v.realisasi
+        return { nilai, jumlahTransaksi }
+      }
+
       const rows = taList.map(ta => {
         const monthSet = new Set(monthsInRange(ta.tanggal_mulai, ta.tanggal_selesai).map(m => periodKey(m.bulan, m.tahun)))
-        const tagihanTA = tagihanList.filter(t => monthSet.has(periodKey(t.bulan, t.tahun)))
-        const tagihanIds = new Set(tagihanTA.map(t => t.id))
+        let nilai: NilaiTahun[]
+        let jumlahTransaksi: number
 
-        const totalTarget    = tagihanTA.reduce((s, t) => s + t.total_nominal, 0)
-        const totalRealisasi = tagihanTA.reduce((s, t) => s + (paidMap.get(t.id) ?? 0), 0)
-        const jumlahTransaksi = pembList.filter(p => tagihanIds.has(p.tagihan_id)).length
+        if (pilih && kolom) {
+          ({ nilai, jumlahTransaksi } = nilaiPerKomponen(monthSet, pilih, kolom))
+        } else {
+          const tagihanTA = tagihanList.filter(t => monthSet.has(periodKey(t.bulan, t.tahun)))
+          const tagihanIds = new Set(tagihanTA.map(t => t.id))
+
+          const totalTarget    = tagihanTA.reduce((s, t) => s + t.total_nominal, 0)
+          const totalRealisasi = tagihanTA.reduce((s, t) => s + (paidMap.get(t.id) ?? 0), 0)
+          jumlahTransaksi = pembList.filter(p => tagihanIds.has(p.tagihan_id)).length
+          nilai = [{ target: totalTarget, realisasi: totalRealisasi, tunggakan: totalTarget - totalRealisasi }]
+        }
 
         return {
           tahunAjaran:    ta.nama,
-          totalTarget,
-          totalRealisasi,
-          totalTunggakan: totalTarget - totalRealisasi,
+          nilai,
           jumlahTransaksi,
           statusAudit:    ta.is_aktif ? 'Berjalan' : 'Terverifikasi',
         }
       })
 
+      // Dipisah: kelompok Target/Realisasi/Tunggakan di bawah nama tiap komponen
+      const kelompok   = pisah && kolom ? kolom : null
+      const kolomNilai = kelompok ? kelompok.flatMap(() => ['Target', 'Realisasi', 'Tunggakan']) : ['Total Target', 'Total Realisasi', 'Total Tunggakan']
       await unduhTabel({
         format,
-        namaFile:    `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}`,
+        namaFile:    `Laporan_Keuangan_Tahunan_${formatDateLocal(now)}${info.akhiran}`,
         namaSheet:   'Keuangan Tahunan',
         judul:       'Laporan Keuangan Tahunan',
-        keterangan:  'Semua tahun ajaran · target = tagihan yang terbit, realisasi = yang sudah dibayar',
+        keterangan:  `Semua tahun ajaran · target = tagihan yang terbit, realisasi = yang sudah dibayar${info.keterangan}`,
         kop,
-        headers:     ['No', 'Tahun Ajaran', 'Total Target', 'Total Realisasi', 'Total Tunggakan', 'Jumlah Transaksi', 'Status Audit'],
-        baris:       rows.map((r, i) => [i + 1, r.tahunAjaran, r.totalTarget, r.totalRealisasi, r.totalTunggakan, r.jumlahTransaksi, r.statusAudit]),
-        lebarKolom:  [5, 14, 16, 16, 16, 16, 14],
-        kolomRupiah: [2, 3, 4],
+        headers:     ['No', 'Tahun Ajaran', ...kolomNilai, 'Jumlah Transaksi', 'Status Audit'],
+        grupKepala:  kelompok?.map((k, i) => ({ label: k.label, dari: 2 + i * 3, jumlah: 3 })),
+        baris:       rows.map((r, i) => [
+          i + 1, r.tahunAjaran,
+          ...r.nilai.flatMap(v => [v.target, v.realisasi, v.tunggakan]),
+          r.jumlahTransaksi, r.statusAudit,
+        ]),
+        lebarKolom:  [5, 14, ...kolomNilai.map(() => (kelompok ? 15 : 16)), 16, 14],
+        kolomRupiah: kolomNilai.map((_, i) => 2 + i),
       })
     } finally {
       setExportingKeuanganTahunan(false)
@@ -930,141 +1052,85 @@ function LaporanContent() {
   // Merangkum seluruh blok "Ringkasan periode ini" yang tampil di layar (kartu metrik,
   // komposisi status, tagihan vs realisasi, umur tunggakan, pelunasan per jenjang,
   // komponen belum dibayar) jadi satu dokumen PDF sesuai periode di dropdown atas.
+  // Per komponen: rumus yang sama atas tagihan yang diproyeksikan ke komponen terpilih;
+  // dipisah = satu kolom per komponen ditambah kolom Total di setiap tabel.
 
-  const handleGenerateLaporanUtama = async () => {
+  const handleGenerateLaporanUtama = async (pilihan: PilihanKomponen | null) => {
     if (!selectedFilter || !sekolahId) return
-    if (!hasData) {
-      setExportNotice('Tidak ada data pada periode ini untuk digenerate.')
-      return
+
+    let kolom: KolomUtama[]
+    let gabungan: MetrikUtama
+    if (!pilihan) {
+      if (!hasData) {
+        setExportNotice('Tidak ada data pada periode ini untuk digenerate.')
+        return
+      }
+      // Angka yang sama dengan yang tampil di layar
+      gabungan = { ringkasan, pemasukan, komposisiTagihan, tren, umur, jenjang: jenjangData, komponen: komponenData }
+      kolom    = [{ label: 'Nilai', m: gabungan }]
+    } else {
+      const akhir   = akhirTA ? new Date(akhirTA) : sekarang
+      const metrik  = (pilih: ReadonlySet<string>) =>
+        hitungMetrikUtama(proyeksiSemua(metrikRows, rincianPerTagihan, pilih), dalamPeriode, kelas, sekarang, akhir)
+      const pilih   = new Set(pilihan.kunci)
+      if (!proyeksiSemua(metrikRows, rincianPerTagihan, pilih).some(dalamPeriode)) {
+        setExportNotice('Tidak ada tagihan komponen terpilih pada periode ini untuk digenerate.')
+        return
+      }
+      gabungan = metrik(pilih)
+      kolom    = pisahPerKomponen(pilihan)
+        ? [...kolomKomponen(pilihan, opsiKomponen).map(k => ({ label: k.label, m: metrik(k.kunci) })), { label: 'Total', m: gabungan }]
+        : [{ label: 'Total', m: gabungan }]
     }
 
     setGeneratingUtama(true)
     try {
       const dataKop = await siapkanKop('pdf')
       if (!dataKop) return
-
-      const doc = new jsPDF()
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const navy: [number, number, number] = [26, 44, 78]
-      // Tabel di dokumen ini memakai margin bawaan jspdf-autotable (40 pt); ujung garis
-      // kop disamakan dengan tepi tabelnya
-      const tepi = 40 / doc.internal.scaleFactor
-      const kop  = tataKop(doc, dataKop, { atas: ATAS_KOP, kiri: tepi, kanan: pageWidth - tepi })
-      // Halaman baru (manual maupun tabel bersambung) mulai di bawah kop
-      const awalHalaman = kop.bawah + JARAK_ISI
-      const margin = { top: awalHalaman }
-      let y = judulLaporanPdf(doc, kop.bawah, 'Laporan Utama', `Periode: ${selectedFilter.label} - ${selectedFilter.sublabel}`) + 2
-
-      autoTable(doc, {
-        startY: y,
-        margin,
-        head: [['Ringkasan', 'Nilai']],
-        body: [
-          ['Total Pemasukan', fmt(pemasukan.total)],
-          ['Dari Transaksi', `${pemasukan.transaksi} transaksi`],
-          ['Tingkat Pelunasan (tagihan jatuh tempo)', ringkasan.tingkatPelunasan === null
-            ? 'Belum ada tagihan jatuh tempo'
-            : `${fmtPersen(ringkasan.tingkatPelunasan)} (${fmt(ringkasan.terbayarJatuhTempo)} dari ${fmt(ringkasan.nilaiJatuhTempo)})`],
-          ['Ketepatan Waktu', ringkasan.ketepatanWaktu === null
-            ? 'Belum ada tagihan jatuh tempo'
-            : `${fmtPersen(ringkasan.ketepatanWaktu)} (${ringkasan.jumlahTepatWaktu} dari ${ringkasan.jumlahDinilai} tagihan)`],
-          ['Rata-rata Keterlambatan', ringkasan.rataHariTelat === null
-            ? 'Tidak ada yang telat'
-            : `${Math.round(ringkasan.rataHariTelat)} hari (${ringkasan.jumlahTelat} tagihan lunas telat)`],
-          ['Tunggakan (lewat jatuh tempo)', `${fmt(ringkasan.tunggakanBerjalan)} (${ringkasan.siswaMenunggak} siswa)`],
-          ['Akan Masuk (belum jatuh tempo)', fmt(ringkasan.akanMasuk)],
-        ],
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-      })
-      y = getFinalY(doc) + 10
-
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-      doc.text('Komposisi Status Pembayaran', 14, y)
-      y += 4
-      autoTable(doc, {
-        startY: y,
-        margin,
-        head: [['Status', 'Jumlah Tagihan']],
-        body: komposisiTagihan.map(d => [d.label, String(d.value)]),
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-      })
-      y = getFinalY(doc) + 10
-
-      if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-      doc.text('Tagihan vs Realisasi per Bulan Jatuh Tempo (12 Bulan Terakhir)', 14, y)
-      y += 4
-      autoTable(doc, {
-        startY: y,
-        margin,
-        // Tagihan tiap bulan sudah digabung dengan tunggakan bulan sebelumnya; kolom
-        // "Termasuk Tunggakan" memperlihatkan porsinya supaya tidak dijumlahkan antarbulan
-        head: [['Bulan', 'Tagihan', 'Termasuk Tunggakan', 'Terbayar', 'Pelunasan']],
-        body: tren.map(t => [
-          `${BULAN_NAMES_FULL[t.bulan]} ${t.tahun}${t.berjalan ? ' (berjalan)' : ''}`,
-          fmt(t.tagihan),
-          t.tunggakanLama > 0 ? fmt(t.tunggakanLama) : '-',
-          fmt(t.terbayar),
-          t.tagihan > 0 ? `${Math.round((t.terbayar / t.tagihan) * 100)}%` : '-',
-        ]),
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-      })
-      y = getFinalY(doc) + 10
-
-      if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-      doc.text('Umur Tunggakan (semua tunggakan per hari ini)', 14, y)
-      y += 4
-      autoTable(doc, {
-        startY: y,
-        margin,
-        // Tiap rentang sudah digabung dengan tunggakan yang lebih lama; kolom "Termasuk
-        // Lebih Lama" memperlihatkan porsinya supaya nominal tidak dijumlahkan antarbaris
-        head: [['Umur', 'Nominal', 'Termasuk Lebih Lama', 'Jumlah Siswa', 'Jumlah Tagihan']],
-        body: umur.map(k => [
-          teksPdf(k.label), fmt(k.nominal), k.lebihLama > 0 ? fmt(k.lebihLama) : '-',
-          String(k.jumlahSiswa), String(k.jumlahTagihan),
-        ]),
-        theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-      })
-      y = getFinalY(doc) + 10
-
-      if (jenjangData.length > 0) {
-        if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-        doc.text('Pelunasan per Jenjang (tagihan jatuh tempo)', 14, y)
-        y += 4
-        autoTable(doc, {
-          startY: y,
-          margin,
-          head: [['Jenjang', 'Tingkat Pelunasan', 'Terbayar', 'Nilai Jatuh Tempo']],
-          body: jenjangData.map(j => [j.jenjang, teksPdf(fmtPersen(j.pct)), fmt(j.terbayar), fmt(j.nilai)]),
-          theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-        })
-        y = getFinalY(doc) + 10
-      }
-
-      if (komponenData.length > 0) {
-        if (y > 250) { doc.addPage(); y = awalHalaman + 4 }
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
-        doc.text('Komponen Paling Banyak Belum Dibayar', 14, y)
-        y += 4
-        autoTable(doc, {
-          startY: y,
-          margin,
-          head: [['Komponen', 'Jumlah Tagihan', 'Total Nominal']],
-          body: komponenData.map(k => [k.nama, String(k.jumlah), fmt(k.total)]),
-          theme: 'grid', headStyles: { fillColor: navy }, styles: { fontSize: 9 },
-        })
-      }
-
-      tandaTanganPdf(doc, dataKop.tandaTangan, { y: getFinalY(doc), kiri: tepi, kanan: pageWidth - tepi, atasHalaman: awalHalaman })
-      pasangKopSemuaHalaman(doc, kop)
       const periodeLabel = `${selectedFilter.label}_${selectedFilter.sublabel}`.replace(/\s+/g, '_')
-      doc.save(`Laporan_Utama_${periodeLabel}.pdf`)
+      unduhLaporanUtamaPdf({
+        kop:      dataKop,
+        periode:  `${selectedFilter.label} - ${selectedFilter.sublabel}`,
+        komponen: pilihan ? teksKomponen(pilihan, opsiKomponen) : undefined,
+        kolom,
+        gabungan,
+        namaFile: `Laporan_Utama_${periodeLabel}${infoKomponen(pilihan).akhiran}`,
+      })
     } finally {
       setGeneratingUtama(false)
     }
+  }
+
+  // ── Alur unduh: pilih komponen dulu, lalu unduh ─────────────────────────────
+
+  const jalankanUnduhan = (jenis: JenisUnduhan, format: FormatEkspor, pilihan: PilihanKomponen | null): Promise<void> => {
+    switch (jenis) {
+      case 'utama':     return handleGenerateLaporanUtama(pilihan)
+      case 'transaksi': return handleExportTransaksi(format, pilihan)
+      case 'tunggakan': return handleExportTunggakan(format, pilihan)
+      case 'alumni':    return handleExportAlumni(format, pilihan)
+      case 'tahunan':   return handleExportKeuanganTahunan(format, pilihan)
+    }
+  }
+
+  const mulaiUnduhan = (jenis: JenisUnduhan, judul: string, format: FormatEkspor) => {
+    setFormatEkspor(format)
+    // Satu komponen saja (atau belum ada tagihan) tidak perlu dipilih
+    if (opsiKomponen.length < 2) {
+      void jalankanUnduhan(jenis, format, null)
+      return
+    }
+    setMintaKomponen({ jenis, judul, format, awal: pilihanAwal(sekolahId, opsiKomponen) })
+  }
+
+  const unduhDenganKomponen = (pilihan: PilihanKomponen) => {
+    if (!mintaKomponen) return
+    simpanPilihanKomponen(sekolahId, pilihan)
+    const { jenis, format } = mintaKomponen
+    setMintaKomponen(null)
+    // Semua komponen ditotalkan = laporan biasa, persis seperti sebelum ada pilihan
+    const semuaDitotal = !pisahPerKomponen(pilihan) && pilihan.kunci.length === opsiKomponen.length
+    void jalankanUnduhan(jenis, format, semuaDitotal ? null : pilihan)
   }
 
   if (loading) return <SkeletonLaporan />
@@ -1080,7 +1146,7 @@ function LaporanContent() {
           <>
             <FilterLaporan filter={filter} activeTAId={activeTA?.id ?? null} />
             <button
-              onClick={handleGenerateLaporanUtama}
+              onClick={() => mulaiUnduhan('utama', 'Laporan Utama', 'pdf')}
               disabled={generatingUtama}
               style={{ display: 'flex', alignItems: 'center', gap: 12, background: generatingUtama ? '#5B6B8C' : '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, padding: '0.55rem 1.1rem', fontSize: '0.82rem', fontWeight: 700, cursor: generatingUtama ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
               <Download size={20} /> {generatingUtama ? 'Memproses...' : 'Generate Laporan Utama'}
@@ -1176,35 +1242,36 @@ function LaporanContent() {
                 title: 'Laporan transaksi',
                 subtitle: 'Rekap seluruh transaksi pembayaran periode ini',
                 sedang: exportingTransaksi,
-                ekspor: handleExportTransaksi,
+                ekspor: (format: FormatEkspor) => mulaiUnduhan('transaksi', 'Laporan transaksi', format),
               },
               {
                 icon: <AlertTriangle size={22} color="#fff" />,
                 title: 'Laporan tunggakan',
                 subtitle: 'Daftar siswa yang masih memiliki tunggakan',
                 sedang: exportingTunggakan,
-                ekspor: handleExportTunggakan,
+                ekspor: (format: FormatEkspor) => mulaiUnduhan('tunggakan', 'Laporan tunggakan', format),
               },
               {
                 icon: <Users size={22} color="#fff" />,
                 title: 'Laporan data siswa aktif',
                 subtitle: 'Data lengkap seluruh siswa yang aktif saat ini',
                 sedang: exportingSiswaAktif,
-                ekspor: handleExportSiswaAktif,
+                // Tanpa rupiah — tidak ada komponen yang perlu dipilih
+                ekspor: (format: FormatEkspor) => { setFormatEkspor(format); void handleExportSiswaAktif(format) },
               },
               {
                 icon: <GraduationCap size={22} color="#fff" />,
                 title: 'Laporan alumni',
                 subtitle: 'Data alumni per angkatan beserta status pelunasan',
                 sedang: exportingAlumni,
-                ekspor: handleExportAlumni,
+                ekspor: (format: FormatEkspor) => mulaiUnduhan('alumni', 'Laporan alumni', format),
               },
               {
                 icon: <BarChart2 size={22} color="#fff" />,
                 title: 'Laporan keuangan tahunan',
                 subtitle: 'Rekap pemasukan keseluruhan per tahun ajaran, siap audit',
                 sedang: exportingKeuanganTahunan,
-                ekspor: handleExportKeuanganTahunan,
+                ekspor: (format: FormatEkspor) => mulaiUnduhan('tahunan', 'Laporan keuangan tahunan', format),
               },
             ]).map((item, i) => (
               <div key={i} style={{ background: '#fff', borderRadius: 14, padding: '1rem 1.25rem', boxShadow: '0 0 10px rgba(39, 74, 156, 0.51)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -1222,13 +1289,13 @@ function LaporanContent() {
                 {/* Buttons — PDF dan Excel memakai data yang sama (unduhTabel) */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
                   <button
-                    onClick={() => { setFormatEkspor('pdf'); void item.ekspor('pdf') }}
+                    onClick={() => item.ekspor('pdf')}
                     disabled={item.sedang}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: item.sedang && formatEkspor === 'pdf' ? '#F1F5F9' : '#fff', border: '2px solid #1A2C4E', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#374151', cursor: item.sedang ? 'default' : 'pointer', fontFamily: 'inherit', opacity: item.sedang && formatEkspor !== 'pdf' ? 0.5 : 1 }}>
                     <FileText size={13} color="#64748B" /> {item.sedang && formatEkspor === 'pdf' ? 'Memproses...' : 'PDF'}
                   </button>
                   <button
-                    onClick={() => { setFormatEkspor('excel'); void item.ekspor('excel') }}
+                    onClick={() => item.ekspor('excel')}
                     disabled={item.sedang}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: item.sedang && formatEkspor === 'excel' ? '#FDE68A' : '#F5C518', border: 'none', borderRadius: 8, padding: '0.45rem 0.875rem', fontSize: '0.8rem', fontWeight: 700, color: '#1A1A1A', cursor: item.sedang ? 'default' : 'pointer', fontFamily: 'inherit', opacity: item.sedang && formatEkspor !== 'excel' ? 0.5 : 1 }}>
                     <FileSpreadsheet size={13} color="#1A1A1A" /> {item.sedang && formatEkspor === 'excel' ? 'Memproses...' : 'Excel'}
@@ -1262,6 +1329,18 @@ function LaporanContent() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Pilih komponen sebelum unduh ── */}
+      {mintaKomponen && (
+        <ModalPilihKomponen
+          judul={mintaKomponen.judul}
+          format={mintaKomponen.format}
+          opsi={opsiKomponen}
+          awal={mintaKomponen.awal}
+          onBatal={tutupPilihKomponen}
+          onUnduh={unduhDenganKomponen}
+        />
       )}
 
       {/* ── Pop up kop sekolah belum lengkap / gagal dimuat ── */}

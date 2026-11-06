@@ -19,9 +19,12 @@ export interface TahunAjaranLaporan {
 }
 
 export interface TagihanItemLaporan {
+  id:            string
   komponen_id:   string | null
   nama_komponen: string
   nominal:       number
+  /** Potongan beasiswa komponen ini — dasar pembagian per komponen di ekspor */
+  potongan:      number | null
   /** Nama hidup dari master komponen — null kalau komponennya sudah dihapus */
   komponen:      { nama: string } | null
 }
@@ -54,7 +57,13 @@ export type TagihanLaporan = TagihanRawLaporan & { is_alumni: boolean } & KolomP
 
 export interface KelasLaporan { id: string; nama: string; jenjang: string; warna: string | null }
 
-interface PembayaranRaw { tagihan_id: string; jumlah: number; tanggal_bayar: string }
+export interface PembayaranLaporan {
+  tagihan_id:    string
+  jumlah:        number
+  tanggal_bayar: string
+  /** Komponen yang dibayar (lib/rincianKomponen); null = tanpa rincian */
+  alokasi:       unknown
+}
 
 const TA_SELECT = 'id, nama, tanggal_mulai, tanggal_selesai, semester_ganjil_mulai, semester_ganjil_selesai, semester_genap_mulai, semester_genap_selesai'
 
@@ -68,7 +77,7 @@ export function useDataLaporan(opsi: { siswaId?: string } = {}) {
   const [namaSekolah,   setNamaSekolah]   = useState('')
   const [loading,       setLoading]       = useState(true)
   const [tagihanRaw,    setTagihanRaw]    = useState<TagihanRawLaporan[]>([])
-  const [pembayaranRaw, setPembayaranRaw] = useState<PembayaranRaw[]>([])
+  const [pembayaranRaw, setPembayaranRaw] = useState<PembayaranLaporan[]>([])
   const [kelas,         setKelas]         = useState<Map<string, KelasLaporan>>(new Map())
   const [activeTA,      setActiveTA]      = useState<TahunAjaranLaporan | null>(null)
   const [archivedTAs,   setArchivedTAs]   = useState<TahunAjaranLaporan[]>([])
@@ -98,14 +107,14 @@ export function useDataLaporan(opsi: { siswaId?: string } = {}) {
       const [tagihanRes, pembRes, { data: kelasData }, { data: sekolahData }, { data: taAktif }, { data: taArsip }] = await Promise.all([
         ambilSemua<TagihanRawLaporan>((dari, sampai) => {
           let q = supabase.from('tagihan')
-            .select('id, siswa_id, kelas_id, total_nominal, status, bulan, tahun, jatuh_tempo, payment_token, siswa:siswa_id(status, nama, nis, no_wa, nama_wali), tagihan_item(komponen_id, nama_komponen, nominal, komponen:komponen_id(nama))')
+            .select('id, siswa_id, kelas_id, total_nominal, status, bulan, tahun, jatuh_tempo, payment_token, siswa:siswa_id(status, nama, nis, no_wa, nama_wali), tagihan_item(id, komponen_id, nama_komponen, nominal, potongan, komponen:komponen_id(nama))')
             .eq('sekolah_id', sekolahId)
           if (siswaId) q = q.eq('siswa_id', siswaId)
           return q.order('id').range(dari, sampai)
         }),
-        ambilSemua<PembayaranRaw>((dari, sampai) => {
+        ambilSemua<PembayaranLaporan>((dari, sampai) => {
           let q = supabase.from('pembayaran')
-            .select('tagihan_id, jumlah, tanggal_bayar')
+            .select('tagihan_id, jumlah, tanggal_bayar, alokasi')
             .eq('sekolah_id', sekolahId)
           if (siswaId) q = q.eq('siswa_id', siswaId)
           return q.order('id').range(dari, sampai)
@@ -140,5 +149,5 @@ export function useDataLaporan(opsi: { siswaId?: string } = {}) {
     [tagihanRaw, pembayaranRaw],
   )
 
-  return { sekolahId, namaSekolah, loading, rows, kelas, activeTA, archivedTAs, sekarang }
+  return { sekolahId, namaSekolah, loading, rows, pembayaran: pembayaranRaw, kelas, activeTA, archivedTAs, sekarang }
 }

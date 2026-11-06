@@ -17,9 +17,14 @@ import {
   type Bulan, type KategoriPengeluaran, type Pengeluaran, type PeriodeKas,
 } from '@/lib/pengeluaran'
 import { hapusFotoPengeluaran } from '@/lib/fotoPengeluaran'
-import type { FormatEkspor } from '@/lib/eksporPengeluaran'
+import type { FormatEkspor, KomponenUnduhan } from '@/lib/eksporPengeluaran'
+import {
+  akhiranNamaFile, kolomKomponen, komponenTerpilih, pilihanAwal, pisahPerKomponen, simpanPilihanKomponen, teksKomponen,
+  type OpsiKomponen, type PilihanKomponen,
+} from '@/lib/komponenLaporan'
 import { useKopLaporan } from '@/lib/useKopLaporan'
 import { ModalKopBelumLengkap } from '@/components/laporan/ModalKopBelumLengkap'
+import { ModalPilihKomponen } from '@/components/laporan/ModalPilihKomponen'
 import { HeaderLaporan } from '@/components/laporan/HeaderLaporan'
 import { DropdownFilter } from '@/components/laporan/DropdownFilter'
 import { FilterPeriode } from '@/components/laporan/FilterPeriode'
@@ -105,6 +110,10 @@ const PengeluaranPage = () => {
   const [pemberitahuan, setPemberitahuan] = useState<Pemberitahuan | null>(null)
   // Setiap unduhan (PDF dan Excel) memeriksa kelengkapan kop sekolah lebih dulu
   const { siapkanKop, pesanKop, tutupPesanKop } = useKopLaporan(sekolahId)
+
+  // Pilihan komponen sebelum unduh (lib/komponenLaporan) — semua sekolah sejak 6 Nov 2026
+  const [mintaKomponen, setMintaKomponen] = useState<{ format: FormatEkspor; awal: PilihanKomponen } | null>(null)
+  const tutupPilihKomponen = useCallback(() => setMintaKomponen(null), [])
 
   const muatKategori = useCallback(async (id: string) => {
     const { data, error } = await supabase
@@ -344,20 +353,62 @@ const PengeluaranPage = () => {
     }
   }
 
-  const ekspor = async (format: FormatEkspor) => {
+  // Komponen yang bisa dicentang: yang punya pemasukan atau pengeluaran di periode ini,
+  // urutan panel saldo (pemasukan terbesar dulu, "Lainnya" terakhir)
+  const opsiKomponen = useMemo<OpsiKomponen[]>(
+    () => saldo.map(s => ({ kunci: s.kunci, nama: s.nama, warna: warna.get(s.kunci) ?? WARNA_LAINNYA })),
+    [saldo, warna],
+  )
+
+  const ekspor = (format: FormatEkspor) => {
+    if (mengekspor || !bulanAktif) return
+    // Satu komponen saja (atau belum ada kas) tidak perlu dipilih
+    if (opsiKomponen.length < 2) {
+      void jalankanEkspor(format, null)
+      return
+    }
+    setMintaKomponen({ format, awal: pilihanAwal(sekolahId, opsiKomponen) })
+  }
+
+  const unduhDenganKomponen = (pilihan: PilihanKomponen) => {
+    if (!mintaKomponen) return
+    simpanPilihanKomponen(sekolahId, pilihan)
+    const { format } = mintaKomponen
+    setMintaKomponen(null)
+    // Semua komponen ditotalkan = unduhan biasa, persis seperti sebelum ada pilihan
+    const semuaDitotal = !pisahPerKomponen(pilihan) && pilihan.kunci.length === opsiKomponen.length
+    void jalankanEkspor(format, semuaDitotal ? null : pilihan)
+  }
+
+  const jalankanEkspor = async (format: FormatEkspor, pilihan: PilihanKomponen | null) => {
     if (mengekspor || !bulanAktif) return
     setMengekspor(format)
     try {
       const kop = await siapkanKop(format)
       if (!kop) return
+      const komponen: KomponenUnduhan | undefined = pilihan
+        ? {
+            pilih:      new Set(pilihan.kunci),
+            nama:       komponenTerpilih(pilihan, opsiKomponen).map(o => o.nama),
+            kolom:      kolomKomponen(pilihan, opsiKomponen),
+            pisah:      pisahPerKomponen(pilihan),
+            keterangan: ` · Komponen: ${teksKomponen(pilihan, opsiKomponen)}`,
+            akhiran:    akhiranNamaFile(pilihan, opsiKomponen),
+          }
+        : undefined
       // Pustaka Excel/PDF baru dimuat saat dipakai
       const { unduhDaftarPengeluaran, unduhRingkasanKas } = await import('@/lib/eksporPengeluaran')
       if (tab === 'daftar') {
-        await unduhDaftarPengeluaran({ format, kop, bulan: bulanAktif, kelompok })
+        // Per komponen: hanya pengeluaran yang mengambil dana komponen terpilih
+        const kelompokUnduh = komponen
+          ? kelompokkanPerKategori(kategori, pengeluaranBulan.filter(p =>
+              p.sumber_dana.some(s => s.nominal > 0 && komponen.pilih.has(kunciKomponen(s.nama_komponen)))))
+          : kelompok
+        await unduhDaftarPengeluaran({ format, kop, bulan: bulanAktif, kelompok: kelompokUnduh, komponen })
       } else {
         await unduhRingkasanKas({
           format, kop, namaPeriode: periode?.nama ?? '', bulan: bulanAktif,
-          masuk: masukBulan, keluar: keluarBulan, saldo, riwayat,
+          masuk: masukBulan, keluar: keluarBulan, saldo, riwayat, komponen,
         })
       }
     } catch (e) {
@@ -506,6 +557,17 @@ const PengeluaranPage = () => {
       )}
 
       {lihatFoto && <ModalFoto pengeluaran={lihatFoto} onTutup={() => setLihatFoto(null)} />}
+
+      {mintaKomponen && (
+        <ModalPilihKomponen
+          judul={tab === 'daftar' ? 'Daftar pengeluaran' : 'Ringkasan kas'}
+          format={mintaKomponen.format}
+          opsi={opsiKomponen}
+          awal={mintaKomponen.awal}
+          onBatal={tutupPilihKomponen}
+          onUnduh={unduhDenganKomponen}
+        />
+      )}
 
       {pesanKop && <ModalKopBelumLengkap pesan={pesanKop} onTutup={tutupPesanKop} />}
 

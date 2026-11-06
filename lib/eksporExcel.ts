@@ -193,8 +193,23 @@ export function lembarBerkop(wb: Workbook, kop: DataKop, opsi: OpsiLembar): { ws
 
 type NilaiSel = string | number | null
 
+/** Judul di atas sekelompok kolom yang bersebelahan (mis. nama komponen di atas Tagihan/Terbayar/Sisa) */
+export interface GrupKepala {
+  label:  string
+  /** Indeks kolom pertama kelompok ini (0-based) */
+  dari:   number
+  jumlah: number
+}
+
+/** Kolom `c` termasuk salah satu kelompok */
+export const dalamGrupKepala = (grup: GrupKepala[], c: number): boolean =>
+  grup.some(g => c >= g.dari && c < g.dari + g.jumlah)
+
 export interface TabelExcel {
   kepala:       string[]
+  /** Kepala dua baris: kelompok di baris atas, `kepala` di baris bawah. Kolom di luar
+   *  kelompok mana pun setinggi dua baris. */
+  grupKepala?:  GrupKepala[]
   baris:        NilaiSel[][]
   /** Indeks kolom Rupiah: tetap angka, tampil "Rp" dengan pemisah ribuan */
   kolomRupiah?: number[]
@@ -220,16 +235,39 @@ const tepiTipis: Partial<Borders> = {
 export function tulisTabelExcel(ws: Worksheet, mulai: number, t: TabelExcel): number {
   const rupiah = new Set(t.kolomRupiah ?? [])
   const tengah = new Set(t.kolomTengah ?? [])
+  const grup   = t.grupKepala ?? []
 
-  const kepala = ws.getRow(mulai)
-  kepala.height = 20
-  t.kepala.forEach((judul, c) => {
-    const sel = kepala.getCell(c + 1)
+  const gayaKepala = (sel: Cell, judul: string | null) => {
     sel.value = judul
     sel.font = { bold: true, color: { argb: 'FFFFFFFF' } }
     sel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } }
     sel.alignment = { horizontal: 'center', vertical: 'middle' }
     sel.border = tepiTipis
+  }
+
+  // Kepala dua baris: baris atas berisi nama kelompok (digabung selebar kelompoknya) dan
+  // kolom di luar kelompok (digabung setinggi dua baris)
+  let barisKepala = mulai
+  if (grup.length > 0) {
+    barisKepala = mulai + 1
+    ws.getRow(mulai).height = 20
+    t.kepala.forEach((judul, c) => {
+      if (dalamGrupKepala(grup, c)) return
+      gayaKepala(ws.getCell(mulai, c + 1), judul)
+      gayaKepala(ws.getCell(barisKepala, c + 1), null)
+      ws.mergeCells(mulai, c + 1, barisKepala, c + 1)
+    })
+    for (const g of grup) {
+      for (let c = g.dari; c < g.dari + g.jumlah; c++) gayaKepala(ws.getCell(mulai, c + 1), c === g.dari ? g.label : null)
+      if (g.jumlah > 1) ws.mergeCells(mulai, g.dari + 1, mulai, g.dari + g.jumlah)
+    }
+  }
+
+  const kepala = ws.getRow(barisKepala)
+  kepala.height = 20
+  t.kepala.forEach((judul, c) => {
+    if (grup.length > 0 && !dalamGrupKepala(grup, c)) return
+    gayaKepala(kepala.getCell(c + 1), judul)
   })
 
   const tulisBaris = (r: number, nilai: NilaiSel[], tebal: boolean) => {
@@ -247,7 +285,7 @@ export function tulisTabelExcel(ws: Worksheet, mulai: number, t: TabelExcel): nu
     }
   }
 
-  const awalData = mulai + 1
+  const awalData = barisKepala + 1
   t.baris.forEach((b, i) => tulisBaris(awalData + i, b, false))
   for (const g of t.gabung ?? []) ws.mergeCells(awalData + g.baris, g.kolom + 1, awalData + g.sampaiBaris, g.sampaiKolom + 1)
 
@@ -259,7 +297,7 @@ export function tulisTabelExcel(ws: Worksheet, mulai: number, t: TabelExcel): nu
   }
 
   // Kepala tabel diulang di setiap halaman cetak
-  ws.pageSetup.printTitlesRow = `${mulai}:${mulai}`
+  ws.pageSetup.printTitlesRow = `${mulai}:${barisKepala}`
   return akhir
 }
 

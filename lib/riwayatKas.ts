@@ -31,6 +31,8 @@ export interface BarisRiwayatKas {
   /** Nama komponen, urut bagian terbesar dulu */
   komponen:   string[]
   jumlah:     number
+  /** Bagian tiap komponen dari `jumlah` — dasar unduhan per komponen */
+  perKomponen: BagianKomponen[]
 }
 
 /** Bagian komponen tiap pembayaran; tagihan yang tidak terbaca masuk "Lainnya" seluruhnya */
@@ -59,26 +61,32 @@ export function susunRiwayatKas(opsi: {
   // Nama siswa tidak ditampilkan (permintaan user 27 Okt 2026) — cukup bulan tagihannya
   const masuk: BarisRiwayatKas[] = pembayaran.map(p => {
     const t = tagihanPer.get(p.tagihan_id)
+    const perKomponen = [...(bagian.get(p.id) ?? [])].sort((a, b) => b.jumlah - a.jumlah)
     return {
       id:         `masuk-${p.id}`,
       jenis:      'masuk',
       tanggal:    p.tanggal_bayar,
       judul:      t ? `Pembayaran ${BULAN_PANJANG[t.bulan] ?? ''} ${t.tahun}` : 'Pembayaran',
       keterangan: '',
-      komponen:   [...(bagian.get(p.id) ?? [])].sort((a, b) => b.jumlah - a.jumlah).map(b => b.nama),
+      komponen:   perKomponen.map(b => b.nama),
       jumlah:     Math.round(Number(p.jumlah)),
+      perKomponen,
     }
   })
 
-  const keluar: BarisRiwayatKas[] = pengeluaran.map(p => ({
-    id:         `keluar-${p.id}`,
-    jenis:      'keluar',
-    tanggal:    p.tanggal,
-    judul:      p.keterangan,
-    keterangan: namaKategori.get(p.kategori_id) ?? '',
-    komponen:   [...p.sumber_dana].sort((a, b) => b.nominal - a.nominal).map(s => s.nama_komponen),
-    jumlah:     p.jumlah,
-  }))
+  const keluar: BarisRiwayatKas[] = pengeluaran.map(p => {
+    const perKomponen = [...p.sumber_dana].sort((a, b) => b.nominal - a.nominal).map(s => ({ nama: s.nama_komponen, jumlah: s.nominal }))
+    return {
+      id:         `keluar-${p.id}`,
+      jenis:      'keluar',
+      tanggal:    p.tanggal,
+      judul:      p.keterangan,
+      keterangan: namaKategori.get(p.kategori_id) ?? '',
+      komponen:   perKomponen.map(b => b.nama),
+      jumlah:     p.jumlah,
+      perKomponen,
+    }
+  })
 
   return [...masuk, ...keluar].sort((a, b) =>
     new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime()
