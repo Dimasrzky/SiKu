@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
@@ -76,8 +78,17 @@ export default async function VerifikasiSekolahPage({ params }: { params: Promis
   })
 
   return (
-    <HalamanAdmin jejak={[{ label: 'Verifikasi Pembayaran', href: '/admin/verifikasi-pembayaran' }, { label: sekolahData.nama }]}>
-      <VerifikasiTable items={items} namaSekolah={sekolahData.nama} />
+    <HalamanAdmin
+      judul={sekolahData.nama}
+      subjudul="Konfirmasi bukti transfer yang dikirim orang tua"
+      jejak={[{ label: 'Verifikasi Pembayaran', href: '/admin/verifikasi-pembayaran' }, { label: sekolahData.nama }]}
+      aksi={
+        <Link href="/admin/verifikasi-pembayaran" className="admin-tombol admin-tombol--garis">
+          <ArrowLeft size={16} /> Semua sekolah
+        </Link>
+      }
+    >
+      <VerifikasiTable items={items} />
     </HalamanAdmin>
   )
 }

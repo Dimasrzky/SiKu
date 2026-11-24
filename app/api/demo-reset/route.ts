@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { cekAksesDemo, hapusDataDemo, hapusRekeningDemo } from '@/lib/demoServer'
+import { cekAksesDemo, hapusRekeningDemo } from '@/lib/demoServer'
+import { hapusDataOperasional } from '@/lib/hapusDataSekolah'
 import { JABATAN } from '@/lib/jabatan'
 
 const supabaseAdmin = createClient(
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
   if (akses.error !== null) return NextResponse.json({ data: null, error: akses.error }, { status: akses.status })
 
   const gagal = [
-    ...await hapusDataDemo(supabaseAdmin, DEMO_SEKOLAH_ID),
+    ...await hapusDataOperasional(supabaseAdmin, DEMO_SEKOLAH_ID),
     ...await hapusRekeningDemo(supabaseAdmin, DEMO_SEKOLAH_ID),
   ]
   if (gagal.length > 0) {

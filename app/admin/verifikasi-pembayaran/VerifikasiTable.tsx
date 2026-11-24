@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ShieldCheck, ImageOff, CheckCircle2, X } from 'lucide-react'
-import KepalaAdmin from '../KepalaAdmin'
+import { CircleCheck, ImageOff, X } from 'lucide-react'
+import ModalAdmin from '../ModalAdmin'
 
 const formatRp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
@@ -16,6 +16,8 @@ const formatRibuan = (val: string) => {
 
 /** Komponen yang ditampilkan langsung di tabel; sisanya diringkas "+N lainnya" */
 const MAKS_PILIHAN_TAMPIL = 3
+
+const KOLOM = ['No', 'Nama Lengkap Siswa', 'NIS', 'Pembayaran', 'Bukti Transfer', 'Aksi'] as const
 
 export interface VerifikasiItem {
   id:              string
@@ -33,12 +35,7 @@ export interface VerifikasiItem {
   buktiUrl:        string | null
 }
 
-interface Props {
-  items:       VerifikasiItem[]
-  namaSekolah: string
-}
-
-export default function VerifikasiTable({ items, namaSekolah }: Props) {
+export default function VerifikasiTable({ items }: { items: VerifikasiItem[] }) {
   const router = useRouter()
   const [loadingId, setLoadingId]   = useState<string | null>(null)
   const [galat, setGalat]           = useState<{ id: string; pesan: string } | null>(null)
@@ -78,190 +75,150 @@ export default function VerifikasiTable({ items, namaSekolah }: Props) {
     }
   }
 
+  const memproses = !!setujui && loadingId === setujui.id
+
   return (
     <>
-      <div>
-        <KepalaAdmin Ikon={ShieldCheck} judul={namaSekolah} subjudul="Konfirmasi bukti transfer yang dikirim orang tua" />
+      <section className="admin-panel">
+        {items.length === 0 ? (
+          <div className="admin-kosong admin-kosong--tunggal">Belum ada bukti transfer yang menunggu verifikasi.</div>
+        ) : (
+          <div className="admin-tabel-gulir" style={{ borderTop: 'none' }}>
+            <table className="admin-tabel admin-tabel--atas" style={{ minWidth: 900 }}>
+              <thead>
+                <tr>
+                  {KOLOM.map(h => <th key={h} className={h === 'Aksi' ? 'kanan' : undefined}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => {
+                  const cicilan = it.jenis === 'cicilan'
+                  const lainnya = it.pilihan.length - MAKS_PILIHAN_TAMPIL
+                  return (
+                    <tr key={it.id}>
+                      <td className="admin-no">{idx + 1}</td>
 
-        {/* Table card */}
-        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-          {items.length === 0 ? (
-            <div style={{ padding: '3.5rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.9rem' }}>
-              Belum ada bukti transfer yang menunggu verifikasi.
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead>
-                  <tr style={{ background: '#1A2C4E' }}>
-                    {(['No', 'Nama Lengkap Siswa', 'NIS', 'Pembayaran', 'Bukti Transfer', 'Aksi'] as const).map(h => (
-                      <th key={h} style={{ padding: '0.65rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it, idx) => {
-                    const cicilan = it.jenis === 'cicilan'
-                    const lainnya = it.pilihan.length - MAKS_PILIHAN_TAMPIL
-                    return (
-                      <tr key={it.id} style={{ borderBottom: '1px solid #F8FAFC', verticalAlign: 'top' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.83rem', color: '#64748B', fontWeight: 600 }}>{idx + 1}</td>
+                      <td className="admin-sel-utama">{it.namaSiswa}</td>
 
-                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', fontWeight: 700, color: '#0F172A' }}>{it.namaSiswa}</td>
+                      <td>{it.nis}</td>
 
-                        <td style={{ padding: '0.75rem 1rem', fontSize: '0.83rem', color: '#475569' }}>{it.nis}</td>
-
-                        <td style={{ padding: '0.75rem 1rem', maxWidth: 360 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>{formatRp(it.nominalDiajukan)}</span>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 700, borderRadius: 20, padding: '2px 8px', background: cicilan ? '#DBEAFE' : '#DCFCE7', color: cicilan ? '#1D4ED8' : '#15803D' }}>
-                              {cicilan ? 'Cicilan' : 'Lunas'}
-                            </span>
+                      <td style={{ maxWidth: 360 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span className="admin-sel-utama" style={{ fontSize: '0.88rem', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            {formatRp(it.nominalDiajukan)}
+                          </span>
+                          <span className={`admin-label ${cicilan ? 'admin-label--biru' : 'admin-label--hijau'}`}>
+                            {cicilan ? 'Cicilan' : 'Lunas'}
+                          </span>
+                        </div>
+                        {cicilan && (
+                          <div className="admin-sel-sub" style={{ fontWeight: 600, color: '#475569' }}>
+                            dari {formatRp(it.totalDipilih)} dipilih &middot; sisa {formatRp(it.totalDipilih - it.nominalDiajukan)}
                           </div>
-                          {cicilan && (
-                            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#475569', marginTop: 2 }}>
-                              dari {formatRp(it.totalDipilih)} dipilih &middot; sisa {formatRp(it.totalDipilih - it.nominalDiajukan)}
-                            </div>
-                          )}
-                          <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 4, lineHeight: 1.45 }}>
-                            {it.pilihan.length === 0
-                              ? 'Semua yang ditagih di tautan, termasuk tunggakan'
-                              : <>Untuk: {it.pilihan.slice(0, MAKS_PILIHAN_TAMPIL).map(p => p.label).join(', ')}{lainnya > 0 && ` +${lainnya} lainnya`}</>}
-                          </div>
-                          {it.rencana && (
-                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#B45309', marginTop: 2 }}>Rencana lunas: {it.rencana}</div>
-                          )}
-                          {it.catatanWali && (
-                            <div style={{ fontSize: '0.72rem', color: '#475569', fontStyle: 'italic', marginTop: 2 }}>&ldquo;{it.catatanWali}&rdquo;</div>
-                          )}
-                        </td>
+                        )}
+                        <div className="admin-sel-sub" style={{ marginTop: 4 }}>
+                          {it.pilihan.length === 0
+                            ? 'Semua yang ditagih di tautan, termasuk tunggakan'
+                            : <>Untuk: {it.pilihan.slice(0, MAKS_PILIHAN_TAMPIL).map(p => p.label).join(', ')}{lainnya > 0 && ` +${lainnya} lainnya`}</>}
+                        </div>
+                        {it.rencana && (
+                          <div className="admin-sel-sub" style={{ fontWeight: 700, color: '#B45309' }}>Rencana lunas: {it.rencana}</div>
+                        )}
+                        {it.catatanWali && (
+                          <div className="admin-sel-sub" style={{ fontStyle: 'italic', color: '#475569' }}>&ldquo;{it.catatanWali}&rdquo;</div>
+                        )}
+                      </td>
 
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          {it.buktiUrl ? (
-                            <button
-                              onClick={() => setPreviewUrl(it.buktiUrl)}
-                              style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', lineHeight: 0 }}
-                            >
-                              <Image
-                                src={it.buktiUrl}
-                                alt="Bukti transfer"
-                                width={52}
-                                height={52}
-                                unoptimized
-                                style={{ objectFit: 'cover', borderRadius: 8, border: '1.5px solid #E2E8F0' }}
-                              />
-                            </button>
-                          ) : (
-                            <div style={{ width: 52, height: 52, borderRadius: 8, border: '1.5px dashed #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1' }}>
-                              <ImageOff size={18} />
-                            </div>
-                          )}
-                        </td>
+                      <td>
+                        {it.buktiUrl ? (
+                          <button type="button" className="admin-bukti" onClick={() => setPreviewUrl(it.buktiUrl)} aria-label={`Lihat bukti transfer ${it.namaSiswa}`}>
+                            <Image src={it.buktiUrl} alt="Bukti transfer" width={52} height={52} unoptimized />
+                          </button>
+                        ) : (
+                          <div className="admin-bukti-kosong"><ImageOff size={18} /></div>
+                        )}
+                      </td>
 
-                        <td style={{ padding: '0.75rem 1rem' }}>
+                      <td>
+                        <div className="admin-sel-aksi">
                           <button
+                            type="button"
+                            className="admin-tombol admin-tombol--utama admin-tombol--kecil"
                             onClick={() => bukaSetujui(it)}
                             disabled={loadingId === it.id}
-                            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0.4rem 0.75rem', background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.75rem', cursor: loadingId === it.id ? 'default' : 'pointer', opacity: loadingId === it.id ? 0.6 : 1 }}
                           >
-                            <CheckCircle2 size={13} /> Setujui
+                            <CircleCheck size={14} /> Setujui
                           </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {previewUrl && (
-        <div
-          onClick={() => setPreviewUrl(null)}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(15,23,42,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem' }}
-        >
-          <div style={{ position: 'relative', maxWidth: 'min(90vw, 480px)', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
-            <button
-              onClick={() => setPreviewUrl(null)}
-              style={{ position: 'absolute', top: -14, right: -14, width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#1A2C4E' }}
-            >
+        <div className="admin-modal-tirai" onMouseDown={e => { if (e.target === e.currentTarget) setPreviewUrl(null) }}>
+          <div className="admin-pratinjau">
+            <button type="button" className="admin-modal-tutup" onClick={() => setPreviewUrl(null)} aria-label="Tutup">
               <X size={16} />
             </button>
-            <Image
-              src={previewUrl}
-              alt="Bukti transfer"
-              width={480}
-              height={480}
-              unoptimized
-              style={{ width: '100%', height: 'auto', maxHeight: '90vh', objectFit: 'contain', borderRadius: 12, background: '#fff' }}
-            />
+            <Image src={previewUrl} alt="Bukti transfer" width={480} height={480} unoptimized />
           </div>
         </div>
       )}
 
       {setujui && (
-        <div
-          onClick={() => !loadingId && setSetujui(null)}
-          style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem' }}
+        <ModalAdmin
+          judul="Setujui pembayaran"
+          nada="sukses"
+          ikon={<CircleCheck size={22} />}
+          lebar={420}
+          sibuk={memproses}
+          onTutup={() => setSetujui(null)}
+          kaki={<>
+            <button type="button" className="admin-tombol admin-tombol--garis" onClick={() => setSetujui(null)} disabled={memproses}>
+              Batal
+            </button>
+            <button
+              type="button"
+              className="admin-tombol admin-tombol--utama"
+              onClick={() => handleSetujui(setujui)}
+              disabled={memproses || nominal <= 0}
+            >
+              {memproses ? 'Memproses...' : `Ya, catat ${formatRp(nominal)}`}
+            </button>
+          </>}
         >
-          <div
-            role="dialog" aria-modal="true" aria-labelledby="judul-setujui"
-            style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 400, boxShadow: '0 24px 60px rgba(0,0,0,0.22)', padding: '1.5rem' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ width: 48, height: 48, background: '#D1FAE5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
-              <CheckCircle2 size={24} color="#059669" />
-            </div>
+          <p>
+            Pembayaran <strong>{setujui.namaSiswa}</strong>
+            {setujui.jenis === 'cicilan' ? ' (cicilan)' : ''} dicatat untuk komponen yang dipilih wali.
+            Ubah nominalnya kalau angka di bukti transfer berbeda. Tindakan ini tidak dapat dibatalkan.
+          </p>
 
-            <div id="judul-setujui" style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0F172A', marginBottom: 6 }}>
-              Setujui pembayaran
-            </div>
-            <div style={{ fontSize: '0.85rem', color: '#64748B', lineHeight: 1.6, marginBottom: '1rem' }}>
-              Pembayaran <strong style={{ color: '#0F172A' }}>{setujui.namaSiswa}</strong>
-              {setujui.jenis === 'cicilan' ? ' (cicilan)' : ''} dicatat untuk komponen yang dipilih wali.
-              Ubah nominalnya kalau angka di bukti transfer berbeda. Tindakan ini tidak dapat dibatalkan.
-            </div>
-
-            <label htmlFor="nominal-setujui" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: 5 }}>
-              Nominal yang dicatat
-            </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: '0.85rem', color: '#64748B', fontWeight: 700 }}>Rp</span>
-              <input id="nominal-setujui" type="text" inputMode="numeric" autoComplete="off"
-                value={nominalIsian} onChange={e => setNominal(formatRibuan(e.target.value))}
-                style={{ width: '100%', paddingLeft: 36, paddingRight: 10, paddingTop: '0.6rem', paddingBottom: '0.6rem', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: '0.9rem', fontWeight: 700, boxSizing: 'border-box', outline: 'none', background: '#F8FAFC' }} />
-            </div>
-            <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 4, marginBottom: '1rem' }}>
-              Diajukan wali {formatRp(setujui.nominalDiajukan)}
-              {setujui.nominalDiajukan !== setujui.totalDipilih && <> dari {formatRp(setujui.totalDipilih)} yang dipilih</>}
-            </div>
-
-            {galat?.id === setujui.id && (
-              <div style={{ fontSize: '0.78rem', color: '#DC2626', marginBottom: '1rem' }}>{galat.pesan}</div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setSetujui(null)}
-                disabled={loadingId === setujui.id}
-                style={{ flex: 1, padding: '0.65rem', background: '#fff', color: '#64748B', border: '1.5px solid #E2E8F0', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem', cursor: loadingId ? 'default' : 'pointer' }}
-              >
-                Batal
-              </button>
-              <button
-                onClick={() => handleSetujui(setujui)}
-                disabled={loadingId === setujui.id || nominal <= 0}
-                style={{ flex: 1, padding: '0.65rem', background: '#1A2C4E', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem', cursor: loadingId || nominal <= 0 ? 'default' : 'pointer', opacity: loadingId === setujui.id || nominal <= 0 ? 0.7 : 1 }}
-              >
-                {loadingId === setujui.id ? 'Memproses...' : `Ya, catat ${formatRp(nominal)}`}
-              </button>
-            </div>
+          <label htmlFor="nominal-setujui" className="admin-label-isian">Nominal yang dicatat</label>
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: '0.88rem', color: '#64748B', fontWeight: 700 }}>Rp</span>
+            <input
+              id="nominal-setujui"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              className="admin-isian admin-isian--rupiah"
+              value={nominalIsian}
+              onChange={e => setNominal(formatRibuan(e.target.value))}
+            />
           </div>
-        </div>
+          <div className="admin-sel-sub" style={{ marginTop: 6 }}>
+            Diajukan wali {formatRp(setujui.nominalDiajukan)}
+            {setujui.nominalDiajukan !== setujui.totalDipilih && <> dari {formatRp(setujui.totalDipilih)} yang dipilih</>}
+          </div>
+
+          {galat?.id === setujui.id && <div className="admin-galat">{galat.pesan}</div>}
+        </ModalAdmin>
       )}
     </>
   )

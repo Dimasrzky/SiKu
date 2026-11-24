@@ -6,6 +6,35 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const KUNCI_LANGKAH_SETUP = 'siku_setup_steps'
 
+/** Lima langkah setup, urut seperti checklist di Dashboard (components/SetupChecklist STEPS) */
+export const LANGKAH_SETUP = [
+  { kunci: 'profil_sekolah',   label: 'Profil sekolah' },
+  { kunci: 'tahun_ajaran',     label: 'Tahun ajaran' },
+  { kunci: 'komponen_tagihan', label: 'Komponen tagihan' },
+  { kunci: 'buat_kelas',       label: 'Buat kelas' },
+  { kunci: 'import_siswa',     label: 'Import siswa' },
+] as const
+
+export interface RingkasanSetup {
+  /** Setup selesai = langkah import siswa sudah dijalankan, aturan yang sama dengan Dashboard */
+  selesai:    boolean
+  /** Jumlah langkah yang sudah selesai, dari LANGKAH_SETUP.length */
+  jumlah:     number
+  /** Langkah pertama yang belum selesai; null kalau setup selesai */
+  berikutnya: string | null
+}
+
+/** Ringkas pengaturan.setup_steps untuk dasbor admin. Tanpa baris pengaturan = belum ada langkah yang selesai. */
+export function ringkasLangkahSetup(steps: unknown): RingkasanSetup {
+  const s = (steps && typeof steps === 'object' ? steps : {}) as Record<string, unknown>
+  const selesai = s.import_siswa === true
+  return {
+    selesai,
+    jumlah:     selesai ? LANGKAH_SETUP.length : LANGKAH_SETUP.filter(l => s[l.kunci] === true).length,
+    berikutnya: selesai ? null : LANGKAH_SETUP.find(l => s[l.kunci] !== true)?.label ?? null,
+  }
+}
+
 /**
  * Setup belum selesai menurut cache. Tanpa cache tidak diketahui — dianggap selesai,
  * karena itu yang umum. Aturan yang sama ditulis ulang di SKRIP_TANDA_SETUP; ubah bersamaan.

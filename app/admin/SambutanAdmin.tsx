@@ -1,30 +1,34 @@
-const WARNA_ILUSTRASI = '#93ABCF'
+import Link from 'next/link'
+import Image from 'next/image'
+import { ArrowRight, UserRound } from 'lucide-react'
 
-/** Kartu identitas putih di dalam ubin bergradien, seperti ilustrasi referensi */
-const IlustrasiKartu = () => (
-  <svg width="84" height="50" viewBox="0 0 84 50" aria-hidden>
-    <rect width="84" height="50" rx="6" fill="#fff" />
-    <circle cx="21" cy="18" r="6.5" fill={WARNA_ILUSTRASI} />
-    <path d="M9 39a12 10.5 0 0 1 24 0v1H9z" fill={WARNA_ILUSTRASI} />
-    <rect x="39" y="10" width="36" height="3.5" rx="1.75" fill={WARNA_ILUSTRASI} />
-    <rect x="39" y="18" width="36" height="3.5" rx="1.75" fill={WARNA_ILUSTRASI} />
-    <rect x="39" y="26" width="15" height="3.5" rx="1.75" fill={WARNA_ILUSTRASI} />
-    <circle cx="67" cy="33" r="7" fill="none" stroke={WARNA_ILUSTRASI} strokeWidth="1.6" />
-    <text x="67" y="36.4" textAnchor="middle" fontSize="9.5" fontWeight="700" fontFamily="sans-serif" fill={WARNA_ILUSTRASI}>A</text>
-  </svg>
-)
-
-/** Isi beranda SiKuAdmin: judul sambutan, subjudul, dan ilustrasi di kanan */
-export default function SambutanAdmin() {
+/**
+ * Banner beranda SiKuAdmin: sambutan "Selamat datang di SiKuAdmin!" (SiKu kuning, Admin
+ * biru muda — keputusan user 18 Okt 2026), subjudul, dan tombol pintas.
+ */
+export default function SambutanAdmin({ menunggu }: { menunggu: number }) {
   return (
-    <div className="admin-sambutan">
-      <div>
-        <h1>
+    <section className="admin-sambutan" aria-labelledby="judul-sambutan">
+      <div className="admin-sambutan-teks">
+        <div className="admin-sambutan-label">Panel admin SiKu</div>
+        <h2 id="judul-sambutan">
           Selamat datang di <span className="admin-sambutan-siku">SiKu</span><span className="admin-sambutan-admin">Admin</span>!
-        </h1>
+        </h2>
         <p>Manajemen kemitraan, pembayaran, dan fitur sekolah</p>
+        <div className="admin-sambutan-aksi">
+          {menunggu > 0 && (
+            <Link href="/admin/kemitraan?menunggu=1" className="admin-tombol admin-tombol--kuning">
+              <UserRound size={16} /> Tinjau {menunggu} sekolah baru
+            </Link>
+          )}
+          <Link href="/admin/kemitraan" className="admin-tombol admin-tombol--kaca">
+            Lihat sekolah mitra <ArrowRight size={16} />
+          </Link>
+        </div>
       </div>
-      <div className="admin-sambutan-ilustrasi"><IlustrasiKartu /></div>
-    </div>
+      <div className="admin-sambutan-simbol" aria-hidden>
+        <Image src="/image/SimbolSiKuTerang.png" alt="" width={92} height={95} priority />
+      </div>
+    </section>
   )
 }

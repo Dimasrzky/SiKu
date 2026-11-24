@@ -1,12 +1,11 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { Puzzle } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import { fiturSah, type KodeFitur } from '@/lib/fiturSekolah'
 import HalamanAdmin from '../HalamanAdmin'
-import KepalaAdmin from '../KepalaAdmin'
 import PanelFiturSekolah, { type SekolahFitur } from './PanelFiturSekolah'
 
 export const metadata: Metadata = {
@@ -42,12 +41,11 @@ export default async function FiturSekolahPage() {
   }))
 
   return (
-    <HalamanAdmin jejak={[{ label: 'Fitur Sekolah' }]}>
-      <KepalaAdmin Ikon={Puzzle} judul="Fitur Sekolah" subjudul="Tambahkan subfitur ke sekolah yang mengajukan" />
-
+    <HalamanAdmin judul="Fitur Sekolah" subjudul="Tambahkan subfitur ke sekolah yang mengajukan">
       {fiturErr ? (
-        <div style={{ background: '#FEE2E2', color: '#B91C1C', borderRadius: 14, padding: '1rem 1.25rem', fontSize: '0.85rem', fontWeight: 600 }}>
-          Data subfitur gagal dimuat. Pastikan tabel fitur_sekolah sudah dibuat di database.
+        <div className="admin-info admin-info--merah">
+          <CircleAlert size={16} />
+          <span>Data subfitur gagal dimuat. Pastikan tabel fitur_sekolah sudah dibuat di database.</span>
         </div>
       ) : (
         <PanelFiturSekolah daftar={daftar} />

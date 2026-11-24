@@ -2,11 +2,10 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { Folder, ShieldCheck } from 'lucide-react'
+import { Folder } from 'lucide-react'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyAdminSessionToken, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth'
 import HalamanAdmin from '../HalamanAdmin'
-import KepalaAdmin from '../KepalaAdmin'
 
 export const metadata: Metadata = {
   title: 'Verifikasi Pembayaran',
@@ -57,44 +56,30 @@ export default async function VerifikasiPembayaranPage() {
   }
 
   const folders = Array.from(folderMap.values()).sort((a, b) => b.count - a.count || a.nama.localeCompare(b.nama, 'id'))
+  const totalMenunggu = folders.reduce((n, f) => n + f.count, 0)
 
   return (
-    <HalamanAdmin jejak={[{ label: 'Verifikasi Pembayaran' }]}>
-      <KepalaAdmin Ikon={ShieldCheck} judul="Verifikasi Pembayaran" subjudul="Pilih sekolah untuk memverifikasi bukti transfer yang masuk" />
-
-      {/* Folder grid */}
+    <HalamanAdmin
+      judul="Verifikasi Pembayaran"
+      subjudul={totalMenunggu > 0
+        ? `${totalMenunggu} bukti transfer menunggu verifikasi`
+        : 'Pilih sekolah untuk memverifikasi bukti transfer yang masuk'}
+    >
       {folders.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '3.5rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.9rem' }}>
-          Belum ada sekolah terdaftar.
+        <div className="admin-panel">
+          <div className="admin-kosong admin-kosong--tunggal">Belum ada sekolah terdaftar.</div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
+        <div className="admin-folder-grid">
           {folders.map(f => (
-            <Link
-              key={f.id}
-              href={`/admin/verifikasi-pembayaran/${f.id}`}
-              style={{ textDecoration: 'none' }}
-            >
-              <div style={{
-                position: 'relative', background: '#fff', borderRadius: 14, border: '1px solid #F1F5F9',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)', padding: '1.5rem', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', textAlign: 'center', gap: '0.75rem', cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.15s',
-                opacity: f.count > 0 ? 1 : 0.65,
-              }}>
-                {f.count > 0 && (
-                  <span style={{
-                    position: 'absolute', top: 10, right: 10, minWidth: 22, height: 22, padding: '0 6px',
-                    background: '#DC2626', color: '#fff', borderRadius: 20, fontSize: '0.72rem', fontWeight: 800,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {f.count}
-                  </span>
-                )}
-                <div style={{ width: 64, height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Folder size={52} color={f.count > 0 ? '#F5B942' : '#CBD5E1'} fill={f.count > 0 ? '#FEF3C7' : '#F8FAFC'} strokeWidth={1.5} />
-                </div>
-                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0F172A', lineHeight: 1.3 }}>{f.nama}</div>
-                <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+            <Link key={f.id} href={`/admin/verifikasi-pembayaran/${f.id}`} className={`admin-folder${f.count > 0 ? '' : ' admin-folder--sepi'}`}>
+              {f.count > 0 && <span className="admin-hitung">{f.count}</span>}
+              <span className="admin-folder-ikon">
+                <Folder size={24} fill="currentColor" fillOpacity={0.18} strokeWidth={1.8} />
+              </span>
+              <div>
+                <div className="admin-folder-nama">{f.nama}</div>
+                <div className="admin-folder-sub">
                   {f.count > 0 ? `${f.count} bukti menunggu` : 'Tidak ada bukti menunggu'}
                 </div>
               </div>
