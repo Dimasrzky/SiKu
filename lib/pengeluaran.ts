@@ -1,7 +1,7 @@
 import { tanggalWIB } from './metrikLaporan'
 import { BULAN_PANJANG } from './formatLaporan'
 
-// Pengeluaran sekolah — subfitur 'pengeluaran' (lib/fiturSekolah). Sejak 27 Okt 2026:
+// Pengeluaran sekolah — terbuka untuk semua sekolah sejak 25 Nov 2026. Sejak 27 Okt 2026:
 // Jenis (kategori buatan bendahara), Nama, Tanggal, Volume (angka) + Satuan (teks, opsional),
 // Biaya Satuan, Jumlah (Volume × Biaya Satuan, boleh diubah kalau beda dengan nota), dan
 // sumber dana: komponen tagihan yang membiayainya, berjumlah tepat sama dengan Jumlah

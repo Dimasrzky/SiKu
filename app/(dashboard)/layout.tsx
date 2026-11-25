@@ -31,7 +31,6 @@ import { supabase } from '@/lib/supabase'
 import {
   bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN, simpanStatusLokal, statusLokal, type StatusKemitraan,
 } from '@/lib/kemitraan'
-import { bacaFiturSaya, fiturLokal, hapusFiturLokal, simpanFiturLokal, type KodeFitur } from '@/lib/fiturSekolah'
 import { KUNCI_LANGKAH_SETUP } from '@/lib/langkahSetup'
 import {
   KUNCI_LOGO_SIDEBAR, hapusLogoSidebarLokal, segarkanLogoSidebar, siapkanLogo, simpanLogoSidebar, unggahLogoSekolah,
@@ -405,8 +404,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (typeof window === 'undefined') return {}
     try { return (JSON.parse(localStorage.getItem(KUNCI_LANGKAH_SETUP) ?? '{}') as Record<string, boolean> | null) ?? {} } catch { return {} }
   })
-  // Subfitur khusus sekolah (lib/fiturSekolah) — dipasang tim Equanusa lewat dasbor admin
-  const [fitur,         setFitur]         = useState<KodeFitur[]>([])
   const [avatarHover,   setAvatarHover]   = useState(false)
   const [unggahLogo,    setUnggahLogo]    = useState(false)
   const [galatLogo,     setGalatLogo]     = useState('')
@@ -520,27 +517,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     load()
   }, [pathname])
 
-  // Diperiksa ulang tiap pindah halaman, supaya subfitur yang baru ditambahkan atau
-  // dicabut admin ikut terlihat tanpa harus masuk ulang
-  useEffect(() => {
-    let batal = false
-    const load = async () => {
-      setFitur(fiturLokal())
-      const { data } = await bacaFiturSaya(supabase)
-      if (batal || !data) return
-      setFitur(data)
-      simpanFiturLokal(data)
-    }
-    load()
-    return () => { batal = true }
-  }, [pathname])
-
   const handleLogout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem('siku_auth')
     localStorage.removeItem('siku_setup_steps')
     localStorage.removeItem('siku_setup_done')
-    hapusFiturLokal()
     hapusLogoSidebarLokal()
     router.push('/')
   }
@@ -752,9 +733,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
           </div>
 
-          {allDone && fitur.includes('pengeluaran') ? (
+          {allDone ? (
             <>
-              {/* Laporan dropdown — hanya untuk sekolah yang diberi subfitur Pengeluaran */}
+              {/* Laporan dropdown — Ringkasan + Pengeluaran, untuk semua sekolah */}
               <button
                 className={`sidebar-item sidebar-dropdown-trigger${pathname.startsWith('/laporan') ? ' active' : ''}`}
                 onClick={toggleLaporan}
@@ -778,14 +759,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
               </div>
             </>
-          ) : allDone ? (
-            <Link
-              href="/laporan"
-              className={`sidebar-item${pathname === '/laporan' || pathname.startsWith('/laporan/') ? ' active' : ''}`}
-            >
-              <BarChart2 size={18} className="sidebar-icon" />
-              <span>Laporan</span>
-            </Link>
           ) : (
             <div className="sidebar-item" style={{ opacity: 0.4, cursor: 'not-allowed', pointerEvents: 'none' }}>
               <BarChart2 size={18} className="sidebar-icon" />
@@ -919,7 +892,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               localStorage.removeItem('siku_auth')
               localStorage.removeItem('siku_setup_steps')
               localStorage.removeItem('siku_setup_done')
-              hapusFiturLokal()
               setResetting(false)
               setShowResetModal(false)
               router.push('/')

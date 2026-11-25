@@ -1267,72 +1267,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-/* ── Fitur Sekolah ── */
-.admin-katalog {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  padding: 0 22px 22px;
-}
-
-.admin-katalog-kartu {
-  display: flex;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid #E5E9F0;
-  border-radius: 16px;
-}
-
-.admin-chip-fitur {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 4px 3px 11px;
-  border-radius: 999px;
-  background: #DCFCE7;
-  color: #166534;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.admin-chip-fitur button {
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: rgba(22, 101, 52, 0.12);
-  color: #166534;
-  cursor: pointer;
-}
-
-.admin-chip-fitur button:hover { background: rgba(22, 101, 52, 0.24); }
-
-.admin-pilihan {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.admin-pilihan button {
-  padding: 12px 14px;
-  border: 1.5px solid #E2E8F0;
-  border-radius: 14px;
-  background: #fff;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.admin-pilihan button[aria-checked='true'] {
-  border-color: #1A2C4E;
-  background: #F1F6FE;
-}
-
 /* ── Layar sempit: sidebar jadi laci, dibuka dari bar navy di atas ── */
 @media (max-width: 1023px) {
   .admin-bar-ponsel {
@@ -1405,7 +1339,6 @@
 
   .admin-panel-kepala { padding: 16px; }
   .admin-panel > .admin-info { margin: 0 16px 16px; }
-  .admin-katalog { padding: 0 16px 16px; }
   .admin-cari { width: 100%; }
   .admin-antrean li { flex-wrap: wrap; }
 }

@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
 import { jenisGambar } from '@/lib/jenisGambar'
-import { sekolahPunyaFitur } from '@/lib/fiturSekolah'
 import { BUCKET_FOTO_PENGELUARAN } from '@/lib/pengeluaran'
 
 const MAX_SIZE_BYTES    = 5 * 1024 * 1024
@@ -23,8 +22,7 @@ interface Akses {
 
 /**
  * Foto nota pengeluaran disimpan di bucket privat tanpa policy storage, jadi semua akses
- * lewat route ini: pemilik pengeluaran harus sekolah akun yang login, dan sekolah itu
- * harus masih punya subfitur Pengeluaran.
+ * lewat route ini: pemilik pengeluaran harus sekolah akun yang login.
  */
 async function periksaAkses(req: NextRequest, params: Promise<{ id: string }>): Promise<{ akses: Akses } | { tolak: NextResponse }> {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '')
@@ -40,10 +38,6 @@ async function periksaAkses(req: NextRequest, params: Promise<{ id: string }>): 
   const { data: profil } = await db.from('profiles').select('sekolah_id').eq('id', user.id).maybeSingle()
   const sekolahId = (profil as { sekolah_id: string | null } | null)?.sekolah_id
   if (!sekolahId) return { tolak: gagal('Profil tidak lengkap.', 400) }
-
-  const fitur = await sekolahPunyaFitur(db, sekolahId, 'pengeluaran')
-  if (fitur.error !== null) return { tolak: gagal(fitur.error, 500) }
-  if (!fitur.data) return { tolak: gagal('Fitur Pengeluaran belum aktif untuk sekolah ini.', 403) }
 
   const { data: baris, error: bacaErr } = await db
     .from('pengeluaran')

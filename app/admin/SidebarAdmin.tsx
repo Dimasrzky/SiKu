@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { House, Menu, Puzzle, School, ShieldCheck, X, type LucideIcon } from 'lucide-react'
+import { House, Menu, School, ShieldCheck, X, type LucideIcon } from 'lucide-react'
 import MenuAkun from './MenuAkun'
 
 export interface JumlahMenunggu {
@@ -18,7 +18,6 @@ const MENU: { href: string; label: string; Ikon: LucideIcon; badge?: keyof Jumla
   { href: '/admin',                       label: 'Beranda',               Ikon: House },
   { href: '/admin/kemitraan',             label: 'Kemitraan Sekolah',     Ikon: School,      badge: 'kemitraan' },
   { href: '/admin/verifikasi-pembayaran', label: 'Verifikasi Pembayaran', Ikon: ShieldCheck, badge: 'bukti' },
-  { href: '/admin/fitur-sekolah',         label: 'Fitur Sekolah',         Ikon: Puzzle },
 ]
 
 const angka = (n: number) => (n > 99 ? '99+' : String(n))

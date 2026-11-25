@@ -166,6 +166,7 @@ export async function hapusAkunSekolah(db: SupabaseClient, sekolahId: string): P
   await hapus(db, gagal, 'pengeluaran_sumber_dana', q => q.delete().eq('sekolah_id', sekolahId))
   await hapus(db, gagal, 'pengeluaran',             q => q.delete().eq('sekolah_id', sekolahId))
   await hapus(db, gagal, 'kategori_pengeluaran',    q => q.delete().eq('sekolah_id', sekolahId))
+  // Tabel bekas subfitur per sekolah (dihentikan 25 Nov 2026) — dilewati kalau sudah di-DROP
   await hapus(db, gagal, 'fitur_sekolah',           q => q.delete().eq('sekolah_id', sekolahId))
 
   // 2. Data operasional: tagihan, pembayaran, siswa, kelas, dst.

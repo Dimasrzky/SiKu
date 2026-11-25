@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 /**
  * Kerangka semua halaman SiKuAdmin: sidebar navy (Beranda, Kemitraan Sekolah, Verifikasi
- * Pembayaran, Fitur Sekolah, akun di dasar) dan area isi. Bar judul tiap halaman dibuat
+ * Pembayaran, akun di dasar) dan area isi. Bar judul tiap halaman dibuat
  * HalamanAdmin. Layout dan halaman dirender bersamaan, jadi setiap page.tsx tetap memeriksa
  * sesi admin sendiri sebelum memuat data.
  *

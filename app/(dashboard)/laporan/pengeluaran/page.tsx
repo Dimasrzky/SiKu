@@ -41,8 +41,8 @@ import { ModalKategori } from '@/components/pengeluaran/ModalKategori'
 import { ModalFoto } from '@/components/pengeluaran/ModalFoto'
 import { SkeletonPengeluaran } from '@/components/skeleton/SkeletonPengeluaran'
 
-// Subfitur Pengeluaran (lib/fiturSekolah) — hanya terbuka untuk sekolah yang ditambahkan
-// tim Equanusa; layout.tsx di folder ini menolak sekolah lain.
+// Pengeluaran — terbuka untuk semua sekolah sejak 25 Nov 2026 (sebelumnya subfitur yang
+// dipasang admin per sekolah).
 //
 // Sejak 27 Okt 2026 (mockup + keputusan user): setiap pengeluaran diambil dari satu atau
 // lebih komponen tagihan (lib/kasKomponen). Sebelum ada pengeluaran sama sekali, halaman

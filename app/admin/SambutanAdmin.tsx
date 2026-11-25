@@ -14,7 +14,7 @@ export default function SambutanAdmin({ menunggu }: { menunggu: number }) {
         <h2 id="judul-sambutan">
           Selamat datang di <span className="admin-sambutan-siku">SiKu</span><span className="admin-sambutan-admin">Admin</span>!
         </h2>
-        <p>Manajemen kemitraan, pembayaran, dan fitur sekolah</p>
+        <p>Manajemen kemitraan dan pembayaran sekolah</p>
         <div className="admin-sambutan-aksi">
           {menunggu > 0 && (
             <Link href="/admin/kemitraan?menunggu=1" className="admin-tombol admin-tombol--kuning">

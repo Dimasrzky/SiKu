@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { bacaKemitraan, perluHalamanKemitraan, RUTE_KEMITRAAN } from '@/lib/kemitraan'
-import { hapusFiturLokal } from '@/lib/fiturSekolah'
 import { simpanLangkahSetupLokal } from '@/lib/langkahSetup'
 import { IsiPanel } from '@/components/auth/IsiPanel'
 import { JudulPanel } from '@/components/auth/JudulPanel'
@@ -72,7 +71,6 @@ const LoginForm = () => {
     ])
 
     localStorage.removeItem('siku_setup_done')
-    hapusFiturLokal()
     localStorage.setItem(
       'siku_auth',
       JSON.stringify({

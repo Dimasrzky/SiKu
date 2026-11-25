@@ -51,8 +51,6 @@ const Menu = ({ label, Ikon, aktif, buka, kunci }: {
   </div>
 )
 
-// Submenu Laporan hanya ada untuk sekolah dengan subfitur Pengeluaran (lib/fiturSekolah).
-// Kerangka tidak tahu subfitur sekolah, kecuali di halaman Pengeluaran sendiri.
 const SUB_LAPORAN: ItemMenu[] = [
   { label: 'Ringkasan',   href: '/laporan',             Ikon: PieChart },
   { label: 'Pengeluaran', href: '/laporan/pengeluaran', Ikon: Wallet },
@@ -77,9 +75,9 @@ const SubMenu = ({ daftar, buka, pathname }: { daftar: ItemMenu[]; buka: boolean
 }
 
 export const SkeletonShell = ({ pathname }: { pathname: string }) => {
-  const diTagihan     = pathname.startsWith('/tagihan')
-  const diSiswa       = pathname.startsWith('/siswa')
-  const diPengeluaran = pathname.startsWith('/laporan/pengeluaran')
+  const diTagihan = pathname.startsWith('/tagihan')
+  const diSiswa   = pathname.startsWith('/siswa')
+  const diLaporan = pathname.startsWith('/laporan')
   return (
     <div className="dashboard-shell">
       {/* Belum bisa dipakai — menu asli muncul begitu data login terbaca */}
@@ -99,8 +97,8 @@ export const SkeletonShell = ({ pathname }: { pathname: string }) => {
           <SubMenu daftar={SUB_TAGIHAN} buka={diTagihan} pathname={pathname} />
           <Menu label="Siswa" Ikon={Users} aktif={diSiswa} buka={diSiswa} kunci="komponen_tagihan" />
           <SubMenu daftar={SUB_SISWA} buka={diSiswa} pathname={pathname} />
-          <Menu label="Laporan" Ikon={BarChart2} aktif={pathname.startsWith('/laporan')} buka={diPengeluaran ? true : undefined} kunci="import_siswa" />
-          {diPengeluaran && <SubMenu daftar={SUB_LAPORAN} buka pathname={pathname} />}
+          <Menu label="Laporan" Ikon={BarChart2} aktif={diLaporan} buka={diLaporan} kunci="import_siswa" />
+          <SubMenu daftar={SUB_LAPORAN} buka={diLaporan} pathname={pathname} />
         </nav>
 
         <div className="sidebar-bottom">
